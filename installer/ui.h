@@ -1,9 +1,11 @@
 #pragma once
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -111,9 +113,7 @@ struct Model {
     bool message_bad = false;
     bool picking = false, picked_ready = false, picker_missing = false;
     std::string picked;
-    std::vector<logic::Release> releases;
-    logic::Release chosen;
-    bool allow_older = false, beta = false;
+    bool beta = false;
     logic::Announcement announcement;
 };
 inline Model M;
@@ -147,7 +147,6 @@ inline void refresh_installed() {
     fs::path ini = M.game / "fatrainer.ini";
     std::string text = !M.game.empty() && fs::exists(ini, ec) ? platform::read_file(ini) : "";
     bool beta = logic::ini_value(text, "beta") == "1";
-    M.allow_older = logic::ini_value(text, "allow_older") == "1";
     if (beta != M.beta) M.beta = beta, M.refetch = true;
 }
 
@@ -192,13 +191,9 @@ inline void fetch_release() {
         std::string installer_text;
         platform::net::get_text(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_INFO, installer_text, ignored);
         ReleaseInfo installer = parse_release_info(installer_text);
-        std::string listing;
-        std::vector<logic::Release> releases;
-        if (platform::net::get_text(RELEASES_API, listing, ignored)) releases = logic::installable_releases(listing);
         bool installer_newer = newer_version(installer.version, INSTALLER_VERSION) && installer.sha256.size() == 64;
         std::lock_guard<std::mutex> l(M.mx);
         M.installer_update = installer_newer ? installer : ReleaseInfo{};
-        if (!releases.empty()) M.releases = releases;
         M.on_beta = on_beta;
         M.fetch = ok ? Fetch::ready : Fetch::failed;
         M.fetch_error = error;
@@ -221,74 +216,90 @@ inline void finish(Job job, const std::string& message) {
 
 inline std::string replace_hint() {
     return platform::LINUX ? "Check that you can write to the game folder."
-                           : "Close Dying Light if it is running. If it is not, right-click the installer and choose Run as administrator.";
+                           : "Close Dying Light if it is running. If it is not, right-click FaTrainer and choose Run as administrator.";
 }
 
-inline void start_install() {
+inline bool needs_install(const std::string& installed, const ReleaseInfo& latest, bool ready) {
+    return ready && installed != latest.version;
+}
+
+inline void start_play() {
     fs::path game;
-    bool on_beta;
+    bool on_beta, install;
     ReleaseInfo latest;
-    logic::Release chosen;
+    std::string installed;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
-        game = M.game, latest = M.latest, on_beta = M.on_beta, chosen = M.chosen;
-        M.job = Job::working, M.step = "Downloading", M.progress = 0, M.message.clear();
+        game = M.game, latest = M.latest, on_beta = M.on_beta, installed = M.installed;
+        install = needs_install(M.installed, M.latest, M.fetch == Fetch::ready);
+        M.job = Job::working, M.step = install ? "Downloading" : "Starting Dying Light", M.progress = 0, M.message.clear();
     }
-    std::thread([game, latest, on_beta, chosen]() mutable {
-        const unsigned long long LIMIT = 64ull << 20;
-        std::string data, error, base = on_beta ? BETA_DOWNLOADS : RELEASE_DOWNLOADS;
-        if (!chosen.tag.empty()) {
-            base = std::string(RELEASE_TAG_DOWNLOADS) + chosen.tag + "/";
-            std::string text;
-            if (!platform::net::get_text(base + "version.txt", text, error)) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
-            latest = parse_release_info(text);
-            if (latest.version.empty() || latest.sha256.size() != 64) return finish(Job::failed, "FaTrainer " + chosen.version + " has no valid version.txt. Nothing was changed.");
-        }
-        bool ok = platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
-            data.append(d, n);
-            unsigned long long expected = latest.size ? latest.size : total;
-            std::lock_guard<std::mutex> l(M.mx);
-            M.progress = expected ? 0.88f * std::min(1.0f, (float)data.size() / expected) : 0.5f;
-            return data.size() <= LIMIT;
-        }, error);
-        if (!ok) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
-        {
-            std::lock_guard<std::mutex> l(M.mx);
-            M.step = "Checking", M.progress = 0.92f;
-        }
-        if ((latest.size && data.size() != latest.size) || logic::sha256_hex(data) != latest.sha256 || logic::trainer_version_in(data).empty())
-            return finish(Job::failed, "The download did not match the release checksum, so nothing was installed. Try again in a minute.");
-        {
-            std::lock_guard<std::mutex> l(M.mx);
-            M.step = "Installing", M.progress = 0.96f;
-        }
+    std::thread([game, latest, on_beta, install, installed]() mutable {
         std::error_code ec;
-        fs::path target = game / platform::DLL_NAME, temp = game / platform::DOWNLOAD_NAME, backup = game / platform::BACKUP_NAME;
-        if (fs::exists(target, ec) && logic::trainer_version_in(platform::read_file(target)).empty() && !fs::exists(backup, ec)) {
-            fs::copy_file(target, backup, ec);
-            if (ec) return finish(Job::failed, "Could not keep a copy of the xinput1_3.dll that was already there. " + replace_hint());
-        }
-        {
-            std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-            out.write(data.data(), (std::streamsize)data.size());
-            if (!out) {
-                out.close();
-                fs::remove(temp, ec);
-                return finish(Job::failed, "Could not write to the game folder. " + replace_hint());
+        if (install) {
+            const unsigned long long LIMIT = 64ull << 20;
+            std::string data, error, base = on_beta ? BETA_DOWNLOADS : RELEASE_DOWNLOADS;
+            bool ok = platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
+                data.append(d, n);
+                unsigned long long expected = latest.size ? latest.size : total;
+                std::lock_guard<std::mutex> l(M.mx);
+                M.progress = expected ? 0.88f * std::min(1.0f, (float)data.size() / expected) : 0.5f;
+                return data.size() <= LIMIT;
+            }, error);
+            if (!ok) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                M.step = "Checking", M.progress = 0.92f;
             }
+            if ((latest.size && data.size() != latest.size) || logic::sha256_hex(data) != latest.sha256 || logic::trainer_version_in(data).empty())
+                return finish(Job::failed, "The download did not match the release checksum, so nothing was installed. Try again in a minute.");
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                M.step = "Installing", M.progress = 0.96f;
+            }
+            fs::path target = game / platform::DLL_NAME, temp = game / platform::DOWNLOAD_NAME, backup = game / platform::BACKUP_NAME;
+            if (fs::exists(target, ec) && logic::trainer_version_in(platform::read_file(target)).empty() && !fs::exists(backup, ec)) {
+                fs::copy_file(target, backup, ec);
+                if (ec) return finish(Job::failed, "Could not keep a copy of the xinput1_3.dll that was already there. " + replace_hint());
+            }
+            {
+                std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+                out.write(data.data(), (std::streamsize)data.size());
+                if (!out) {
+                    out.close();
+                    fs::remove(temp, ec);
+                    return finish(Job::failed, "Could not write to the game folder. " + replace_hint());
+                }
+            }
+            fs::rename(temp, target, ec);
+            if (ec) {
+                fs::remove(temp, ec);
+                return finish(Job::failed, "Could not replace xinput1_3.dll. " + replace_hint());
+            }
+            installed = latest.version;
+            std::lock_guard<std::mutex> l(M.mx);
+            if (M.game == game) M.installed = installed;
         }
-        fs::rename(temp, target, ec);
-        if (ec) {
-            fs::remove(temp, ec);
-            return finish(Job::failed, "Could not replace xinput1_3.dll. " + replace_hint());
-        }
+        fs::path arm = game / LAUNCH_FILE;
+        bool armed = !newer_version(FIRST_ARMED_VERSION, installed);
+        if (armed) std::ofstream(arm, std::ios::trunc) << (long long)time(nullptr);
         {
             std::lock_guard<std::mutex> l(M.mx);
-            if (M.game == game) M.installed = latest.version;
+            M.step = "Starting Dying Light", M.progress = 0.98f;
         }
-        finish(Job::done, platform::LINUX ? "Installed FaTrainer " + latest.version + ". Add the launch option below once, then start the game and press Insert."
-                                          : "Installed FaTrainer " + latest.version + ". Start Dying Light and press Insert or F8 in game.");
+        platform::launch_game();
+        std::string running = "Dying Light is starting with FaTrainer " + installed + ". Press Insert or F8 in game. Starting the game from Steam plays it without the trainer.";
+        if (!armed) return finish(Job::done, running);
+        for (long long waited = 0; waited < LAUNCH_MAX_AGE * 1000; waited += 500) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if (!fs::exists(arm, ec)) return finish(Job::done, running);
+            std::lock_guard<std::mutex> l(M.mx);
+            M.step = "Waiting for Dying Light";
+        }
+        fs::remove(arm, ec);
+        finish(Job::failed, platform::LINUX ? "Dying Light did not load FaTrainer within 3 minutes. Add the Steam launch option below once, then press Play again."
+                                            : "Dying Light did not load FaTrainer within 3 minutes. If the game was already running, close it and press Play again.");
     }).detach();
 }
 
@@ -298,7 +309,7 @@ inline void start_self_update() {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working || M.installer_update.version.empty()) return;
         update = M.installer_update;
-        M.job = Job::working, M.step = "Downloading the installer", M.progress = 0, M.message.clear();
+        M.job = Job::working, M.step = "Updating FaTrainer", M.progress = 0, M.message.clear();
     }
     std::thread([update] {
         std::error_code ec;
@@ -310,15 +321,15 @@ inline void start_self_update() {
                                                                 M.progress = expected ? 0.9f * std::min(1.0f, (float)data.size() / expected) : 0.5f;
                                                                 return data.size() <= (128ull << 20);
                                                             }, error);
-        if (!ok) return finish(Job::failed, "Could not download the new installer: " + error + ". This one keeps working.");
+        if (!ok) return finish(Job::failed, "Could not download the new FaTrainer: " + error + ". This one keeps working.");
         if ((update.size && data.size() != update.size) || logic::sha256_hex(data) != update.sha256)
-            return finish(Job::failed, "The new installer did not match its checksum, so nothing was changed. Try again in a minute.");
-        if (!platform::replace_self(data, error)) return finish(Job::failed, "Could not update the installer: " + error + ". Download it again from the website.");
+            return finish(Job::failed, "The new FaTrainer did not match its checksum, so nothing was changed. Try again in a minute.");
+        if (!platform::replace_self(data, error)) return finish(Job::failed, "Could not update FaTrainer: " + error + ". Download it again from the website.");
         {
             std::lock_guard<std::mutex> l(M.mx);
             M.restart = true;
         }
-        finish(Job::done, "Updated to FaTrainer Installer " + update.version + ". Restarting.");
+        finish(Job::done, "Updated FaTrainer to " + update.version + ". Restarting.");
     }).detach();
 }
 
@@ -334,7 +345,7 @@ inline void uninstall() {
     bool restored = fs::exists(backup, ec) && (fs::rename(backup, target, ec), !ec);
     refresh_installed();
     M.job = Job::idle;
-    M.message = restored ? "FaTrainer was removed and the xinput1_3.dll that was there before is back." : "FaTrainer was removed. Your fatrainer.ini settings stay in the game folder.";
+    M.message = restored ? "FaTrainer was removed from the game folder and the xinput1_3.dll that was there before is back." : "FaTrainer was removed from the game folder. Your fatrainer.ini settings stay there. Press Play to put it back.";
     M.message_bad = false;
 }
 
@@ -642,13 +653,12 @@ inline void detail(float width) {
         view.job = M.job, view.step = M.step, view.progress = M.progress, view.finished_at = M.finished_at, view.message = M.message;
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
         view.installer_update = M.installer_update;
-        view.releases = M.releases, view.chosen = M.chosen, view.allow_older = M.allow_older, view.beta = M.beta, view.on_beta = M.on_beta;
+        view.beta = M.beta, view.on_beta = M.on_beta;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
     bool outdated = !view.installed.empty() && ready && (view.installed == logic::LEGACY_VERSION || newer_version(view.latest.version, view.installed));
-    bool newer_installed = !view.installed.empty() && view.installed != logic::LEGACY_VERSION && ready && newer_version(view.installed, view.latest.version);
-    bool current = !view.installed.empty() && ready && !outdated && !newer_installed;
+    bool current = !view.installed.empty() && ready && view.installed == view.latest.version;
     float t = (float)ImGui::GetTime();
 
     {
@@ -750,47 +760,14 @@ inline void detail(float width) {
     {
         Reveal r(3);
         ImVec2 a = ImGui::GetCursorScreenPos();
-        label_caps(dl, a, "VERSION", MUTED);
+        label_caps(dl, a, "UPDATES", MUTED);
         ImGui::Dummy({0, S(14)});
-        std::string latest_label = !ready ? "Latest" : (view.on_beta ? "Beta, " : "Latest, ") + view.latest.version;
-        std::string current = view.chosen.tag.empty() ? latest_label : view.chosen.version;
-        ImGui::SetNextItemWidth(S(300));
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {S(14), S(13)});
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(10));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(8), S(8)});
-        bool open = ImGui::BeginCombo("##version", current.c_str());
-        ImGui::PopStyleVar();
-        if (open) {
-            if (ImGui::Selectable(latest_label.c_str(), view.chosen.tag.empty())) {
-                std::lock_guard<std::mutex> l(M.mx);
-                M.chosen = {};
-            }
-            for (const logic::Release& release : view.releases) {
-                if (ready && release.version == view.latest.version && !view.on_beta) continue;
-                if (ImGui::Selectable(release.version.c_str(), release.tag == view.chosen.tag)) {
-                    std::lock_guard<std::mutex> l(M.mx);
-                    M.chosen = release;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        platform::caption_holes.push_back({ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y, ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y});
-        ImGui::PopStyleVar(2);
-        ImGui::SameLine(0, S(18));
-        ImVec2 box = ImGui::GetCursorScreenPos();
-        box.y += (S(44) - S(20)) / 2;
-        bool older = view.allow_older;
-        if (check_box(dl, "older", "Use older versions", box, older, found)) toggle_ini_flag("allow_older", !older);
-        ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10)});
-        muted_note(width, older ? "An older version keeps working in game after a newer one is out. The update notice still shows."
-                                : "An older version stays turned off in game once a newer one is out, and only shows the update notice. Tick Use older versions to play with it anyway.");
-        ImGui::Dummy({0, S(10)});
         ImVec2 beta_box = ImGui::GetCursorScreenPos();
         bool beta = view.beta;
         if (check_box(dl, "beta", "Beta builds", beta_box, beta, found)) toggle_ini_flag("beta", !beta);
         ImGui::SetCursorScreenPos({beta_box.x, beta_box.y + S(20) + S(8)});
-        muted_note(width, beta ? "Installs and updates to the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
-                               : "Optional. Beta builds are the version being worked on right now, open to everyone. They may have bugs, so only the published releases are used unless you tick this.");
+        muted_note(width, beta ? "Play uses the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
+                               : "Optional. Beta builds are the version being worked on right now, open to everyone. They may have bugs, so Play uses the published release unless you tick this.");
         ImGui::Dummy({0, S(8)});
     }
 
@@ -800,36 +777,28 @@ inline void detail(float width) {
         float progress = -1;
         bool enabled = false;
         bool celebrate = view.job == Job::done && ImGui::GetTime() - view.finished_at < 2.6;
-        if (view.job == Job::working) text = view.step + "  " + std::to_string((int)(view.progress * 100)) + "%", progress = view.progress;
-        else if (celebrate) text = "Installed", progress = 1;
-        else if (!view.installer_update.version.empty()) text = "Update the installer to " + view.installer_update.version, enabled = true;
-        else if (view.fetch == Fetch::loading) text = "Checking for the latest version";
-        else if (view.fetch == Fetch::failed) text = "Cannot reach GitHub";
+        bool install = needs_install(view.installed, view.latest, ready);
+        bool playable = found && (ready || (!view.installed.empty() && view.installed != logic::LEGACY_VERSION));
+        if (view.job == Job::working) text = view.step + (view.progress < 0.97f ? "  " + std::to_string((int)(view.progress * 100)) + "%" : ""), progress = view.progress;
+        else if (celebrate) text = "Running", progress = 1;
+        else if (!view.installer_update.version.empty()) text = "Update FaTrainer to " + view.installer_update.version, enabled = true;
+        else if (view.fetch == Fetch::loading) text = "Checking for updates";
         else if (!found) text = "Choose the game folder first";
-        else if (!view.chosen.tag.empty()) text = (view.installed == view.chosen.version ? "Reinstall " : "Install ") + view.chosen.version, enabled = true;
-        else if (outdated) text = "Update to " + view.latest.version, enabled = true;
-        else if (newer_installed) text = "Replace " + view.installed + " with " + view.latest.version, enabled = true;
-        else if (current) text = "Reinstall " + view.latest.version, enabled = true;
-        else text = "Install FaTrainer " + view.latest.version, enabled = true;
+        else if (!playable) text = "Cannot reach GitHub";
+        else text = install ? "Update to " + view.latest.version + " and play" : "Play", enabled = true;
         ImVec2 at = ImGui::GetCursorScreenPos();
         float shown_progress = progress >= 0 ? follow(anim("progress"), progress, 10) : (anim("progress") = 0);
         if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))
-            view.installer_update.version.empty() ? start_install() : start_self_update();
-        if (celebrate) check_mark(dl, {at.x + S(300) / 2 - text_w(F.strong, "Installed") / 2 - S(22), at.y + S(26)}, S(14), (float)(ImGui::GetTime() - view.finished_at) * 2.2f, C(ACCENT_INK));
+            view.installer_update.version.empty() ? start_play() : start_self_update();
+        if (celebrate) check_mark(dl, {at.x + S(300) / 2 - text_w(F.strong, "Running") / 2 - S(22), at.y + S(26)}, S(14), (float)(ImGui::GetTime() - view.finished_at) * 2.2f, C(ACCENT_INK));
         if (!view.installed.empty() && view.job != Job::working && view.installer_update.version.empty()) {
             ImGui::SameLine(0, S(12));
-            if (button("launch", "Launch Dying Light", {S(200), S(52)}, Kind::ghost)) {
-                platform::launch_game();
-                std::lock_guard<std::mutex> l(M.mx);
-                M.message = "Starting Dying Light through Steam. Press Insert or F8 in game.", M.message_bad = false, M.finished_at = ImGui::GetTime();
-            }
-            ImGui::SameLine(0, S(12));
-            if (button("uninstall", "Uninstall", {S(110), S(52)}, Kind::quiet)) uninstall();
+            if (button("uninstall", "Remove from game", {S(160), S(52)}, Kind::quiet)) uninstall();
         }
         std::string message = view.message;
         if (message.empty() && view.fetch == Fetch::failed) message = "Could not check for the latest release: " + view.fetch_error + ".", view.message_bad = true;
         if (message.empty() && !view.installer_update.version.empty())
-            message = "FaTrainer Installer " + view.installer_update.version + " is out (this is " INSTALLER_VERSION "). Update it first, then install the trainer. Your game is not touched.";
+            message = "FaTrainer " + view.installer_update.version + " is out (this is " INSTALLER_VERSION "). It updates itself first. Your game is not touched.";
         if (!message.empty()) {
             float shown = ease_out((float)(ImGui::GetTime() - view.finished_at) / 0.5f);
             if (view.finished_at < 0) shown = 1;
