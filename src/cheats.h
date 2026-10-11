@@ -32,6 +32,8 @@ const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52, SLOT_KILL = 
 const float KILL_RADIUS = 80.0f;
 const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, SLOT_VAR_VEC3 = 116, VAR_SLOTS = 1024;
 const float ONE_HIT_HEALTH = 1.0f;
+inline const char GRAB_FILTER_CODE[] =
+    "48 89 5C 24 08 57 48 83 EC 20 48 8B DA 48 85 D2 0F 84 ? ? ? ? 48 8B 02 48 8B CA FF 90 78 08 00 00 84 C0 75 10 48 8B 03 48 8B CB FF 90 20 01 00 00 84 C0 75 72";
 inline const uint8_t SPOT_DISTANCE_CLAMP[4] = {0xF3, 0x0F, 0x5F, 0xD3}, SPOT_DISTANCE_ZERO[4] = {0x0F, 0x57, 0xD2, 0x90};
 
 struct Cheat {
@@ -82,7 +84,7 @@ inline Cheat CHEATS[] = {
      {}, {}},
 };
 
-enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER };
+enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER, G_WEAPONS };
 
 struct ScriptVar { const char* name; float at_max; };
 
@@ -123,11 +125,17 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {}, {{"f_btz_jump_attack_angle_max", 180}, {"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_dfa_height", "Death from above height", "How fast you must already be falling to start it. Normally only after a long drop; at Max a normal jump is enough.",
      G_HUMAN, {}},
-    {"h_dropkick", "Dropkick", "At Max you dropkick the hunter from 12 m away, even when he is not in front of you.", G_HUMAN,
-     {"AirKickRangeMul"}, {{"f_btz_wrestling_kick_range", 12}, {"f_btz_wrestling_kick_range_velocity_factor", 0.5f}, {"f_btz_wrestling_kick_angle_max", 180}}},
+    {"h_dropkick", "Dropkick range", "At Max you dropkick the hunter from 12 m away.", G_HUMAN,
+     {"AirKickRangeMul"}, {{"f_btz_wrestling_kick_range", 12}, {"f_btz_wrestling_kick_range_velocity_factor", 0.5f}}},
+    {"h_dropkick_angle", "Dropkick angle", "How far to your side the hunter can be. At Max he can be behind you.", G_HUMAN, {},
+     {{"f_btz_wrestling_kick_angle_max", 180}}},
+    {"h_dropkick_height", "Dropkick height", "How far below or above you the hunter can be, like when you jump at him after his tackle missed. Death from above pull widens the same limit; the larger one wins.",
+     G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
-    {"h_melee", "Melee", "Reach of melee attacks, how far the game looks for a target and how far above or below your aim it still locks on.",
-     G_HUMAN, {"RangeMeleeMul", "BestTargetMeleeRange", "MaxVerticalAngleForRangeMeleeCorrection"}},
+    {"h_melee", "Melee", "Reach of melee attacks and how far above or below your aim they still connect.",
+     G_HUMAN, {"RangeMeleeMul", "MaxVerticalAngleForRangeMeleeCorrection"}},
+    {"melee_speed", "Melee speed", "How fast you swing every melee weapon, two-handed ones too.", G_WEAPONS,
+     {"MeeleAttackSpeedMul", "MeeleSwingSpeedMul", "BluntAttackSpeedMul", "CutAttackSpeedMul"}, {}, 3.0f},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -157,7 +165,7 @@ inline const char* SIDE_NAMES[] = {"pending", "unknown", "survivor", "night hunt
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
 inline uintptr_t skill_manager = 0, add_skill_fn = 0, remove_skill_fn = 0;
 using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
@@ -266,6 +274,7 @@ inline void locate(uintptr_t base) {
         level_from_xp_fn = hits[0];
     if (auto hits = game::find_code(base, "8B ? C0 09 00 00 BA ? ? ? ? E8"); !hits.empty()) cache_get_fn = game::rip_target(hits[0] + 11, 1, 5);
     if (auto hits = game::find_code(base, "45 85 FF 0F 8E ? ? ? ? 48 8B 9E E8 13 00 00 0F 29 7C 24 60"); hits.size() == 1) xp_award_site = hits[0];
+    if (auto hits = game::find_code(base, GRAB_FILTER_CODE); hits.size() == 1) grab_filter_fn = hits[0];
     if (auto hits = game::find_code(base, "40 57 41 57 48 83 EC 28 48 89 6C 24 50 45 33 FF 48 89 74 24 58 0F B7 FA 4C 89 74 24 20 48 8B E9");
         hits.size() == 1)
         remove_skill_fn = hits[0];
@@ -789,12 +798,12 @@ inline const Preset PRESETS[] = {
     {"survivor_legit", "Survivor", "Legit",
      "Looks like a sharp player. A third more reach on death from above and the dropkick, a little more melee reach, endless grappling hook, a human spit dodge, longer UV and a quiet ESP.",
      {"hook", "dodge_spit"},
-     {{"uv_slow", 2.5f}, {"h_dfa", 3.5f}, {"h_dfa_pull", 3.5f}, {"h_dfa_height", 4.0f}, {"h_dropkick", 3.5f}, {"h_kicks", 1.5f}, {"h_melee", 1.3f}},
+     {{"uv_slow", 2.5f}, {"h_dfa", 3.5f}, {"h_dfa_pull", 3.5f}, {"h_dfa_height", 4.0f}, {"h_dropkick", 3.5f}, {"h_dropkick_angle", 3.5f}, {"h_kicks", 1.5f}, {"h_melee", 1.3f}},
      ESP_LEGIT},
     {"survivor_rage", "Survivor", "Rage",
      "Nothing holds back. God mode, endless stamina, UV, ammo and supplies, one hit kills, spit dodge, double speed and jump, and every death from above, kick and melee range at Max.",
      {"god", "stamina", "hook", "uv", "no_fall", "ammo", "no_reload", "supplies", "durability", "one_hit", "dodge_spit"},
-     {{"speed", 2.0f}, {"jump", 2.0f}, {"h_dfa", 10}, {"h_dfa_pull", 10}, {"h_dfa_height", 10}, {"h_dropkick", 10}, {"h_kicks", 10}, {"h_melee", 10}},
+     {{"speed", 2.0f}, {"jump", 2.0f}, {"h_dfa", 10}, {"h_dfa_pull", 10}, {"h_dfa_height", 10}, {"h_dropkick", 10}, {"h_dropkick_angle", 10}, {"h_dropkick_height", 10}, {"h_kicks", 10}, {"h_melee", 10}},
      ESP_RAGE},
     {"hunter_legit", "Night Hunter", "Legit",
      "Feels like a good hunter on a good day. Slightly longer pounce, tackle, claws and ground pound, a ground pound that does not miss, a wider spit hit and a quiet ESP. Energy and cooldowns stay normal.",
@@ -1506,6 +1515,12 @@ inline int slow_uv_drain(float factor) {
 }
 
 const int LOGICAL_PLAYER = 0x9d8, PLAYER_TEAM = 0x6dc, PLAYER_ROLE = 0x6e0, ROLE_HUNTER = 2, PLAYER_RAGE = 0x738;
+const int GRAB_CHECK_SLOTS[] = {0x878, 0x120, 0x6e0};
+const int TARGET_BLOCK = 0x600, TARGET_GRAB = 0xc88, TARGET_STATE = 0xbf8, GRAB_ACTIVE = 0x288, GRAB_PHASE = 0x290, GRAB_FLAGS = 0x298, GRAB_BUSY = 0x10, STATE_BUSY = 0x10;
+const int GRAB_FILTER_PROLOGUE = 16, KICK_LOG_LIMIT = 300;
+const DWORD KICK_LOG_GAP = 500;
+using GrabFilterFn = bool(__fastcall*)(uintptr_t self, uintptr_t target);
+inline GrabFilterFn grab_filter_original = nullptr;
 const int RANK_SURVIVOR = 0x74c, RANK_HUNTER = 0x750, CAMERA_ENGINE = 8, CAMERA_COMBINED = 0xb0;
 const float PLAYER_HEIGHT = 1.8f;
 
@@ -1538,6 +1553,52 @@ inline void scan_targets(bool enemies, bool players) {
 inline uintptr_t logical_player(uintptr_t p) {
     uintptr_t lp = rdv<uintptr_t>(p + LOGICAL_PLAYER);
     return lp && g.vt_logical_player && rdv<uintptr_t>(lp) == g.vt_logical_player ? lp : 0;
+}
+
+inline std::string grab_report(uintptr_t target) {
+    std::string out;
+    for (int off : GRAB_CHECK_SLOTS) {
+        auto check = (bool(__fastcall*)(uintptr_t))rdv<uintptr_t>(rdv<uintptr_t>(target) + off);
+        char part[32];
+        snprintf(part, sizeof part, "0x%x %s, ", off, check && check(target) ? "yes" : "no");
+        out += part;
+    }
+    uintptr_t grab = rdv<uintptr_t>(target + TARGET_GRAB);
+    char rest[160];
+    snprintf(rest, sizeof rest, "+600 %d, grab +288 %d +290 %d +298 %x +10 %u, +bf8 %u", rdv<int>(target + TARGET_BLOCK), rdv<int>(grab + GRAB_ACTIVE, -1),
+             rdv<int>(grab + GRAB_PHASE), rdv<uint32_t>(grab + GRAB_FLAGS), rdv<uint8_t>(grab + GRAB_BUSY),
+             rdv<uint8_t>(rdv<uintptr_t>(target + TARGET_STATE) + STATE_BUSY));
+    return out + rest;
+}
+
+inline bool __fastcall grab_filter_hook(uintptr_t self, uintptr_t target) {
+    bool passed = grab_filter_original(self, target);
+    static std::string last;
+    static DWORD last_at = 0;
+    static int lines = 0;
+    if (passed || side != SIDE_SURVIVOR || lines >= KICK_LOG_LIMIT || rdv<uintptr_t>(target) != g.vt_player) return passed;
+    uintptr_t lp = logical_player(target);
+    if (!lp || rdv<int>(lp + PLAYER_ROLE) != ROLE_HUNTER || GetTickCount() - last_at < KICK_LOG_GAP) return passed;
+    std::string now = grab_report(target);
+    if (now == last) return passed;
+    last = now, last_at = GetTickCount(), lines++;
+    logf_hook("kick: the game skips the hunter as a target: %s", now.c_str());
+    return passed;
+}
+
+inline bool install_grab_filter_hook() {
+    if (grab_filter_original) return true;
+    if (!grab_filter_fn) return false;
+    auto* trampoline = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!trampoline) return false;
+    memcpy(trampoline, (const void*)grab_filter_fn, GRAB_FILTER_PROLOGUE);
+    absolute_jump(trampoline + GRAB_FILTER_PROLOGUE, grab_filter_fn + GRAB_FILTER_PROLOGUE);
+    grab_filter_original = (GrabFilterFn)trampoline;
+    uint8_t patch[GRAB_FILTER_PROLOGUE];
+    memset(patch, 0x90, sizeof patch);
+    absolute_jump(patch, (uintptr_t)&grab_filter_hook);
+    write_code(grab_filter_fn, patch, sizeof patch);
+    return true;
 }
 
 const int CAMERA_EYE[3] = {0x4c, 0x5c, 0x6c};

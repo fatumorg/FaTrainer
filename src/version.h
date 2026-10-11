@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.4"
-#define FATRAINER_NAME "Refill Update"
+#define FATRAINER_VERSION "2.5 b1"
+#define FATRAINER_NAME "Survivor Update"
 #define INSTALLER_VERSION "2.2"
 #define FATRAINER_EDITION "Fatum Version"
 #define FATRAINER_EDITION_CAPS "FATUM VERSION"

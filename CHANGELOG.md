@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5 b1
+
+Survivor Update
+
+- New: Dropkick angle and Dropkick height sliders on the PvP page. At Max of the angle the hunter can be behind you; the height lets you kick a hunter below you, like when you jump at him after his tackle missed. Dropkick is now Dropkick range and only changes the range.
+- New: Melee speed on the Combat page: how fast you swing every melee weapon, two-handed ones too. Works in every mode.
+- Fixed: the survivor Melee slider also widened how far the game looks for a melee target, so your swings turned toward targets far away and missed the one in front of you. It now only changes reach and the up and down angle.
+- When the game skips the hunter as a dropkick target, `fatrainer.log` now says why (lines start with `kick:`), to make kicks during his recovery after a missed tackle work in the next build.
+
 ## 2.4
 
 Refill Update

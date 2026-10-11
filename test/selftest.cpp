@@ -50,6 +50,9 @@ static int __fastcall fake_remove_stack(uintptr_t inv, uintptr_t item, int, int)
     return count;
 }
 
+static bool __fastcall fake_yes(uintptr_t) { return true; }
+static bool __fastcall fake_no(uintptr_t) { return false; }
+
 static float fake_var_float(uintptr_t, uintptr_t name, uintptr_t, uintptr_t) {
     const char* s = *(const char**)name;
     if (!strcmp(s, "f_btz_zombie_grab_range")) return 10;
@@ -373,6 +376,10 @@ int main(int argc, char** argv) {
     game::wr<float>(w.params + cheats::param_ids["AirKickRangeMul"] * 16 + 8, 1.0f);
     cheats::find("no_reload")->on = true;
     cheats::find_tweak("h_dropkick")->factor = 3.0f;
+    for (auto [n, v] : {std::pair{"RangeMeleeMul", 1.0f}, {"BestTargetMeleeRange", 3.0f}, {"MeeleAttackSpeedMul", 1.0f}, {"BluntAttackSpeedMul", 1.0f}})
+        game::wr<float>(w.params + cheats::param_ids[n] * 16 + 8, v);
+    cheats::find_tweak("h_melee")->factor = 2.0f;
+    cheats::find_tweak("melee_speed")->factor = 2.0f;
     static uint8_t survivor_logical[0x800] = {};
     *(uintptr_t*)survivor_logical = game::g.vt_logical_player;
     uintptr_t no_logical = game::rdv<uintptr_t>(w.player + cheats::LOGICAL_PLAYER);
@@ -420,6 +427,8 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 3.0f && game::rdv<float>(cached("AirKickRangeMul") + 0x10) == 3.0f);
+    CHECK(game::rdv<float>(param("RangeMeleeMul")) == 2.0f && game::rdv<float>(param("BestTargetMeleeRange")) == 3.0f);
+    CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 2.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 2.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
     CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
@@ -529,6 +538,8 @@ int main(int argc, char** argv) {
     CHECK(fake_rules[0] == 1);
     for (auto& c : cheats::CHEATS) c.on = false;
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
+    cheats::find_tweak("h_melee")->factor = 1.0f;
+    cheats::find_tweak("melee_speed")->factor = 1.0f;
     cheats::tick();
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) != ~0ull);
     for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(my_provider, cheats::param_ids[n] + 1);
@@ -645,6 +656,31 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(blade + cheats::ITEM_CONDITION) == 12.5f && cheats::condition_floor.empty());
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
+    CHECK(cheats::grab_filter_fn && cheats::grab_filter_fn == game::g.base + 0xd61b50);
+    {
+        static uintptr_t target_vt[0x900 / 8] = {};
+        for (auto& f : target_vt) f = (uintptr_t)&fake_no;
+        target_vt[0x6e0 / 8] = (uintptr_t)&fake_yes;
+        static uint8_t target[0x1000] = {}, grab[0x300] = {}, state[0x20] = {};
+        *(uintptr_t*)target = (uintptr_t)target_vt;
+        *(uintptr_t*)(target + 0xc88) = (uintptr_t)grab;
+        *(uintptr_t*)(target + 0xbf8) = (uintptr_t)state;
+        *(int*)(grab + 0x288) = -1;
+        state[0x10] = 1;
+        CHECK(cheats::grab_report((uintptr_t)target) == "0x878 no, 0x120 no, 0x6e0 yes, +600 0, grab +288 -1 +290 0 +298 0 +10 0, +bf8 1");
+        const size_t FILTER_SIZE = 0xb5;
+        auto* copy = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        memcpy(copy, (const void*)cheats::grab_filter_fn, FILTER_SIZE);
+        uintptr_t real_filter = cheats::grab_filter_fn;
+        cheats::grab_filter_fn = (uintptr_t)copy;
+        CHECK(cheats::install_grab_filter_hook() && copy[0] == 0xFF && copy[1] == 0x25);
+        auto filter = (cheats::GrabFilterFn)copy;
+        CHECK(!filter(0, (uintptr_t)target));
+        target_vt[0x6e0 / 8] = (uintptr_t)&fake_no;
+        state[0x10] = 0;
+        CHECK(filter(0, (uintptr_t)target) && !filter(0, 0));
+        cheats::grab_filter_fn = real_filter;
+    }
 
     CHECK(read_var("f_btz_zombie_grab_range") == 10);
     cheats::find_tweak("z_pounce")->factor = 5.5f;
@@ -653,9 +689,15 @@ int main(int argc, char** argv) {
     CHECK(fake_var_object == (uintptr_t)&cheats::var_vtable[1]);
     CHECK(cheats::side == cheats::SIDE_PENDING && read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22);
     cheats::side = cheats::SIDE_UNKNOWN;
-    CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 180);
+    CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 22);
+    cheats::find_tweak("h_dropkick_angle")->factor = 10.0f;
+    CHECK(read_var("f_btz_wrestling_kick_angle_max") == 180);
+    cheats::find_tweak("h_dropkick_angle")->factor = 1.0f;
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_zombie_grab_angle_max") == 7);
     CHECK(read_var("f_btz_other") == 7 && read_var("i_other") == 7);
+    cheats::find_tweak("h_dropkick_height")->factor = 10.0f;
+    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_pvp_grab_above_angle_threshold") == 90);
+    cheats::find_tweak("h_dropkick_height")->factor = 1.0f;
     CHECK(cheats::active_count() == 2);
     cheats::find_tweak("h_dfa")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 7);
