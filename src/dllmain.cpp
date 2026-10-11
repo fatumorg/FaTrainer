@@ -527,7 +527,7 @@ static void download_build(ReleaseInfo latest) {
         if (!ok) DeleteFileW(path.c_str()), MoveFileExW(old.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING), error = "could not write the new DLL";
     }
     if (ok) logf("update: build %s downloaded, it starts with the next game start", latest.version.c_str());
-    else logf("update: build %s could not be installed (%s), install it with the FaTrainer Installer", latest.version.c_str(), error.c_str());
+    else logf("update: build %s could not be installed (%s), press Play in FaTrainer to update", latest.version.c_str(), error.c_str());
     g_build = ok ? menu::NOTICE_BUILD_READY : menu::NOTICE_BUILD_FAILED;
 }
 
@@ -547,7 +547,7 @@ static void main_thread() {
             g_build = menu::NOTICE_BUILD_DOWNLOADING;
             std::thread(download_build, release).detach();
         } else if (!config::cfg.allow_older) {
-            logf("update: FaTrainer %s is out, this version stays off until you update with the installer", latest.c_str());
+            logf("update: FaTrainer %s is out, this version stays off until you press Play in FaTrainer", latest.c_str());
             Sleep(4000);
             hook_d3d();
             return;

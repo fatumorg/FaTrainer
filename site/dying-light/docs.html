@@ -36,7 +36,7 @@
         <li><a href="#configs">6. Configs</a></li>
         <li><a href="#visuals">7. Visuals and Prison</a></li>
         <li><a href="#items">8. Items</a></li>
-        <li><a href="#settings">9. Settings</a></li>
+        <li><a href="#settings">9. Settings and keybinds</a></li>
         <li><a href="#updates">10. Updates and versions</a></li>
         <li><a href="#trouble">11. When something goes wrong</a></li>
       </ol>
@@ -44,16 +44,16 @@
 
     <article>
       <h1>Docs</h1>
-      <p class="meta">For FaTrainer 2.2, Dying Light 1 on Windows and Linux.</p>
+      <p class="meta">For FaTrainer 2.3, Dying Light 1 on Windows and Linux.</p>
 
       <h2 id="start">1. Getting started</h2>
-      <p>FaTrainer is one file, <code>xinput1_3.dll</code>, next to <code>DyingLightGame.exe</code>. The FaTrainer Installer puts it there, updates it and removes it again; you never copy files by hand.</p>
+      <p>The trainer is one file, <code>xinput1_3.dll</code>, next to <code>DyingLightGame.exe</code>. FaTrainer, a small launcher, puts it there, keeps it up to date and starts the game with it; you never copy files by hand.</p>
       <ol>
-        <li>Download the installer from the <a href="./#install">install section</a> and run it. It finds the game in your Steam libraries, or you pick the folder yourself.</li>
-        <li>Press Install. On Linux, also add <code>WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code> to the game's launch options in Steam, and run the game through Proton.</li>
-        <li>Start the game and press <kbd>Insert</kbd> or <kbd>F8</kbd>.</li>
+        <li>Download FaTrainer from the <a href="./#install">install section</a> and open it. It finds the game in your Steam libraries, or you pick the folder yourself. Add shortcut puts it on your desktop and in the Start menu, or in your Linux app menu.</li>
+        <li>On Linux, add <code>WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code> to the game's launch options in Steam once, and run the game through Proton.</li>
+        <li>Press Play, then press <kbd>Insert</kbd> or <kbd>F8</kbd> in game.</li>
       </ol>
-      <p>Run the installer again to update, reinstall an older version or uninstall. Uninstall puts back any <code>xinput1_3.dll</code> that was there before.</p>
+      <p>The trainer only runs when the game was started with Play. Start Dying Light from Steam and you play the normal game: the file stays in the folder but does nothing. Remove from game deletes it and puts back any <code>xinput1_3.dll</code> that was there before; Play puts it back.</p>
 
       <h2 id="menu">2. The menu</h2>
       <p><kbd>Insert</kbd> opens and closes the menu, and <kbd>F8</kbd> always works too; you can pick another key in Settings. While the menu is open the game does not get your mouse and keyboard, so clicking a switch never swings your weapon.</p>
@@ -108,36 +108,36 @@
       <h2 id="items">8. Items</h2>
       <p>Cash sets your money. Backpack, Stash, Materials and Tools list what you carry and store; change any stack count. Press Edit next to a weapon to change its damage, durability, crits, reach, magazine, reload, upgrades and rarity. Give items finds any weapon, upgrade, consumable or blueprint by name and puts it into the inventory the game accepts it in.</p>
 
-      <h2 id="settings">9. Settings</h2>
+      <h2 id="settings">9. Settings and keybinds</h2>
       <dl>
-        <dt>Controls</dt><dd>The menu key, Remember cheats (turn your cheats back on at the next start) and, in the Fatum Version, Use older versions and Beta builds.</dd>
+        <dt>Controls</dt><dd>Remember cheats (turn your cheats back on at the next start) and, in the Fatum Version, Use older versions and Beta builds.</dd>
+        <dt>Keybinds</dt><dd>The menu key and one key per cheat, grouped by page. Press a cheat's key while the menu is closed to turn it on or off; a message at the bottom of the screen says which. A key belongs to one thing only, so picking a key takes it away from whatever had it. <kbd>F8</kbd> always opens the menu and cannot be bound.</dd>
         <dt>Appearance</dt><dd>Accent color, opacity, corner roundness, dimming, animations Full, Subtle or Off, the Harran skyline and glow.</dd>
         <dt>Sidebar</dt><dd>Which pages show up and in what order.</dd>
         <dt>Settings file</dt><dd>Everything is saved in <code>fatrainer.ini</code> next to the game. Reset to defaults starts over.</dd>
       </dl>
 
       <h2 id="updates">10. Updates and versions</h2>
-      <p>New features first come out as builds of the next version, like 2.2 b1, 2.2 b2 and 2.2 b3. The last build of a version is called just by the version, like 2.2. Every version is also named after its most important change: 2.2 is the Skill Tree Update, 2.3 the Keybind Update. The changelog names them all.</p>
+      <p>New features first come out as builds of the next version, like 2.3 b1, 2.3 b2 and 2.3 b3. The last build of a version is called just by the version, like 2.3. Every version is also named after its most important change: 2.2 is the Skill Tree Update, 2.3 the Launcher Update. The changelog names them all.</p>
       <ul>
         <li>A newer build of your version downloads itself when the game starts, is checked against its checksum and starts the next time you open the game. Until then your build keeps working.</li>
-        <li>When a newer version is out, the trainer stays off and asks you to run the installer again. The game itself keeps working.</li>
-        <li>Tick Use older versions in the installer, or in Settings, to keep playing with an older version. The notice still shows.</li>
-        <li>The installer lists every version and always installs its last build.</li>
-        <li>When a newer installer is out, the installer updates itself as soon as you open it.</li>
+        <li>Play always installs the newest version first. When a newer version comes out while you play, the trainer stays off at the next start until you press Play in FaTrainer again. The game itself keeps working.</li>
+        <li>Turn on Use older versions in Settings to keep playing with an older version. The notice still shows.</li>
+        <li>When a newer FaTrainer is out, it updates itself as soon as you open it.</li>
       </ul>
       <h3>Beta builds</h3>
-      <p>Beta builds are the version being worked on right now, open to everyone. They are never needed and may have bugs. Tick Beta builds in the installer, or turn it on in Settings, and the installer and the trainer also use the beta build whenever it is newer than the latest release. Turn it off to go back to the published releases only.</p>
-      <p>The Fatum Version only downloads files from GitHub and sends nothing else. When there is an announcement, such as a new version or a known problem, the installer shows it once when it opens. The Nexus Version from Nexus Mods is 1.9, the trainer file alone without multiplayer features, and it is not updated any more. It never connects to the internet and does not update itself.</p>
+      <p>Beta builds are the version being worked on right now, open to everyone. They are never needed and may have bugs. Tick Beta builds in FaTrainer, or turn it on in Settings, and Play and the trainer also use the beta build whenever it is newer than the latest release. Turn it off to go back to the published releases only.</p>
+      <p>The Fatum Version only downloads files from GitHub and sends nothing else. A trainer started from Steam connects to nothing. When there is an announcement, such as a new version or a known problem, FaTrainer shows it once when it opens. The Nexus Version from Nexus Mods is 1.9, the trainer file alone without multiplayer features, and it is not updated any more. It never connects to the internet and does not update itself.</p>
 
       <h2 id="trouble">11. When something goes wrong</h2>
       <h3>The menu does not open</h3>
-      <p>Check that the installer says FaTrainer is installed and that you pressed <kbd>Insert</kbd> or <kbd>F8</kbd> in the game, not on the desktop. On Linux, the launch option <code>WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code> must be set and the game must run through Proton.</p>
+      <p>Start the game with Play in FaTrainer, not from Steam, and press <kbd>Insert</kbd> or <kbd>F8</kbd> in the game, not on the desktop. If FaTrainer says the game did not load it, close the game and press Play again. On Linux, the launch option <code>WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code> must be set and the game must run through Proton.</p>
       <h3>A page says your character was not found</h3>
       <p>Load into your save, wait until the loading screen is gone and press Refresh.</p>
       <h3>The game closes or crashes</h3>
       <p>The trainer writes <code>fatrainer.log</code> next to <code>DyingLightGame.exe</code>. It records what the trainer did and, when the game crashes, where. Attach it when you <a href="https://github.com/ifatum/DyingLightFaTrainer/issues">report a problem</a> or ask in the <a href="../forum.html">forum</a>, together with Windows or Linux and your Proton version. Some antivirus programs stop games that load extra DLLs; try once with yours paused or with the game folder added as an exception.</p>
       <h3>Start from a clean slate</h3>
-      <p>Press Reset to defaults in Settings, or delete <code>fatrainer.ini</code> while the game is closed. To remove FaTrainer, press Uninstall in the installer.</p>
+      <p>Press Reset to defaults in Settings, or delete <code>fatrainer.ini</code> while the game is closed. To remove the trainer, press Remove from game in FaTrainer.</p>
       <h3>Before you change your saves</h3>
       <p>Items, levels, skills and ranks are saved like any other progress. Keep a copy of your save folder before you try something big, and switch cheats off when you play with people who did not agree to them.</p>
     </article>

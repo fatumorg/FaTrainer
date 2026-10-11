@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FaTrainer for Dying Light</title>
-<meta name="description" content="An in-game trainer for Dying Light 1 on Windows and Linux (Proton). An installer sets it up, Insert opens the menu.">
+<meta name="description" content="An in-game trainer for Dying Light 1 on Windows and Linux (Proton). The FaTrainer launcher starts the game with it, Insert opens the menu.">
 <meta name="theme-color" content="#111113">
 <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
 <link rel="preload" href="../assets/fonts/anybody-latin-standard-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -38,23 +38,23 @@
     </div>
     <div class="wrap">
       <ul class="kicker">
-        <li>Version 2.2</li>
+        <li>Version 2.3</li>
         <li>Dying Light 1</li>
         <li>Windows and Linux</li>
       </ul>
       <h1 class="title stretch" data-p="top">A menu that opens <em>inside</em> Harran</h1>
       <div class="hero-grid">
         <div>
-          <p class="lead">Run the installer, start the game and press <kbd>Insert</kbd>. God mode, items, a weapon editor, skill levels, Harran Prison timers and the reach of every Night Hunter attack, all in a menu over the game.</p>
+          <p class="lead">Open FaTrainer, press Play and press <kbd>Insert</kbd> in game. God mode, items, a weapon editor, skill levels, Harran Prison timers and the reach of every Night Hunter attack, all in a menu over the game.</p>
           <div class="actions">
-            <a class="button" href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer.exe">Download for Windows <span>2.2</span></a>
-            <a class="link-arrow" href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer-Linux.tar.gz">Linux</a>
+            <a class="button" href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer.exe">Download for Windows <span>2.3</span></a>
+            <a class="link-arrow" href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Linux.tar.gz">Linux</a>
             <a class="link-arrow" href="https://github.com/ifatum/DyingLightFaTrainer">Source code</a>
           </div>
         </div>
         <div class="hero-side">
           <dl>
-            <dt>Installer</dt><dd>Finds the game, installs, updates and removes the trainer, and keeps itself up to date</dd>
+            <dt>Launcher</dt><dd>Play starts the game with the trainer; started from Steam, the game runs without it</dd>
             <dt>Opens with</dt><dd><kbd>Insert</kbd> or <kbd>F8</kbd>, or a key you choose</dd>
             <dt>Game</dt><dd>Steam version, with The Following and Harran Prison</dd>
             <dt>License</dt><dd>Free and open source (MIT)</dd>
@@ -195,29 +195,29 @@
   <section class="section" id="install" aria-labelledby="install-title">
     <div class="wrap">
       <div class="head">
-        <h2 id="install-title" class="rise"><span class="line-mask"><span>One installer,</span></span><span class="line-mask" style="--i: 1"><span>one file in the game.</span></span></h2>
-        <p class="fade">The installer downloads the trainer from the GitHub release, checks it against the release checksum and puts <code>xinput1_3.dll</code> next to the game. You can pick an older version from the list, or tick Beta builds for the version being worked on. Run it again to update or remove it. It also reads a small version file from GitHub to see whether a newer installer is out, and offers to update itself.</p>
+        <h2 id="install-title" class="rise"><span class="line-mask"><span>One launcher,</span></span><span class="line-mask" style="--i: 1"><span>one Play button.</span></span></h2>
+        <p class="fade">FaTrainer is a small launcher. Press Play: it downloads the newest trainer from the GitHub release when yours is older, checks it against the release checksum, puts <code>xinput1_3.dll</code> next to the game and starts Dying Light through Steam with the trainer on. Start the game from Steam instead and you play the normal game; the file stays, but the trainer does nothing. Tick Beta builds for the version being worked on. FaTrainer also reads a small version file from GitHub and updates itself.</p>
       </div>
       <div class="steps">
         <div class="fade">
           <h3>Windows</h3>
           <ol>
-            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer.exe"><code>FaTrainer-Fatum-Version-Installer.exe</code></a> and open it.</p></li>
+            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer.exe"><code>FaTrainer.exe</code></a> and open it. Add shortcut puts FaTrainer on your desktop and in the Start menu.</p></li>
             <li><p>It finds Dying Light in your Steam libraries. If it does not, choose the folder with <code>DyingLightGame.exe</code>.</p></li>
-            <li><p>Press Install, start the game and press <kbd>Insert</kbd> or <kbd>F8</kbd>.</p></li>
+            <li><p>Press Play and press <kbd>Insert</kbd> or <kbd>F8</kbd> in game.</p></li>
           </ol>
         </div>
         <div class="fade" style="--i: 2">
           <h3>Linux with Proton</h3>
           <ol>
             <li><p>In Steam, open Dying Light's Properties, then Compatibility, and force a Proton version. The trainer works in the Windows version of the game, not the native Linux one.</p></li>
-            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Fatum-Version-Installer-Linux.tar.gz">the Linux installer</a>, unpack it and run <code>FaTrainer-Fatum-Version-Installer</code>. It needs <code>curl</code> or <code>wget</code>, which almost every distribution has. On NixOS, start it with <code>steam-run ./FaTrainer-Fatum-Version-Installer</code>.</p></li>
-            <li><p>Press Install. The installer finds the game in your Steam libraries, Flatpak and Snap included.</p></li>
+            <li><p>Download <a href="https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/FaTrainer-Linux.tar.gz">FaTrainer for Linux</a>, unpack it and run <code>FaTrainer</code>. It needs <code>curl</code> or <code>wget</code>, which almost every distribution has. On NixOS, start it with <code>steam-run ./FaTrainer</code>. Add shortcut puts it in your app menu.</p></li>
+            <li><p>It finds the game in your Steam libraries, Flatpak and Snap included.</p></li>
             <li>
               <p>In the game's Properties, paste this into Launch options:</p>
               <div class="code"><code id="launch">WINEDLLOVERRIDES="xinput1_3=n,b" %command%</code><button type="button" data-copy="launch">Copy</button></div>
             </li>
-            <li><p>Start the game and press <kbd>Insert</kbd> or <kbd>F8</kbd>.</p></li>
+            <li><p>Press Play in FaTrainer and press <kbd>Insert</kbd> or <kbd>F8</kbd> in game.</p></li>
           </ol>
         </div>
       </div>
@@ -233,7 +233,7 @@
         <div class="fade"><h3>Back up your saves</h3><p>Item, level and rank changes are saved like any other progress. Keep a copy of your save folder before you try something big.</p></div>
         <div class="fade"><h3>Other players</h3><p>In co-op and Be The Zombie the trainer changes your game, and through it theirs. Switch things off when you play with people who did not agree to it.</p></div>
         <div class="fade"><h3>Techland's rules</h3><p>Modifying the game online may break Dying Light's terms of use. What Techland does about an account is between you and Techland.</p></div>
-        <div class="fade"><h3>Updates</h3><p>When the game starts, the Fatum Version of the trainer downloads a small version file from GitHub. A newer build of your version, like 2.2 b2 after 2.2 b1 or the final 2.2 after 2.2 b3, downloads itself, is checked against its checksum and starts the next time you open the game. If a newer version is out, the trainer stays off and asks you to run the installer again, unless you ticked Use older versions in the installer; the game itself keeps working. Nothing else is sent, and without internet the trainer works as usual. The Nexus Version on Nexus Mods has no update check and never connects to the internet.</p></div>
+        <div class="fade"><h3>Updates</h3><p>When you start the game with Play, the Fatum Version of the trainer downloads a small version file from GitHub. Play already installs the newest version first; a newer build of your version, like 2.3 b2 after 2.3 b1, downloads itself, is checked against its checksum and starts the next time you open the game. If a newer version is out, the trainer stays off until you press Play in FaTrainer again, unless you turned on Use older versions in Settings; the game itself keeps working. Started from Steam, the trainer stays off and connects to nothing. Nothing else is sent, and without internet the trainer works as usual. The Nexus Version on Nexus Mods has no update check and never connects to the internet.</p></div>
         <div class="fade"><h3>If something breaks</h3><p>The trainer writes <code>fatrainer.log</code> next to the game. Attach it when you <a href="https://github.com/ifatum/DyingLightFaTrainer/issues">report a problem</a>.</p></div>
       </div>
     </div>
@@ -246,23 +246,15 @@
         <p class="fade">The full history is in <a href="https://github.com/ifatum/DyingLightFaTrainer/blob/main/CHANGELOG.md">the changelog</a>. How everything works is in the <a href="docs.html">docs</a>.</p>
       </div>
       <div class="release">
-        <div class="number stretch" data-p aria-label="Version 2.2, Skill Tree Update">2.2</div>
+        <div class="number stretch" data-p aria-label="Version 2.3, Launcher Update">2.3</div>
         <ul data-stagger>
-          <li class="fade"><b>Name</b><span>2.2 is the Skill Tree Update. Every version is now named after its most important change.</span></li>
-          <li class="fade"><b>New</b><span>A skill tree editor on the Skills page, laid out like the game's skill menu: click to learn or remove any skill, with the skills it needs, Night Hunter tree included.</span></li>
-          <li class="fade"><b>Fixed</b><span>Free skill points - and + did nothing. The tiles now show the free points the game shows, and change them.</span></li>
-          <li class="fade"><b>New</b><span>The menu opens bigger and remembers the size you drag it to.</span></li>
-          <li class="fade"><b>New</b><span>Beta builds: optional, in the installer and in Settings, for the version being worked on right now. The installer now always updates itself first.</span></li>
-          <li class="fade"><b>Fixed</b><span>With the Pounce slider on, the Night Hunter's melee, tackle and ground pound often did nothing. Pounce now only lengthens the range.</span></li>
-          <li class="fade"><b>Fixed</b><span>Survivor sliders changed the Night Hunter's attacks and the other way round. Each side's sliders now only work while you play that side.</span></li>
-          <li class="fade"><b>New</b><span>The log records more about crashes, and nothing is written into the game while it loads from the main menu.</span></li>
-          <li class="fade"><b>New</b><span>Skill tree tiles with a draggable XP bar, -10 to +10 levels and extra skill points without changing the level. Health and stamina bars can be dragged too.</span></li>
-          <li class="fade"><b>New</b><span>XP gain works in every skill tree, Night Hunter included, and the game's XP popup shows the boosted amount.</span></li>
-          <li class="fade"><b>New</b><span>Take less damage, less UV damage for the Night Hunter, one hit kill on the Night Hunter and a sure-hit ground pound.</span></li>
-          <li class="fade"><b>New</b><span>Configs: save your own next to the built-in ones, on the PvP page and in Settings.</span></li>
-          <li class="fade"><b>New</b><span>Build numbers: a newer build of your version updates itself. The installer lets you pick a version, and Use older versions keeps an older one working.</span></li>
-          <li class="fade"><b>Fixed</b><span>The Night Hunter presets made the tackle and melee miss, and an invading hunter's spits could hit you from anywhere.</span></li>
-          <li class="fade"><b>Fixed</b><span>Unbreakable weapons missed newly picked up weapons, and ranks showed a number instead of their name.</span></li>
+          <li class="fade"><b>Name</b><span>2.3 is the Launcher Update.</span></li>
+          <li class="fade"><b>New</b><span>The installer is now FaTrainer, a launcher: Play installs or updates the trainer and starts Dying Light with it. Started from Steam, the game runs without the trainer, so you can play with or without it.</span></li>
+          <li class="fade"><b>New</b><span>Keybinds page: give any cheat its own key and toggle it while the menu is closed. The menu key is set there too.</span></li>
+          <li class="fade"><b>New</b><span>A shortcut named FaTrainer on the desktop and in the Start menu, or in your Linux app menu.</span></li>
+          <li class="fade"><b>New</b><span>The menu is darker, in the warm near-black of this website.</span></li>
+          <li class="fade"><b>Fixed</b><span>After loading a save with a config on, weapons often hit nothing. Night Hunter and survivor sliders now wait until the trainer knows which side you play.</span></li>
+          <li class="fade"><b>2.2</b><span>Skill Tree Update: a skill tree editor laid out like the game's skill menu, free skill points, Beta builds and a bigger menu that remembers its size.</span></li>
           <li class="fade"><b>2.1</b><span>Redesign Update: Dodge spit, the Night Hunter glow color and a redesigned menu with appearance settings.</span></li>
         </ul>
       </div>

@@ -1836,8 +1836,8 @@ inline void setting_label(const char* text) {
 }
 
 inline const char* edition_story() {
-    return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. When the game starts it asks GitHub once which version is the newest. "
-           "If a newer one is out, the trainer turns itself off until you update with the FaTrainer Installer, unless Use older versions is on. "
+    return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. It runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
+           "If a newer one is out, the trainer turns itself off until you press Play in FaTrainer again, unless Use older versions is on. "
            "With Beta builds on it also asks for the beta build. Nothing else is sent anywhere.";
 }
 
@@ -2345,12 +2345,12 @@ inline void draw_update_notice(const std::string& latest, float alpha, int kind)
     ImGui::PushTextWrapPos(0);
     std::string mine = VERSION;
     std::string text =
-        kind == NOTICE_OLDER ? "You are playing with an older version (" + mine + ") because Use older versions is on. To update, close the game, open the FaTrainer Installer and press Update."
+        kind == NOTICE_OLDER ? "You are playing with an older version (" + mine + ") because Use older versions is on. To update, close the game, open FaTrainer and press Play."
         : kind == NOTICE_BUILD_DOWNLOADING ? "Downloading the new build. This build (" + mine + ") keeps working until then."
         : kind == NOTICE_BUILD_READY ? "The new build is downloaded and starts the next time you open the game. This build (" + mine + ") keeps working until then."
-        : kind == NOTICE_BUILD_FAILED ? "The new build could not be downloaded. This build (" + mine + ") keeps working; update it with the FaTrainer Installer when you can."
-        : "This version (" + mine + ") is turned off until you update. Close the game, open the FaTrainer Installer and press Update. "
-          "The game itself works as usual. To keep playing with this version, turn on Use older versions in the installer.";
+        : kind == NOTICE_BUILD_FAILED ? "The new build could not be downloaded. This build (" + mine + ") keeps working; FaTrainer updates it the next time you press Play."
+        : "This version (" + mine + ") is turned off until you update. Close the game, open FaTrainer and press Play; it updates the trainer first. "
+          "The game itself works as usual. To keep playing with this version, add the line allow_older=1 to fatrainer.ini next to the game.";
     ImGui::TextUnformatted(text.c_str());
     ImGui::PopTextWrapPos();
     if (kind == NOTICE_UPDATE) {
