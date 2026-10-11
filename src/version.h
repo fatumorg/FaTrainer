@@ -7,13 +7,8 @@
 
 #define FATRAINER_VERSION "2.2"
 #define INSTALLER_VERSION "1.3"
-#ifdef FATRAINER_OFFLINE
-#define FATRAINER_EDITION "Nexus Version"
-#define FATRAINER_EDITION_CAPS "NEXUS VERSION"
-#else
 #define FATRAINER_EDITION "Fatum Version"
 #define FATRAINER_EDITION_CAPS "FATUM VERSION"
-#endif
 inline const char VERSION_TAG[] = "FaTrainer-version:" FATRAINER_VERSION;
 inline const char* VERSION = VERSION_TAG + sizeof "FaTrainer-version:" - 1;
 inline const char* RELEASE_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/";

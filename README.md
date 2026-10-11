@@ -43,7 +43,7 @@ WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 
 The installer has its own version and updates itself as soon as it opens when a newer installer is out. Beta builds, off unless you tick them in the installer or in Settings, give you the version being worked on right now; they may have bugs. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again, unless you tick Use older versions in the installer. The installer also lets you pick an older version to install, and shows announcements once when it opens (`announcement.txt` in this repository, posted with `./announce.sh`). Versions can have build numbers, like 2.2 b1; a newer build of your version installs itself the next time you start the game, and the last build of a version is just the version, like 2.2. The game itself keeps working, and without internet the trainer works as usual.
 
-The **Nexus Version** on [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) is just `xinput1_3.dll`, built with `-DFATRAINER_OFFLINE`: no installer, no internet connection and no update check. It has no multiplayer features: the Night Hunter and PvP pages, the player ESP, spit keys, PvP ranks, the Night Hunter skill tree and glow color and the Be The Zombie configs are grayed out with a notice that the newest version is on fatrainer.fatum.cc and GitHub, and every cheat turns off while you play the Night Hunter. It is the last Nexus release.
+The **Nexus Version** on [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) is frozen at 1.9 and never updated: just `xinput1_3.dll`, with no installer, no internet connection and no update check, and with the multiplayer features (Night Hunter and PvP pages, player ESP, spit keys, PvP ranks, Night Hunter level) grayed out under a notice that the newest version is on fatrainer.fatum.cc and GitHub. Every cheat turns off while you play the Night Hunter. Its source is the `nexus-1.9` branch.
 
 Press **Insert** or **F8** in game to open the menu. While it is open the game ignores your mouse and keyboard. A dot in the sidebar marks pages with something turned on, and **Turn all off** resets every cheat and slider at once.
 
@@ -51,7 +51,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Building
 
-`./build.sh` builds the trainer (`--nexus` the Nexus Version in `dist/nexus/`), `./build_installer.sh` the installer, `./release.sh` the trainer release files and the Nexus Mods zip, and `./release_installer.sh` the installer release files (all through nix; `--publish` uploads them).
+`./build.sh` builds the trainer, `./build_installer.sh` the installer, `./release.sh` the trainer release files, and `./release_installer.sh` the installer release files (all through nix; `--publish` uploads them).
 
 ### Notes
 

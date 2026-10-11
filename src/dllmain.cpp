@@ -10,10 +10,8 @@
 #include <thread>
 #include "input.h"
 #include "menu.h"
-#ifndef FATRAINER_OFFLINE
 #include "net_win.h"
 #include "../installer/logic.h"
-#endif
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -306,8 +304,8 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             request_refresh();
         }
     }
-    if (cheats::MULTIPLAYER) poll_spit_keys();
-    bool esp = config::cfg.esp.on && cheats::MULTIPLAYER;
+    poll_spit_keys();
+    bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
     float shown = g_ready ? menu::presence(g_open) : 0;
@@ -470,10 +468,6 @@ static void watch_first_frame() {
 static std::string g_release_base = RELEASE_DOWNLOADS;
 
 static ReleaseInfo latest_release() {
-#ifdef FATRAINER_OFFLINE
-    logf("update: Nexus Version, no update check and no internet connection");
-    return {};
-#else
     std::string text, error;
     if (!net::get_text(std::string(RELEASE_DOWNLOADS) + "version.txt", text, error)) {
         logf("update: could not check for a new version (%s), the trainer stays on", error.c_str());
@@ -489,7 +483,6 @@ static ReleaseInfo latest_release() {
         if (beta.sha256.size() == 64 && newer_version(beta.version, latest.version)) latest = beta, g_release_base = BETA_DOWNLOADS;
     }
     return latest;
-#endif
 }
 
 static std::wstring own_path() {
@@ -501,7 +494,6 @@ static std::wstring own_path() {
 }
 
 static void download_build(ReleaseInfo latest) {
-#ifndef FATRAINER_OFFLINE
     const unsigned long long LIMIT = 64ull << 20;
     std::string data, error;
     bool ok = net::get(g_release_base + "xinput1_3.dll", [&](const char* d, size_t n, unsigned long long) {
@@ -520,7 +512,6 @@ static void download_build(ReleaseInfo latest) {
     if (ok) logf("update: build %s downloaded, it starts with the next game start", latest.version.c_str());
     else logf("update: build %s could not be installed (%s), install it with the FaTrainer Installer", latest.version.c_str(), error.c_str());
     g_build = ok ? menu::NOTICE_BUILD_READY : menu::NOTICE_BUILD_FAILED;
-#endif
 }
 
 static void main_thread() {
@@ -566,7 +557,7 @@ static void main_thread() {
         const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;
         DWORD last_players = 0;
         for (;;) {
-            bool players = cheats::MULTIPLAYER && (config::cfg.esp.on || cheats::is_on("one_hit_hunter")) && GetTickCount() - last_players >= PLAYER_RESCAN;
+            bool players = (config::cfg.esp.on || cheats::is_on("one_hit_hunter")) && GetTickCount() - last_players >= PLAYER_RESCAN;
             if (players) last_players = GetTickCount();
             cheats::scan_targets(cheats::is_on("one_hit"), players);
             Sleep(ENEMY_RESCAN);

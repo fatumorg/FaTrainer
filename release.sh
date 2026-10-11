@@ -18,14 +18,6 @@ else
 fi
 printf 'sha256 %s\nsize %s\n' "$(sha256sum xinput1_3.dll | cut -d' ' -f1)" "$(stat -c%s xinput1_3.dll)" >> "$OUT/version.txt"
 awk -v v="## $VER" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > "$OUT/notes.md"
-./build.sh --nexus
-NEXUS=$(mktemp -d)
-cp dist/nexus/xinput1_3.dll "$NEXUS/"
-[ -f nexus/readme.txt ] && cp nexus/readme.txt "$NEXUS/"
-rm -f "dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"
-ZIP="$(pwd)/dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"
-(cd "$NEXUS" && nix-shell -p zip --run "zip -qX -r '$ZIP' .")
-rm -rf "$NEXUS"
 if [ "${1:-}" = "--beta" ]; then
   nix-shell -p gh --run "
     gh release view beta >/dev/null 2>&1 || gh release create beta --title 'FaTrainer beta $VER' --notes-file $OUT/notes.md --prerelease --latest=false
@@ -35,4 +27,4 @@ fi
 if [ "${1:-}" = "--publish" ]; then
   nix-shell -p gh --run "gh release create v$SLUG $OUT/xinput1_3.dll $OUT/version.txt $OUT/CHANGELOG.md --title 'FaTrainer $VER' --notes-file $OUT/notes.md --latest"
 fi
-echo "release files: $OUT, Nexus Version zip: dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"
+echo "release files: $OUT"

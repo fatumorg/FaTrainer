@@ -40,15 +40,8 @@ struct Cheat {
     const char* hint;
     std::vector<std::pair<const char*, float>> numbers;
     std::vector<const char*> switches;
-    bool multiplayer = false;
     std::atomic<bool> on{false};
 };
-
-#ifdef FATRAINER_OFFLINE
-inline constexpr bool MULTIPLAYER = false;
-#else
-inline constexpr bool MULTIPLAYER = true;
-#endif
 
 inline const char* SPIT_REGEN[] = {"ZombieSpitControlTheHordeAmmoRegenTime", "ZombieSpitLightDisableAmmoRegenTime",
                                    "ZombieSpitDefensiveSmokeAmmoRegenTime"};
@@ -72,21 +65,21 @@ inline Cheat CHEATS[] = {
       {"FirearmsShotgunReloadTimeMul", 0.05f}, {"FirearmsHeavyReloadTimeMul", 0.05f}},
      {"FastRevolverReload"}},
     {"z_energy", "Infinite hunter energy", "Fitness and stamina never drain, UV light cannot exhaust you.", {},
-     {"InfiniteFitness", "InfiniteStamina"}, true},
+     {"InfiniteFitness", "InfiniteStamina"}},
     {"z_cooldowns", "No ability cooldowns", "Tendril, camouflage and ground pound are always ready.",
      {{"TDCooldown", 0}, {"CamouflageCooldown", 0}, {"ZombieGroundPoundCooldown", 0}, {"ChargeLightCooldown", 0}},
-     {}, true},
-    {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}, true},
+     {}},
+    {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
     {"z_pound_hits", "Sure-hit ground pound", "Hits every survivor in range, even when a step or uneven ground would make it miss.",
-     {}, {}, true},
+     {}, {}},
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
-     {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}, true},
+     {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
     {"dodge_spit", "Dodge spit",
      "Steps you aside from spit that would hit you, after a human reaction time.",
-     {}, {}, true},
+     {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health, so your next hit kills him. His own game decides his health in a real match.",
-     {}, {}, true},
+     {}, {}},
 };
 
 enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER };
@@ -136,10 +129,6 @@ inline Tweak TWEAKS[] = {
     {"h_melee", "Melee", "Reach of melee attacks, how far the game looks for a target and how far above or below your aim it still locks on.",
      G_HUMAN, {"RangeMeleeMul", "BestTargetMeleeRange", "MaxVerticalAngleForRangeMeleeCorrection"}},
 };
-
-inline bool multiplayer_only(const Tweak& t) { return t.group == G_ZOMBIE || t.group == G_HUMAN || t.group == G_HUNTER; }
-inline bool usable(const Cheat& c) { return MULTIPLAYER || !c.multiplayer; }
-inline bool usable(const Tweak& t) { return MULTIPLAYER || !multiplayer_only(t); }
 
 inline Tweak* find_tweak(const std::string& key) {
     for (auto& t : TWEAKS)
@@ -718,7 +707,7 @@ inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintpt
     float* v = original_var_vec3(self, out, name, scope, extra);
     auto& glow = config::cfg.hunter_glow;
     const char* s = name ? *(const char**)name : nullptr;
-    if (!v || !glow.on || !MULTIPLAYER || !s || !hunter_glow_var(s)) return v;
+    if (!v || !glow.on || !s || !hunter_glow_var(s)) return v;
     float c[3] = {v[0], v[1], v[2]};
     tint(c, glow.color, glow.glow);
     memcpy(out, c, sizeof c);
@@ -726,7 +715,7 @@ inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintpt
 }
 
 inline bool var_hook_needed() {
-    if (config::cfg.hunter_glow.on && MULTIPLAYER) return true;
+    if (config::cfg.hunter_glow.on) return true;
     for (auto& t : TWEAKS)
         if (!t.vars.empty() && t.factor != 1.0f) return true;
     return false;
@@ -764,9 +753,9 @@ inline config::Profile current_profile() {
 inline void apply_profile(const config::Profile& p) {
     all_off();
     for (auto& key : p.cheats)
-        if (auto* c = find(key); c && usable(*c)) c->on = true;
+        if (auto* c = find(key)) c->on = true;
     for (auto& [key, factor] : p.tweaks)
-        if (auto* t = find_tweak(key); t && usable(*t)) t->factor = std::clamp(factor, 1.0f, t->max);
+        if (auto* t = find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
 }
 
 inline bool profile_active(const config::Profile& p) {
@@ -1897,11 +1886,8 @@ inline int keep_rope_energy() {
     return live;
 }
 
-inline bool nexus_hunter_lock() { return !MULTIPLAYER && side == SIDE_HUNTER; }
-
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
-    if (nexus_hunter_lock() && active_count()) all_off(), logf_hook("nexus version: cheats turned off while you play the Night Hunter");
     bool prison_missing = !pause_prison() && is_on("prison_pause");
     bool uv_missing = is_on("uv") && !keep_uv_charge();
     float uv_slow = find_tweak("uv_slow")->factor;
