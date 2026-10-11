@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && (game::rdv<uint8_t>(cached("RopeEnergyRegenTime") + 0x20) & 1));
     CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
-    CHECK(game::rdv<float>(param("AirKickRangeMul")) == 3.0f && game::rdv<float>(cached("AirKickRangeMul") + 0x10) == 3.0f);
+    CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
     CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
@@ -241,14 +241,14 @@ int main(int argc, char** argv) {
     }
     CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 0.01f && game::rdv<uint8_t>(param("CanUseHook")) == 1);
     CHECK(game::rdv<uint8_t>(param("InfiniteStamina")) == 1 && game::rdv<float>(param("FlashlightRechargeSpeed")) == 1000);
-    CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) == 0.05f);
+    CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) != 0.05f);
     CHECK(fake_rules[0] == 1);
     for (auto& c : cheats::CHEATS) c.on = false;
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::tick();
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 1.0f && game::rdv<uint64_t>(cached("AirKickRangeMul")) != ~0ull);
     for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(my_provider, cheats::param_ids[n] + 1);
-    CHECK(game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
+    CHECK(game::rdv<uint64_t>(cached("AirKickRangeMul")) != ~0ull);
     CHECK(game::rdv<uint64_t>(cached("RopeEnergyRegenTime")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
     game::wr<uint64_t>(cached("CanUseHook"), 5);
     cheats::cache_get_hook(my_provider, cheats::param_ids["CanUseHook"] + 1);
@@ -278,15 +278,11 @@ int main(int argc, char** argv) {
     cheats::find_tweak("z_pounce")->factor = 5.5f;
     cheats::find_tweak("h_dropkick")->factor = 10.0f;
     cheats::tick();
-    CHECK(fake_var_object == (uintptr_t)&cheats::var_vtable[1]);
-    CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 180);
-    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -70 && read_var("f_btz_other") == 7 && read_var("i_other") == 7);
-    CHECK(cheats::active_count() == 2);
+    CHECK(fake_var_object != (uintptr_t)&cheats::var_vtable[1]);
+    CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 2);
     cheats::find_tweak("h_dfa")->factor = 10.0f;
-    CHECK(read_var("f_btz_jump_attack_range") == 12 && read_var("f_btz_jump_attack_angle_max") == 7);
     cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
-    CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
-    CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
+    CHECK(read_var("f_btz_jump_attack_range") == 7);
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
@@ -634,13 +630,7 @@ int main(int argc, char** argv) {
         w.put<float>(toxic + cheats::TOXIC_SPLASH_MIN, 1.0f), w.put<float>(toxic + cheats::TOXIC_SPLASH_MAX, 4.0f);
         cheats::find_tweak("z_spit")->factor = 3.0f;
         cheats::tick();
-        CHECK(game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(grenade + RANGE_OFF) == 5.0f);
-        CHECK(game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MIN) == 3.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 12.0f);
-        cheats::tick();
-        CHECK(game::rdv<float>(camo + RANGE_OFF) == 15.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 12.0f);
-        cheats::find_tweak("z_spit")->factor = 50.0f;
-        cheats::tick();
-        CHECK(game::rdv<float>(camo + RANGE_OFF) == 30.0f);
+        CHECK(game::rdv<float>(camo + RANGE_OFF) == 5.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MAX) == 4.0f);
         cheats::all_off();
         cheats::tick();
         CHECK(game::rdv<float>(camo + RANGE_OFF) == 5.0f && game::rdv<float>(toxic + cheats::TOXIC_SPLASH_MIN) == 1.0f &&
@@ -659,8 +649,8 @@ int main(int argc, char** argv) {
     CHECK(config::load_profile("selftest profile", back) && back.cheats == saved.cheats && back.tweaks.size() == 1 && back.tweaks[0].second == 7.5f);
     cheats::find("stamina")->on = true;
     cheats::apply_profile(back);
-    CHECK(cheats::is_on("god") && cheats::is_on("uv") && !cheats::is_on("stamina") && cheats::find_tweak("h_dfa")->factor == 7.5f);
-    CHECK(cheats::current_profile().cheats.size() == 2 && cheats::current_profile().tweaks.size() == 1);
+    CHECK(cheats::is_on("god") && cheats::is_on("uv") && !cheats::is_on("stamina") && cheats::find_tweak("h_dfa")->factor == 1.0f);
+    CHECK(cheats::current_profile().cheats.size() == 2 && cheats::current_profile().tweaks.empty());
     cheats::all_off();
     CHECK(config::delete_profile("selftest profile") && !config::load_profile("selftest profile", back));
     RemoveDirectoryA(config::profile_dir().c_str());

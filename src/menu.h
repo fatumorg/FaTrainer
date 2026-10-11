@@ -667,7 +667,19 @@ inline void spit_keys_card() {
     end_card();
 }
 
+inline bool multiplayer_locked(const char* id) {
+    begin_card(id, "NOT IN THE NEXUS VERSION");
+    note("Multiplayer features are cut from the Nexus Version, so they are grayed out, and every cheat turns off while you play the Night Hunter. "
+         "This is an older version. The newest FaTrainer, with every feature, is on fatrainer.fatum.cc and GitHub (github.com/ifatum/DyingLightFaTrainer).");
+    end_card();
+    ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 0.3f);
+    ImGui::BeginDisabled();
+    ImGui::PopStyleVar();
+    return true;
+}
+
 inline void zombie_page() {
+    multiplayer_locked("nexus_zombie");
     begin_card("about");
     note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match.");
     end_card();
@@ -682,6 +694,7 @@ inline void zombie_page() {
     end_card();
     spit_keys_card();
     note("Attack ranges and aim angles are on the PvP page.");
+    ImGui::EndDisabled();
 }
 
 inline const char* SURVIVOR_RANKS[] = {"Prey", "Casualty", "Endangered", "Underdog", "Runner", "Contender",
@@ -716,6 +729,7 @@ inline void rank_row(const char* label, bool zombie, const char* const* names) {
 
 inline void ranks_card() {
     if (cheats::pvp_rank(false) < 0 && cheats::pvp_rank(true) < 0) return;
+    multiplayer_locked("nexus_ranks");
     begin_card("ranks", "BE THE ZOMBIE RANKS");
     note("Your PvP rank as a survivor and as the Night Hunter. The game may adjust it again after your next Be The Zombie match.");
     ImGui::Dummy({0, S(4)});
@@ -728,6 +742,7 @@ inline void ranks_card() {
         ImGui::EndTable();
     }
     end_card();
+    ImGui::EndDisabled();
 }
 
 inline void skills_page() {
@@ -786,6 +801,7 @@ inline void skills_page() {
 }
 
 inline void pvp_page() {
+    multiplayer_locked("nexus_pvp");
     begin_card("about");
     note("Slide right to reach further. At Max the pounce, dropkick and death from above also hit targets that are not in front of you. Each player's game decides its own attacks.");
     end_card();
@@ -795,6 +811,7 @@ inline void pvp_page() {
     begin_card("human", "AS A SURVIVOR");
     tweak_sliders(cheats::G_HUMAN);
     end_card();
+    ImGui::EndDisabled();
 }
 
 inline ImU32 rgb(const float c[3], float alpha = 1.0f) { return IM_COL32((int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), (int)(alpha * 255)); }
@@ -864,6 +881,7 @@ inline void draw_esp() {
 inline void visuals_page() {
     auto& e = config::cfg.esp;
     bool changed = false;
+    multiplayer_locked("nexus_esp");
     begin_card("esp", "PLAYER ESP");
     changed |= switch_row("Show players", "Draws every other player in your game through walls: survivors and the Night Hunter.", e.on);
     ImGui::SetNextItemWidth(-1);
@@ -891,6 +909,7 @@ inline void visuals_page() {
     changed |= ImGui::ColorEdit3("##survivor", e.survivor, ImGuiColorEditFlags_NoInputs);
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
+    ImGui::EndDisabled();
 
     auto& u = config::cfg.uv;
     begin_card("uv", "UV LIGHT");

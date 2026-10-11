@@ -223,8 +223,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             request_refresh();
         }
     }
-    poll_spit_keys();
-    bool esp = config::cfg.esp.on;
+    bool esp = false;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && (g_open || esp)) {
         ImGuiIO& io = ImGui::GetIO();
@@ -386,7 +385,7 @@ static void main_thread() {
         const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;
         DWORD last_players = 0;
         for (;;) {
-            bool players = config::cfg.esp.on && GetTickCount() - last_players >= PLAYER_RESCAN;
+            bool players = false;
             if (players) last_players = GetTickCount();
             cheats::scan_targets(cheats::is_on("one_hit"), players);
             Sleep(ENEMY_RESCAN);

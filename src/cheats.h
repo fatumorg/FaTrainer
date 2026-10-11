@@ -534,12 +534,15 @@ inline void apply_spit_radius(float factor) {
     }
 }
 
+inline bool usable(const Cheat& c) { return strncmp(c.key, "z_", 2) != 0; }
+inline bool usable(const Tweak& t) { return t.group != G_ZOMBIE && t.group != G_HUMAN; }
+
 inline void apply_overrides() {
     auto containers = param_containers();
     if (containers != saved_containers) saved_bytes.clear(), saved_containers = containers;
     std::map<std::string, std::pair<float, bool>> want;
     for (auto& c : CHEATS) {
-        if (!c.on) continue;
+        if (!c.on || !usable(c)) continue;
         for (auto& [name, v] : c.numbers) want[name] = {v, false};
         for (const char* name : c.switches) want[name] = {1, true};
         if (!strcmp(c.key, "z_spits"))
@@ -548,7 +551,7 @@ inline void apply_overrides() {
     }
     for (auto& t : TWEAKS) {
         float factor = t.factor;
-        if (factor == 1.0f || containers.empty()) continue;
+        if (factor == 1.0f || containers.empty() || !usable(t)) continue;
         for (const char* name : t.params) {
             float base = original_float(param_value(containers[0], name));
             if (std::isnan(base)) continue;
@@ -582,7 +585,7 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     float best = v;
     for (auto& t : TWEAKS)
         for (auto& var : t.vars)
-            if (!strcmp(s, var.name) && t.factor != 1.0f) {
+            if (!strcmp(s, var.name) && t.factor != 1.0f && usable(t)) {
                 float strength = std::clamp((t.factor - 1.0f) / (t.max - 1.0f), 0.0f, 1.0f);
                 float moved = v + (var.at_max - v) * strength;
                 if (std::fabs(moved) > std::fabs(best)) best = moved;
@@ -592,7 +595,7 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
 
 inline bool var_hook_needed() {
     for (auto& t : TWEAKS)
-        if (!t.vars.empty() && t.factor != 1.0f) return true;
+        if (!t.vars.empty() && t.factor != 1.0f && usable(t)) return true;
     return false;
 }
 
@@ -626,9 +629,9 @@ inline config::Profile current_profile() {
 inline void apply_profile(const config::Profile& p) {
     all_off();
     for (auto& key : p.cheats)
-        if (auto* c = find(key)) c->on = true;
+        if (auto* c = find(key); c && usable(*c)) c->on = true;
     for (auto& [key, factor] : p.tweaks)
-        if (auto* t = find_tweak(key)) t->factor = std::clamp(factor, 1.0f, t->max);
+        if (auto* t = find_tweak(key); t && usable(*t)) t->factor = std::clamp(factor, 1.0f, t->max);
 }
 
 inline int active_count() {
@@ -1287,7 +1290,6 @@ inline void tick() {
     bool rope_missing = is_on("hook") && !keep_rope_energy();
     patch_lockpick(is_on("lockpick"));
     block_forced_damage(is_on("god"));
-    apply_spit_radius(std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max));
     route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     game::reapply_stats();
@@ -1295,6 +1297,8 @@ inline void tick() {
     keep_durability(is_on("durability"));
     if (is_on("one_hit")) weaken_enemies();
     player = find_player();
+    uintptr_t lp = alive(player) ? logical_player(player) : 0;
+    if (lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER && active_count()) all_off(), logf_hook("nexus version: cheats turned off while you play the Night Hunter");
     uintptr_t provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
     uintptr_t before = player_provider.exchange(provider);
     if (provider && before && provider != before) {
@@ -1307,7 +1311,7 @@ inline void tick() {
     apply_overrides();
     if (!player) return;
     set_immortal(is_on("god"));
-    if (is_on("stamina") || is_on("z_energy")) keep_stamina();
+    if (is_on("stamina")) keep_stamina();
     else best_stamina[0] = best_stamina[1] = 0;
 }
 
