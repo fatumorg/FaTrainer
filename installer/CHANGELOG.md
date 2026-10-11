@@ -1,4 +1,11 @@
-# FaTrainer Installer changelog
+# FaTrainer launcher changelog
+
+## 2.0
+
+- The installer is now the FaTrainer launcher. Press Play: it installs or updates the trainer and starts Dying Light with it.
+- Starting Dying Light from Steam plays the normal game without the trainer, so you can play with or without it.
+- New: shortcut card on Windows (desktop and Start menu) and Linux, named FaTrainer.
+- The version list and Use older versions are gone; Play always uses the newest version, or the beta with Beta builds.
 
 ## 1.5
 

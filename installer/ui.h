@@ -524,30 +524,35 @@ inline float window_controls(float width) {
     return left;
 }
 
-#ifndef _WIN32
 inline void shortcut_card(float width) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 a = ImGui::GetCursorScreenPos(), b{a.x + width, a.y + S(108)};
     dl->AddRectFilled(a, b, C(RAISED), S(12));
-    label_caps(dl, {a.x + S(20), a.y + S(18)}, "APP MENU SHORTCUT", MUTED);
+    label_caps(dl, {a.x + S(20), a.y + S(18)}, "SHORTCUT", MUTED);
     static std::string note;
     static bool bad = false;
     std::error_code ec;
     bool exists = fs::exists(platform::shortcut_file(), ec);
-    if (note.empty()) note = exists ? "FaTrainer Installer is in your app menu. Press again after you move this file." : "Adds FaTrainer Installer to your app menu, so you can search for it.";
+    if (note.empty())
+        note = platform::LINUX ? exists ? "FaTrainer is in your app menu. Press again after you move this file." : "Adds FaTrainer to your app menu, so you can search for it."
+                               : exists ? "FaTrainer is on your desktop and in the Start menu. Press again after you move this file." : "Adds FaTrainer to your desktop and the Start menu.";
     ImGui::PushClipRect(a, {b.x - S(190), b.y}, true);
     dl->AddText(F.small, F.small->FontSize, {a.x + S(20), a.y + S(42)}, C(bad ? BAD : SOFT), note.c_str());
     ImGui::PopClipRect();
     ImGui::SetCursorScreenPos({b.x - S(178), a.y + S(32)});
     if (button("shortcut", exists ? "Update shortcut" : "Add shortcut", {S(158), S(44)}, Kind::ghost)) {
         std::string error;
-        bad = !platform::add_shortcut(std::string((const char*)icon_png, (size_t)(icon_png_end - icon_png)), error);
-        note = bad ? "Could not add the shortcut: " + error + "." : "Added. Search for FaTrainer in your app menu.";
+#ifdef _WIN32
+        std::string icon;
+#else
+        std::string icon((const char*)icon_png, (size_t)(icon_png_end - icon_png));
+#endif
+        bad = !platform::add_shortcut(icon, error);
+        note = bad ? "Could not add the shortcut: " + error + "." : "Added. Start FaTrainer from it to play with the trainer.";
     }
     ImGui::SetCursorScreenPos({a.x, b.y});
     ImGui::Dummy({width, 0});
 }
-#endif
 
 inline void game_list(ImVec2 a, float width, const std::string& state) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -785,7 +790,7 @@ inline void detail(float width) {
         else if (view.fetch == Fetch::loading) text = "Checking for updates";
         else if (!found) text = "Choose the game folder first";
         else if (!playable) text = "Cannot reach GitHub";
-        else text = install ? "Update to " + view.latest.version + " and play" : "Play", enabled = true;
+        else text = !install ? "Play" : (view.installed.empty() ? "Install " : "Update to ") + view.latest.version + " and play", enabled = true;
         ImVec2 at = ImGui::GetCursorScreenPos();
         float shown_progress = progress >= 0 ? follow(anim("progress"), progress, 10) : (anim("progress") = 0);
         if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))
@@ -829,10 +834,12 @@ inline void detail(float width) {
         }
         ImGui::SetCursorScreenPos({a.x, b.y});
         ImGui::Dummy({width, 0});
-#ifndef _WIN32
         ImGui::Dummy({0, S(2)});
         shortcut_card(width);
-#endif
+    } else {
+        ImGui::Dummy({0, S(10)});
+        Reveal r(5);
+        shortcut_card(width);
     }
     ImGui::Dummy({0, S(24)});
 }
@@ -937,7 +944,7 @@ inline void frame() {
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(size);
-    ImGui::Begin("FaTrainer Installer", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+    ImGui::Begin("FaTrainer", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBackground);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float MARGIN = S(36), BAR = S(84);
@@ -959,7 +966,7 @@ inline void frame() {
     if (shown > 0) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
         float brand_w = text_w(F.brand, WORD);
-        const char* SUBTITLE = "Installer " INSTALLER_VERSION "  \xc2\xb7  " FATRAINER_EDITION;
+        const char* SUBTITLE = "Launcher " INSTALLER_VERSION "  \xc2\xb7  " FATRAINER_EDITION;
         dl->AddText(F.small, F.small->FontSize, {MARGIN + brand_w + S(12), S(28) + F.brand->FontSize - F.small->FontSize - S(2)}, C(MUTED), SUBTITLE);
         tabs({MARGIN + brand_w + S(12) + text_w(F.small, SUBTITLE) + S(44), S(32)});
         status_pill({std::min(size.x - MARGIN, controls_left - S(16)), S(24)});

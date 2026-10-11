@@ -9,7 +9,7 @@
 #include "backends/imgui_impl_opengl3_loader.h"
 #include "ui.h"
 
-static const char* program = "FaTrainer-Installer";
+static const char* program = "FaTrainer";
 
 extern "C" void* glfwGetX11Display(void);
 extern "C" unsigned long glfwGetX11Window(GLFWwindow* window);
@@ -75,13 +75,13 @@ int main(int, char** argv) {
     program = argv[0];
     glfwSetErrorCallback([](int code, const char* text) { fprintf(stderr, "glfw %d: %s\n", code, text); });
     if (!glfwInit()) {
-        fprintf(stderr, "FaTrainer Installer needs a desktop session with X11 or XWayland.\n");
+        fprintf(stderr, "FaTrainer needs a desktop session with X11 or XWayland.\n");
         nixos_hint();
         return 1;
     }
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
-    glfwWindowHintString(GLFW_X11_CLASS_NAME, "fatrainer-installer");
-    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "fatrainer-installer");
+    glfwWindowHintString(GLFW_X11_CLASS_NAME, "fatrainer");
+    glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "fatrainer");
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     struct Context { int major, minor; const char* glsl; };
     const Context contexts[] = {{3, 0, "#version 130"}, {2, 1, "#version 120"}};
@@ -90,13 +90,13 @@ int main(int, char** argv) {
     for (const Context& c : contexts) {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, c.major);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, c.minor);
-        if ((window = glfwCreateWindow(1120, 740, "FaTrainer Installer (" FATRAINER_EDITION ")", nullptr, nullptr))) {
+        if ((window = glfwCreateWindow(1120, 740, "FaTrainer (" FATRAINER_EDITION ")", nullptr, nullptr))) {
             glsl = c.glsl;
             break;
         }
     }
     if (!window) {
-        fprintf(stderr, "FaTrainer Installer could not open an OpenGL window.\n");
+        fprintf(stderr, "FaTrainer could not open an OpenGL window.\n");
         nixos_hint();
         glfwTerminate();
         return 1;

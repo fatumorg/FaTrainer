@@ -8,10 +8,10 @@ RC=$(mktemp -d)
 trap 'rm -rf "$RC"' EXIT
 version_header() {
   mkdir -p "$RC/$1"
-  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_STRING "%s"\n#define VER_FILETYPE VFT_APP\n#define VER_DESCRIPTION "FaTrainer Installer (%s)"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s.exe"\n' \
+  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_STRING "%s"\n#define VER_FILETYPE VFT_APP\n#define VER_DESCRIPTION "FaTrainer launcher (%s)"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s.exe"\n' \
     "${VER%%.*}" "${VER#*.}" "$VER" "$2" "$3" "$3" > "$RC/$1/version_values.h"
 }
-version_header fatum "Fatum Version" FaTrainer-Fatum-Version-Installer
+version_header fatum "Fatum Version" FaTrainer
 export RC
 IMGUI="$IM/imgui.cpp $IM/imgui_draw.cpp $IM/imgui_tables.cpp $IM/imgui_widgets.cpp"
 
@@ -24,7 +24,7 @@ nix-shell -p pkgsCross.mingwW64.buildPackages.gcc --run "
       -I$IM -Isrc -Iinstaller -DIMGUI_IMPL_WIN32_DISABLE_GAMEPAD -DIMGUI_DISABLE_DEMO_WINDOWS -DIMGUI_DISABLE_DEBUG_TOOLS -D_WIN32_WINNT=0x0A00 \
       -static -static-libgcc -static-libstdc++ -ld3d11 -ldxgi -ld3dcompiler -ldwmapi -lgdi32 -limm32 -lole32 -luuid -lshell32 -s \$3
   }
-  windows_installer dist/FaTrainer-Fatum-Version-Installer.exe '' -lwinhttp \$RC/fatum.res
+  windows_installer dist/FaTrainer.exe '' -lwinhttp \$RC/fatum.res
 "
 
 nix-shell -p zig libx11.dev libxrandr.dev libxinerama.dev libxcursor.dev libxi.dev libxext.dev libxrender.dev libxfixes.dev xorgproto --run "
@@ -42,6 +42,6 @@ nix-shell -p zig libx11.dev libxrandr.dev libxinerama.dev libxcursor.dev libxi.d
       $IM/backends/imgui_impl_glfw.cpp $IM/backends/imgui_impl_opengl3.cpp \$OBJ/*.o \
       -I$IM -Isrc -Iinstaller -I$GLFW/include -DGLFW_INCLUDE_NONE -DIMGUI_DISABLE_DEMO_WINDOWS -DIMGUI_DISABLE_DEBUG_TOOLS -ldl -lpthread -lm -s
   }
-  linux_installer dist/FaTrainer-Fatum-Version-Installer ''
+  linux_installer dist/FaTrainer ''
 "
-echo "built: dist/FaTrainer-Fatum-Version-Installer[.exe]"
+echo "built: dist/FaTrainer[.exe]"

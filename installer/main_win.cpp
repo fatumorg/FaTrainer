@@ -108,7 +108,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     wc.hInstance = instance;
     wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.lpszClassName = L"FaTrainerInstaller";
+    wc.lpszClassName = L"FaTrainer";
     RegisterClassExW(&wc);
     platform::remove_old_self();
     POINT cursor{0, 0};
@@ -122,7 +122,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     float scale = dpi / 96.0f;
     int width = (int)(1120 * scale), height = (int)(740 * scale);
     RECT area = info.rcWork;
-    HWND window = CreateWindowExW(0, wc.lpszClassName, L"FaTrainer Installer (" FATRAINER_EDITION ")", WS_OVERLAPPEDWINDOW, area.left + (area.right - area.left - width) / 2,
+    HWND window = CreateWindowExW(0, wc.lpszClassName, L"FaTrainer (" FATRAINER_EDITION ")", WS_OVERLAPPEDWINDOW, area.left + (area.right - area.left - width) / 2,
                                   area.top + (area.bottom - area.top - height) / 2, width, height, nullptr, nullptr, instance, nullptr);
     BOOL dark = TRUE;
     const DWORD IMMERSIVE_DARK_MODE = 20;
@@ -131,7 +131,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     DwmExtendFrameIntoClientArea(window, &shadow);
     SetWindowPos(window, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     if (!create_device(window)) {
-        MessageBoxW(window, L"FaTrainer Installer could not start Direct3D 11 on this PC.", L"FaTrainer Installer", MB_ICONERROR);
+        MessageBoxW(window, L"FaTrainer could not start Direct3D 11 on this PC.", L"FaTrainer", MB_ICONERROR);
         return 1;
     }
     platform::window = window;

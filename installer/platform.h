@@ -11,6 +11,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shobjidl.h>
+#include <shlobj.h>
 #include "net_win.h"
 #else
 #include <fcntl.h>
@@ -48,7 +49,7 @@ inline fs::path config_dir() {
     return data ? fs::path(data) / "FaTrainer" : fs::path();
 }
 
-const char* INSTALLER_ASSET = "FaTrainer-Fatum-Version-Installer.exe";
+const char* INSTALLER_ASSET = "FaTrainer.exe";
 const char* INSTALLER_INFO = "installer-windows.txt";
 
 inline fs::path self_path() {
@@ -67,12 +68,12 @@ inline bool replace_self(const std::string& data, std::string& error) {
     std::error_code ec;
     fs::path self = self_path(), fresh = self.wstring() + L".new";
     std::ofstream(fresh, std::ios::binary | std::ios::trunc).write(data.data(), (std::streamsize)data.size());
-    if (fs::file_size(fresh, ec) != data.size()) return fs::remove(fresh, ec), error = "could not write next to the installer", false;
+    if (fs::file_size(fresh, ec) != data.size()) return fs::remove(fresh, ec), error = "could not write next to FaTrainer", false;
     fs::remove(old_self(), ec);
     fs::rename(self, old_self(), ec);
-    if (ec) return fs::remove(fresh, ec), error = "could not move the running installer aside", false;
+    if (ec) return fs::remove(fresh, ec), error = "could not move the running FaTrainer aside", false;
     fs::rename(fresh, self, ec);
-    if (ec) return fs::rename(old_self(), self, ec), error = "could not put the new installer in place", false;
+    if (ec) return fs::rename(old_self(), self, ec), error = "could not put the new FaTrainer in place", false;
     return true;
 }
 
@@ -130,6 +131,42 @@ inline void pick_folder(const std::function<void(std::string)>& done) {
     done(picked);
 }
 
+inline std::vector<fs::path> shortcut_files() {
+    std::vector<fs::path> out;
+    for (REFKNOWNFOLDERID id : {FOLDERID_Desktop, FOLDERID_Programs}) {
+        PWSTR dir = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &dir))) out.push_back(fs::path(dir) / L"FaTrainer.lnk");
+        CoTaskMemFree(dir);
+    }
+    return out;
+}
+
+inline fs::path shortcut_file() {
+    std::vector<fs::path> files = shortcut_files();
+    return files.empty() ? fs::path() : files[0];
+}
+
+inline bool add_shortcut(const std::string&, std::string& error) {
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    fs::path exe = self_path();
+    for (const fs::path& file : shortcut_files()) {
+        IShellLinkW* link = nullptr;
+        IPersistFile* persist = nullptr;
+        bool ok = SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link)));
+        if (ok) {
+            link->SetPath(exe.c_str());
+            link->SetWorkingDirectory(exe.parent_path().c_str());
+            link->SetDescription(L"Play Dying Light with FaTrainer");
+            link->SetIconLocation(exe.c_str(), 0);
+            ok = SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&persist))) && SUCCEEDED(persist->Save(file.c_str(), TRUE));
+        }
+        if (persist) persist->Release();
+        if (link) link->Release();
+        if (!ok) return error = "could not write " + file.u8string(), false;
+    }
+    return true;
+}
+
 #else
 const bool LINUX = true, CUSTOM_CAPTION = false;
 enum WindowCommand { MINIMIZE, MAXIMIZE, CLOSE };
@@ -180,7 +217,7 @@ inline fs::path xdg(const char* variable, const char* fallback) {
 
 inline fs::path config_dir() { return xdg("XDG_CONFIG_HOME", ".config") / "fatrainer"; }
 
-const char* INSTALLER_ASSET = "FaTrainer-Fatum-Version-Installer";
+const char* INSTALLER_ASSET = "FaTrainer";
 const char* INSTALLER_INFO = "installer-linux.txt";
 
 inline fs::path self_path() {
@@ -196,12 +233,12 @@ inline void remove_old_self() {}
 inline bool replace_self(const std::string& data, std::string& error) {
     std::error_code ec;
     fs::path self = self_path(), fresh = self.string() + ".new";
-    if (self.empty()) return error = "could not find where the installer is", false;
+    if (self.empty()) return error = "could not find where FaTrainer is", false;
     std::ofstream(fresh, std::ios::binary | std::ios::trunc).write(data.data(), (std::streamsize)data.size());
-    if (fs::file_size(fresh, ec) != data.size()) return fs::remove(fresh, ec), error = "could not write next to the installer", false;
+    if (fs::file_size(fresh, ec) != data.size()) return fs::remove(fresh, ec), error = "could not write next to FaTrainer", false;
     fs::permissions(fresh, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec | fs::perms::others_read | fs::perms::others_exec, ec);
     fs::rename(fresh, self, ec);
-    if (ec) return fs::remove(fresh, ec), error = "could not replace the installer file", false;
+    if (ec) return fs::remove(fresh, ec), error = "could not replace the FaTrainer file", false;
     return true;
 }
 
@@ -209,8 +246,10 @@ inline void restart_self() {
     std::string path = self_path().string();
     execl(path.c_str(), path.c_str(), (char*)nullptr);
 }
-inline fs::path shortcut_file() { return xdg("XDG_DATA_HOME", ".local/share") / "applications" / "fatrainer-installer.desktop"; }
-inline fs::path shortcut_icon() { return xdg("XDG_DATA_HOME", ".local/share") / "icons" / "hicolor" / "256x256" / "apps" / "fatrainer-installer.png"; }
+inline fs::path applications_dir() { return xdg("XDG_DATA_HOME", ".local/share") / "applications"; }
+inline fs::path icons_dir() { return xdg("XDG_DATA_HOME", ".local/share") / "icons" / "hicolor" / "256x256" / "apps"; }
+inline fs::path shortcut_file() { return applications_dir() / "fatrainer.desktop"; }
+inline fs::path shortcut_icon() { return icons_dir() / "fatrainer.png"; }
 
 inline bool on_nixos() {
     std::ifstream release("/etc/os-release");
@@ -230,16 +269,18 @@ inline std::string desktop_quoted(const std::string& path) {
 inline bool add_shortcut(const std::string& icon_png, std::string& error) {
     std::error_code ec;
     fs::path exe = self_path();
-    if (exe.empty()) return error = "could not find where the installer is", false;
-    fs::create_directories(shortcut_file().parent_path(), ec);
-    fs::create_directories(shortcut_icon().parent_path(), ec);
+    if (exe.empty()) return error = "could not find where FaTrainer is", false;
+    fs::create_directories(applications_dir(), ec);
+    fs::create_directories(icons_dir(), ec);
+    fs::remove(applications_dir() / "fatrainer-installer.desktop", ec);
+    fs::remove(icons_dir() / "fatrainer-installer.png", ec);
     std::ofstream(shortcut_icon(), std::ios::binary | std::ios::trunc).write(icon_png.data(), (std::streamsize)icon_png.size());
     std::ofstream desktop(shortcut_file(), std::ios::trunc);
-    desktop << "[Desktop Entry]\nType=Application\nName=FaTrainer Installer\nGenericName=Game trainer installer\n"
-            << "Comment=Install, update or remove FaTrainer | Dying Light\n"
+    desktop << "[Desktop Entry]\nType=Application\nName=FaTrainer\nGenericName=Dying Light trainer\n"
+            << "Comment=Play Dying Light with FaTrainer | Dying Light\n"
             << "Exec=" << (on_nixos() ? "steam-run " : "") << desktop_quoted(exe.string()) << "\n"
-            << "Path=" << exe.parent_path().string() << "\nIcon=fatrainer-installer\nTerminal=false\nCategories=Game;\n"
-            << "Keywords=Dying Light;trainer;FaTrainer;cheats;\nStartupWMClass=fatrainer-installer\n";
+            << "Path=" << exe.parent_path().string() << "\nIcon=fatrainer\nTerminal=false\nCategories=Game;\n"
+            << "Keywords=Dying Light;trainer;FaTrainer;cheats;\nStartupWMClass=fatrainer\n";
     if (!desktop) return error = "could not write " + shortcut_file().string(), false;
     return true;
 }

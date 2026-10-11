@@ -7,7 +7,7 @@
 
 #define FATRAINER_VERSION "2.3"
 #define FATRAINER_NAME "Launcher Update"
-#define INSTALLER_VERSION "1.5"
+#define INSTALLER_VERSION "2.0"
 #define FATRAINER_EDITION "Fatum Version"
 #define FATRAINER_EDITION_CAPS "FATUM VERSION"
 inline const char VERSION_TAG[] = "FaTrainer-version:" FATRAINER_VERSION;
