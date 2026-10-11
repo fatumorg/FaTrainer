@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3 b1
+
+- The menu is darker, in the same warm near-black as the FaTrainer website and installer.
+
 ## 2.2
 
 - 2.2 is the last build of 2.2: it comes after 2.2 b1, b2 and b3, and those builds update to it by themselves.

@@ -33,8 +33,8 @@ inline void apply_style() {
     T.accent = IM_COL32((int)(a[0] * 255), (int)(a[1] * 255), (int)(a[2] * 255), 255);
     float luminance = 0.299f * a[0] + 0.587f * a[1] + 0.114f * a[2];
     T.accent_ink = luminance > 0.52f ? brand::ACCENT_INK : IM_COL32(250, 246, 240, 255);
-    T.ground = brand::GROUND, T.side = IM_COL32(20, 20, 23, 255), T.raised = brand::RAISED, T.raised_hi = IM_COL32(33, 33, 37, 255);
-    T.frame = IM_COL32(30, 30, 34, 255), T.line = brand::LINE, T.line_soft = brand::LINE_SOFT;
+    T.ground = IM_COL32(12, 11, 10, 255), T.side = IM_COL32(15, 14, 13, 255), T.raised = IM_COL32(20, 19, 17, 255), T.raised_hi = IM_COL32(29, 27, 25, 255);
+    T.frame = IM_COL32(25, 24, 22, 255), T.line = IM_COL32(40, 38, 35, 255), T.line_soft = IM_COL32(29, 27, 25, 255);
     T.text = brand::TEXT, T.soft = brand::SOFT, T.muted = brand::MUTED, T.ok = brand::GOOD, T.bad = brand::BAD;
     float opacity = config::cfg.look.opacity;
     ImGuiStyle& s = ImGui::GetStyle();
@@ -52,10 +52,10 @@ inline void apply_style() {
     c[ImGuiCol_Text] = V(T.text);
     c[ImGuiCol_TextDisabled] = V(T.muted);
     c[ImGuiCol_FrameBg] = V(T.frame);
-    c[ImGuiCol_FrameBgHovered] = V(IM_COL32(37, 37, 42, 255));
-    c[ImGuiCol_FrameBgActive] = V(IM_COL32(42, 42, 48, 255));
+    c[ImGuiCol_FrameBgHovered] = V(IM_COL32(35, 33, 30, 255));
+    c[ImGuiCol_FrameBgActive] = V(IM_COL32(40, 38, 35, 255));
     c[ImGuiCol_Button] = V(T.frame);
-    c[ImGuiCol_ButtonHovered] = V(IM_COL32(41, 41, 46, 255));
+    c[ImGuiCol_ButtonHovered] = V(IM_COL32(39, 37, 34, 255));
     c[ImGuiCol_ButtonActive] = V(T.accent, 0.5f);
     c[ImGuiCol_Header] = V(T.accent, 0.14f);
     c[ImGuiCol_HeaderHovered] = {1, 1, 1, 0.05f};
@@ -199,7 +199,7 @@ inline bool switch_row(const char* text, const char* hint, bool& value) {
     if (hint && *hint) dl->AddText(f_small, small, {p.x + S(4), text_y + body + S(3)}, C(T.muted), hint);
     float sw = S(44), sh = S(24), t = animate(ImGui::GetID("knob"), value ? 1.0f : 0.0f, 16);
     ImVec2 s0 = {p.x + w - sw - S(4), p.y + (h - sh) / 2};
-    dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, C(brand::mix(IM_COL32(44, 44, 50, 255), T.accent, t)), sh / 2);
+    dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, C(brand::mix(IM_COL32(44, 41, 38, 255), T.accent, t)), sh / 2);
     ImVec2 knob{s0.x + sh / 2 + t * (sw - sh), s0.y + sh / 2};
     float* flipped_at = ImGui::GetStateStorage()->GetFloatRef(ImGui::GetID("flip"), -10);
     if (clicked) *flipped_at = now();
@@ -1226,7 +1226,7 @@ inline void preset_tile(const cheats::Preset& p, float w, float h) {
     float hover = animate(ImGui::GetID("hover"), ImGui::IsMouseHoveringRect(a, b) ? 1.0f : 0.0f);
     float lit = animate(ImGui::GetID("on"), on ? 1.0f : 0.0f);
     auto* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(36, 36, 41, 255), hover)), R(10));
+    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(34, 32, 29, 255), hover)), R(10));
     if (lit > 0.01f) dl->AddRectFilled(a, b, C(T.accent, 0.08f * lit), R(10));
     dl->AddRect(a, b, C(brand::mix(brand::mix(T.line_soft, T.line, hover), T.accent, lit)), R(10), 0, 1.0f + lit);
     float pad = S(16), fs = font_size(f_label);
@@ -1315,7 +1315,7 @@ inline void tile_frame(ImVec2 a, ImVec2 b, bool on, bool dashed = false) {
         }
         return;
     }
-    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(36, 36, 41, 255), hover)), R(10));
+    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(34, 32, 29, 255), hover)), R(10));
     if (lit > 0.01f) dl->AddRectFilled(a, b, C(T.accent, 0.08f * lit), R(10));
     dl->AddRect(a, b, C(line), R(10), 0, 1.0f + lit);
 }
