@@ -2,6 +2,8 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -99,6 +101,18 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
         else if (!line.empty() && !out.empty() && !out.back().lines.empty() && line[0] == ' ') out.back().lines.back() += " " + line.substr(line.find_first_not_of(' '));
     }
     return out;
+}
+
+inline bool needs_install(const std::string& installed, const std::string& latest, bool ready, bool beta) {
+    if (!ready || installed == latest) return false;
+    return !(beta && newer_version(installed, latest));
+}
+
+inline bool write_launch_file(const std::filesystem::path& game, long long now) {
+    std::ofstream out(game / LAUNCH_FILE, std::ios::trunc);
+    out << now;
+    out.close();
+    return !out.fail();
 }
 
 inline std::string ini_value(const std::string& text, const std::string& key) {

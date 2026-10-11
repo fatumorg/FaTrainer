@@ -28,20 +28,20 @@
 
 ### Install
 
-Download the installer (Fatum Version) from the [installer release](https://github.com/ifatum/DyingLightFaTrainer/releases/tag/installer):
+Download FaTrainer, the launcher (Fatum Version), from the [launcher release](https://github.com/ifatum/DyingLightFaTrainer/releases/tag/installer):
 
-- **Windows**: `FaTrainer-Fatum-Version-Installer.exe`
-- **Linux**: `FaTrainer-Fatum-Version-Installer-Linux.tar.gz`, unpack it and run `FaTrainer-Fatum-Version-Installer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`). On NixOS start it with `steam-run ./FaTrainer-Fatum-Version-Installer`
+- **Windows**: `FaTrainer.exe`
+- **Linux**: `FaTrainer-Linux.tar.gz`, unpack it and run `FaTrainer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`). On NixOS start it with `steam-run ./FaTrainer`
 
 On Linux, Dying Light has to run through Proton (Properties → Compatibility → force a Proton version); the trainer does not load in the native Linux version.
 
-The installer finds Dying Light in your Steam libraries (or lets you choose the folder), downloads `xinput1_3.dll` from the release, checks it against the release checksum and puts it next to `DyingLightGame.exe`. Run it again to update or uninstall. On Linux it also shows the Steam launch option Proton needs:
+FaTrainer finds Dying Light in your Steam libraries (or lets you choose the folder). Press Play: it downloads `xinput1_3.dll` from the release when yours is older, checks it against the release checksum, puts it next to `DyingLightGame.exe` and starts the game through Steam with the trainer on. Start Dying Light from Steam instead and you play the normal game: the file stays, but the trainer does nothing. Remove from game deletes it. Add shortcut puts FaTrainer on the desktop and in the Start menu, or in the Linux app menu. On Linux it also shows the Steam launch option Proton needs:
 
 ```
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 ```
 
-The installer has its own version and updates itself as soon as it opens when a newer installer is out. Beta builds, off unless you tick them in the installer or in Settings, give you the version being worked on right now; they may have bugs. When a newer trainer is released, the trainer stays off in game and asks you to run the installer again, unless you tick Use older versions in the installer. The installer also lets you pick an older version to install, and shows announcements once when it opens (`announcement.txt` in this repository, posted with `./announce.sh`). Versions can have build numbers, like 2.2 b1; a newer build of your version installs itself the next time you start the game, and the last build of a version is just the version, like 2.2. The game itself keeps working, and without internet the trainer works as usual.
+FaTrainer has its own version and updates itself as soon as it opens when a newer one is out. Beta builds, off unless you tick them in FaTrainer or in Settings, give you the version being worked on right now; they may have bugs. It also shows announcements once when it opens (`announcement.txt` in this repository, posted with `./announce.sh`). Versions can have build numbers, like 2.3 b1; a newer build of your version installs itself the next time you start the game, and the last build of a version is just the version, like 2.3. Without internet, Play starts the game with the trainer you have.
 
 The **Nexus Version** on [Nexus Mods](https://www.nexusmods.com/dyinglight/mods/1724) is frozen at 1.9 and never updated: just `xinput1_3.dll`, with no installer, no internet connection and no update check, and with the multiplayer features (Night Hunter and PvP pages, player ESP, spit keys, PvP ranks, Night Hunter level) grayed out under a notice that the newest version is on fatrainer.fatum.cc and GitHub. Every cheat turns off while you play the Night Hunter. Its source is the `nexus-1.9` branch.
 
@@ -51,7 +51,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ### Building
 
-`./build.sh` builds the trainer, `./build_installer.sh` the installer, `./release.sh` the trainer release files, and `./release_installer.sh` the installer release files (all through nix; `--publish` uploads them).
+`./build.sh` builds the trainer, `./build_installer.sh` the launcher, `./release.sh` the trainer release files, and `./release_installer.sh` the launcher release files (all through nix; `--publish` uploads them).
 
 ### Notes
 

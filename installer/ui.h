@@ -219,10 +219,6 @@ inline std::string replace_hint() {
                            : "Close Dying Light if it is running. If it is not, right-click FaTrainer and choose Run as administrator.";
 }
 
-inline bool needs_install(const std::string& installed, const ReleaseInfo& latest, bool ready) {
-    return ready && installed != latest.version;
-}
-
 inline void start_play() {
     fs::path game;
     bool on_beta, install;
@@ -232,7 +228,7 @@ inline void start_play() {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
         game = M.game, latest = M.latest, on_beta = M.on_beta, installed = M.installed;
-        install = needs_install(M.installed, M.latest, M.fetch == Fetch::ready);
+        install = logic::needs_install(M.installed, M.latest.version, M.fetch == Fetch::ready, M.beta);
         M.job = Job::working, M.step = install ? "Downloading" : "Starting Dying Light", M.progress = 0, M.message.clear();
     }
     std::thread([game, latest, on_beta, install, installed]() mutable {
@@ -283,7 +279,7 @@ inline void start_play() {
         }
         fs::path arm = game / LAUNCH_FILE;
         bool armed = !newer_version(FIRST_ARMED_VERSION, installed);
-        if (armed) std::ofstream(arm, std::ios::trunc) << (long long)time(nullptr);
+        if (armed && !logic::write_launch_file(game, (long long)time(nullptr))) return finish(Job::failed, "Could not write to the game folder. " + replace_hint());
         {
             std::lock_guard<std::mutex> l(M.mx);
             M.step = "Starting Dying Light", M.progress = 0.98f;
@@ -293,7 +289,7 @@ inline void start_play() {
         if (!armed) return finish(Job::done, running);
         for (long long waited = 0; waited < LAUNCH_MAX_AGE * 1000; waited += 500) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if (!fs::exists(arm, ec)) return finish(Job::done, running);
+            if (!fs::exists(arm, ec) && !ec) return finish(Job::done, running);
             std::lock_guard<std::mutex> l(M.mx);
             M.step = "Waiting for Dying Light";
         }
@@ -350,6 +346,7 @@ inline void uninstall() {
 }
 
 inline void use_folder(const std::string& utf8) {
+    if (M.job == Job::working) return;
     fs::path chosen = fs::u8path(utf8);
     if (!platform::is_game_dir(chosen) && platform::is_game_dir(chosen.parent_path())) chosen = chosen.parent_path();
     if (!platform::is_game_dir(chosen) && platform::is_game_dir(chosen / "Dying Light")) chosen = chosen / "Dying Light";
@@ -782,7 +779,7 @@ inline void detail(float width) {
         float progress = -1;
         bool enabled = false;
         bool celebrate = view.job == Job::done && ImGui::GetTime() - view.finished_at < 2.6;
-        bool install = needs_install(view.installed, view.latest, ready);
+        bool install = logic::needs_install(view.installed, view.latest.version, ready, view.beta);
         bool playable = found && (ready || (!view.installed.empty() && view.installed != logic::LEGACY_VERSION));
         if (view.job == Job::working) text = view.step + (view.progress < 0.97f ? "  " + std::to_string((int)(view.progress * 100)) + "%" : ""), progress = view.progress;
         else if (celebrate) text = "Running", progress = 1;
@@ -790,7 +787,7 @@ inline void detail(float width) {
         else if (view.fetch == Fetch::loading) text = "Checking for updates";
         else if (!found) text = "Choose the game folder first";
         else if (!playable) text = "Cannot reach GitHub";
-        else text = !install ? "Play" : (view.installed.empty() ? "Install " : "Update to ") + view.latest.version + " and play", enabled = true;
+        else text = !install ? "Play" : (newer_version(view.latest.version, view.installed) ? "Update to " : "Install ") + view.latest.version + " and play", enabled = true;
         ImVec2 at = ImGui::GetCursorScreenPos();
         float shown_progress = progress >= 0 ? follow(anim("progress"), progress, 10) : (anim("progress") = 0);
         if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))

@@ -124,6 +124,18 @@ int main(int argc, char** argv) {
         CHECK(newer_version("9.9", INSTALLER_VERSION) && !newer_version(INSTALLER_VERSION, INSTALLER_VERSION));
     }
     {
+        CHECK(logic::needs_install("", "2.3", true, false) && logic::needs_install(logic::LEGACY_VERSION, "2.3", true, false) && logic::needs_install("2.2", "2.3", true, false));
+        CHECK(!logic::needs_install("2.3", "2.3", true, false) && !logic::needs_install("2.2", "2.3", false, false) && !logic::needs_install("", "2.3", false, true));
+        CHECK(!logic::needs_install("2.4 b1", "2.3", true, true) && logic::needs_install("2.4 b1", "2.3", true, false) && logic::needs_install("2.3", "2.4 b1", true, true));
+        std::filesystem::path launch_dir = std::filesystem::temp_directory_path() / "fatrainer-launch-test";
+        std::error_code launch_ec;
+        std::filesystem::create_directories(launch_dir, launch_ec);
+        CHECK(logic::write_launch_file(launch_dir, 1234));
+        std::string launch_text;
+        std::ifstream(launch_dir / LAUNCH_FILE) >> launch_text;
+        CHECK(launch_text == "1234");
+        CHECK(!logic::write_launch_file(launch_dir / "missing" / "deeper", 1234));
+        std::filesystem::remove_all(launch_dir, launch_ec);
         CHECK(same_version("2.2 b1", "2.2 b3") && same_version("2.2", "2.2 b1") && !same_version("2.2 b1", "2.3") && !same_version("2.2.1", "2.2"));
         std::string ini = "accent=1,1,1\r\nallow_older=0\ncheat=god\n";
         CHECK(logic::ini_value(ini, "allow_older") == "0" && logic::ini_value(ini, "missing").empty());
