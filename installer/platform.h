@@ -295,6 +295,20 @@ inline bool get_text(const std::string& url, std::string& out, std::string& erro
 #endif
 
 const char* GAME_EXE = "DyingLightGame.exe";
+const char* GAME_LAUNCH_URL = "steam://rungameid/239140";
+
+inline void launch_game() {
+#ifdef _WIN32
+    ShellExecuteA(nullptr, "open", GAME_LAUNCH_URL, nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    std::thread([] {
+        for (const char* tool : {"xdg-open", "steam"}) {
+            int status = run({tool, GAME_LAUNCH_URL}, [](const char*, size_t) { return true; });
+            if (status != NOT_STARTED && status != NOT_FOUND) return;
+        }
+    }).detach();
+#endif
+}
 const char* DLL_NAME = "xinput1_3.dll";
 const char* BACKUP_NAME = "xinput1_3.dll.before-fatrainer";
 const char* DOWNLOAD_NAME = "xinput1_3.dll.fatrainer-download";

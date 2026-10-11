@@ -1,5 +1,10 @@
 # FaTrainer Installer changelog
 
+## 1.4
+
+- New: Launch Dying Light button next to Install, starts the game through Steam. Starting it from Steam works the same.
+- Fixed: the version list was cut off at its rounded edges.
+
 ## 1.3
 
 - New: announcements. When there is news, like a new version or a known problem, the installer shows it once in a dialog when it opens.

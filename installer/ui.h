@@ -757,7 +757,10 @@ inline void detail(float width) {
         ImGui::SetNextItemWidth(S(300));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {S(14), S(13)});
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(10));
-        if (ImGui::BeginCombo("##version", current.c_str())) {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(8), S(8)});
+        bool open = ImGui::BeginCombo("##version", current.c_str());
+        ImGui::PopStyleVar();
+        if (open) {
             if (ImGui::Selectable(latest_label.c_str(), view.chosen.tag.empty())) {
                 std::lock_guard<std::mutex> l(M.mx);
                 M.chosen = {};
@@ -814,7 +817,13 @@ inline void detail(float width) {
             view.installer_update.version.empty() ? start_install() : start_self_update();
         if (celebrate) check_mark(dl, {at.x + S(300) / 2 - text_w(F.strong, "Installed") / 2 - S(22), at.y + S(26)}, S(14), (float)(ImGui::GetTime() - view.finished_at) * 2.2f, C(ACCENT_INK));
         if (!view.installed.empty() && view.job != Job::working && view.installer_update.version.empty()) {
-            ImGui::SameLine(0, S(18));
+            ImGui::SameLine(0, S(12));
+            if (button("launch", "Launch Dying Light", {S(200), S(52)}, Kind::ghost)) {
+                platform::launch_game();
+                std::lock_guard<std::mutex> l(M.mx);
+                M.message = "Starting Dying Light through Steam. Press Insert or F8 in game.", M.message_bad = false, M.finished_at = ImGui::GetTime();
+            }
+            ImGui::SameLine(0, S(12));
             if (button("uninstall", "Uninstall", {S(110), S(52)}, Kind::quiet)) uninstall();
         }
         std::string message = view.message;
