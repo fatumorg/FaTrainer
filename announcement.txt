@@ -1,0 +1,4 @@
+id=20261011123122
+title=NexusMods
+
+The mod got banned on Nexus Mods because of multiplayer PvP features. Use GitHub Discussions for any bug reporting or suggestions
