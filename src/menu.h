@@ -764,6 +764,9 @@ inline void skills_page() {
             if (!max || level < 0) continue;
             ImGui::PushID(t.type);
             ImGui::TableNextRow(0, S(44));
+            ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 0.3f);
+            ImGui::BeginDisabled(t.type == 0);
+            ImGui::PopStyleVar();
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(t.name);
@@ -792,6 +795,7 @@ inline void skills_page() {
                 int type = t.type;
                 on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_tree_level(type, cheats::tree_max(type)); });
             }
+            ImGui::EndDisabled();
             ImGui::PopID();
         }
         ImGui::EndTable();
