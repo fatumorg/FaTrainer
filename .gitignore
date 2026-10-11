@@ -12,6 +12,7 @@ graphify-out/
 *.swp
 .DS_Store
 CLAUDE.md
+PROGRESS.md
 nexus/
 .zig-cache/
 dist/
