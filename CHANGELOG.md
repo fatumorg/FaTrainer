@@ -1,23 +1,35 @@
 # Changelog
 
+## 2.3
+
+Launcher Update
+
+- 2.3 is the last build of 2.3: it comes after 2.3 b1, b2 and b3, and those builds update to it by themselves.
+- The FaTrainer Installer is now the FaTrainer launcher. Press Play: it installs or updates the trainer and starts Dying Light with it. Starting Dying Light from Steam plays the normal game without the trainer, so you can play with or without it.
+- New: Keybinds page. Give any cheat its own key and press it while the menu is closed to turn the cheat on or off; a message at the bottom of the screen says which. You can change the menu key there too.
+- Every version now has a name after its most important change; the changelog and the launcher show it.
+- The menu is darker, in the same warm near-black as the FaTrainer website and launcher.
+- Fixed: after loading a save with a config or remembered sliders on, your weapons often hit nothing until you turned everything off and set it again. Night Hunter and survivor sliders now wait until the trainer knows which side you play.
+- Fixed: `fatrainer.ini` listed every deleted built-in config several times.
+
 ## 2.3 b3
 
-Keybind Update
+Launcher Update
 
-- Every version now has a name after its most important change. 2.3 is the Keybind Update, and the changelog names the earlier ones too.
+- Every version now has a name after its most important change. 2.3 is the Launcher Update, and the changelog names the earlier ones too.
 - New: Keybinds page. Give any cheat its own key and press it while the menu is closed to turn the cheat on or off; a message at the bottom of the screen says which. You can change the menu key there too. A key can only belong to one thing, so picking a key takes it away from whatever had it before.
 - Fixed: after loading a save with a config or remembered sliders on, your weapons often hit nothing until you turned everything off and set it again. While the game loads, the trainer cannot tell yet whether you play a survivor or the Night Hunter, and it applied the Night Hunter sliders (Claws, Ground pound, Pounce, Tackle) to your survivor right while the game set up your character. Night Hunter and survivor sliders now wait until the trainer knows which side you play.
 - Fixed: `fatrainer.ini` listed every deleted built-in config several times.
 
 ## 2.3 b2
 
-Keybind Update
+Launcher Update
 
 - `fatrainer.log` records the grappling hook energy and the UV charge while Infinite grappling hook, Infinite UV flashlight or Slow down UV flashlight is on, to find out why they stop working.
 
 ## 2.3 b1
 
-Keybind Update
+Launcher Update
 
 - The menu is darker, in the same warm near-black as the FaTrainer website and installer.
 

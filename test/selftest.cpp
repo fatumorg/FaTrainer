@@ -104,6 +104,8 @@ int main(int argc, char** argv) {
     CHECK(parse_release_info("build 2.2 b3\nversion 2.2\n").version == "2.2 b3" && parse_release_info("version 2.2\nbuild 2.2 b3\n").version == "2.2 b3");
     CHECK(parse_release_info("version 2.2\nbuild 2.2 b999\nrelease 2.2\n").version == "2.2" && parse_release_info("release 2.2\nbuild 2.2 b999\n").version == "2.2");
     CHECK(logic::trainer_version_in(std::string("xx\0FaTrainer-version:2.2 b3\0yy", 31)) == "2.2 b3");
+    CHECK(launch_armed(1000, 1000) && launch_armed(1000, 1180) && !launch_armed(1000, 1181) && launch_armed(1030, 1000) && !launch_armed(1031, 1000));
+    CHECK(!launch_armed(0, 1700000000) && !newer_version(FIRST_ARMED_VERSION, VERSION) && newer_version(FIRST_ARMED_VERSION, "2.3 b3"));
     ReleaseInfo info = parse_release_info("version 2.1\r\nsha256 ab12\nsize 2598750\n");
     CHECK(info.version == "2.1" && info.sha256 == "ab12" && info.size == 2598750);
     CHECK(!strcmp(VERSION, FATRAINER_VERSION));
@@ -122,16 +124,6 @@ int main(int argc, char** argv) {
         CHECK(newer_version("9.9", INSTALLER_VERSION) && !newer_version(INSTALLER_VERSION, INSTALLER_VERSION));
     }
     {
-        std::string json = "[{\"tag_name\": \"installer\", \"assets\": [{\"browser_download_url\": \"https://x/installer-linux.txt\"}]},"
-                           "{\"tag_name\": \"v2.2-b1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.2-b1/xinput1_3.dll\"}, {\"browser_download_url\": \"https://x/v2.2-b1/version.txt\"}]},"
-                           "{\"tag_name\": \"v1.4\", \"assets\": [{\"browser_download_url\": \"https://x/v1.4/xinput1_3.dll\"}]},"
-                           "{\"tag_name\": \"v2.1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.1/version.txt\"}, {\"browser_download_url\": \"https://x/v2.1/xinput1_3.dll\"}]}]";
-        auto releases = logic::installable_releases(json);
-        CHECK(releases.size() == 2 && releases[0].tag == "v2.2-b1" && releases[0].version == "2.2 b1" && releases[1].version == "2.1");
-        std::string builds = "[{\"tag_name\": \"v2.2-b1\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},{\"tag_name\": \"v2.2-b3\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},"
-                             "{\"tag_name\": \"v2.2\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},{\"tag_name\": \"v2.3\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"}]";
-        auto newest = logic::installable_releases(builds);
-        CHECK(newest.size() == 2 && newest[0].version == "2.3" && newest[1].version == "2.2" && newest[1].tag == "v2.2");
         CHECK(same_version("2.2 b1", "2.2 b3") && same_version("2.2", "2.2 b1") && !same_version("2.2 b1", "2.3") && !same_version("2.2.1", "2.2"));
         std::string ini = "accent=1,1,1\r\nallow_older=0\ncheat=god\n";
         CHECK(logic::ini_value(ini, "allow_older") == "0" && logic::ini_value(ini, "missing").empty());

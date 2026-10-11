@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.3 b3"
-#define FATRAINER_NAME "Keybind Update"
+#define FATRAINER_VERSION "2.3"
+#define FATRAINER_NAME "Launcher Update"
 #define INSTALLER_VERSION "1.5"
 #define FATRAINER_EDITION "Fatum Version"
 #define FATRAINER_EDITION_CAPS "FATUM VERSION"
@@ -14,10 +14,16 @@ inline const char VERSION_TAG[] = "FaTrainer-version:" FATRAINER_VERSION;
 inline const char* VERSION = VERSION_TAG + sizeof "FaTrainer-version:" - 1;
 inline const char* RELEASE_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/";
 inline const char* RELEASE_TAG_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/";
-inline const char* RELEASES_API = "https://api.github.com/repos/ifatum/DyingLightFaTrainer/releases?per_page=100";
 inline const char* BETA_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/beta/";
 inline const char* INSTALLER_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/";
 inline const char* ANNOUNCEMENT_URL = "https://raw.githubusercontent.com/ifatum/DyingLightFaTrainer/main/announcement.txt";
+inline const char* LAUNCH_FILE = "fatrainer.launch";
+inline const char* FIRST_ARMED_VERSION = "2.3";
+const long long LAUNCH_MAX_AGE = 180, LAUNCH_MAX_AHEAD = 30;
+
+inline bool launch_armed(long long written, long long now) {
+    return written > 0 && written <= now + LAUNCH_MAX_AHEAD && now - written <= LAUNCH_MAX_AGE;
+}
 
 const size_t VERSION_NUMBERS = 4;
 const long FINAL_BUILD = LONG_MAX;

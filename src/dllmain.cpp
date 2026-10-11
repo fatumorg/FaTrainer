@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <ctime>
 #include <functional>
 #include <string>
 #include <thread>
@@ -584,11 +585,33 @@ static void main_thread() {
     watch_first_frame();
 }
 
+static bool launched_from_launcher() {
+    char armed[8] = "";
+    if (GetEnvironmentVariableA("FATRAINER_ARMED", armed, sizeof armed) && !strcmp(armed, "1")) return true;
+    std::wstring path = own_path();
+    path = path.substr(0, path.find_last_of(L"\\/") + 1) + std::wstring(LAUNCH_FILE, LAUNCH_FILE + strlen(LAUNCH_FILE));
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f) return false;
+    long long written = 0;
+    if (fscanf(f, "%lld", &written) != 1) written = 0;
+    fclose(f);
+    DeleteFileW(path.c_str());
+    return launch_armed(written, (long long)time(nullptr));
+}
+
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(h);
-        AddVectoredExceptionHandler(1, crash_logger);
-        CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD { main_thread(); return 0; }, nullptr, 0, nullptr));
+        CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+            if (!launched_from_launcher()) {
+                logf("launch: not started from FaTrainer, trainer off");
+                return 0;
+            }
+            AddVectoredExceptionHandler(1, crash_logger);
+            logf("launch: started from FaTrainer");
+            main_thread();
+            return 0;
+        }, nullptr, 0, nullptr));
     }
     return TRUE;
 }

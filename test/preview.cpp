@@ -6,6 +6,7 @@ int main(int argc, char** argv) {
     game::resolve_classes((uintptr_t)gd);
     static fake::World w;
     w.build();
+    SetEnvironmentVariableA("FATRAINER_ARMED", "1");
     LoadLibraryA(argv[2]);
 
     WNDCLASSA wc{};

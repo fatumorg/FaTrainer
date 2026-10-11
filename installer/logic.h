@@ -101,34 +101,6 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
     return out;
 }
 
-
-struct Release { std::string tag, version; };
-
-inline std::vector<Release> installable_releases(const std::string& json) {
-    const std::string TAG = "\"tag_name\"";
-    std::vector<Release> out;
-    size_t at = json.find(TAG);
-    while (at != std::string::npos) {
-        size_t next = json.find(TAG, at + TAG.size());
-        size_t open = json.find('"', json.find(':', at + TAG.size()));
-        size_t close = open == std::string::npos ? open : json.find('"', open + 1);
-        std::string tag = close == std::string::npos ? "" : json.substr(open + 1, close - open - 1);
-        std::string rest = json.substr(at, next == std::string::npos ? std::string::npos : next - at);
-        bool installable = rest.find("/version.txt\"") != std::string::npos && rest.find("/xinput1_3.dll\"") != std::string::npos;
-        if (installable && tag.size() > 1 && tag[0] == 'v') {
-            std::string version = tag.substr(1);
-            for (char& c : version)
-                if (c == '-') c = ' ';
-            auto same = std::find_if(out.begin(), out.end(), [&](const Release& r) { return same_version(r.version, version); });
-            if (same == out.end()) out.push_back({tag, version});
-            else if (newer_version(version, same->version)) *same = {tag, version};
-        }
-        at = next;
-    }
-    std::sort(out.begin(), out.end(), [](const Release& a, const Release& b) { return newer_version(a.version, b.version); });
-    return out;
-}
-
 inline std::string ini_value(const std::string& text, const std::string& key) {
     size_t at = 0;
     while (at < text.size()) {

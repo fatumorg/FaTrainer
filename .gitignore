@@ -16,3 +16,4 @@ PROGRESS.md
 nexus/
 .zig-cache/
 dist/
+docs/
