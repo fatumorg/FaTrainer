@@ -3,6 +3,7 @@
 #include <cmath>
 #include "app.h"
 #include "brand.h"
+#include "color.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -1591,6 +1592,35 @@ inline void draw_esp() {
     }
 }
 
+inline bool color_field(const char* id, float rgb[3]) {
+    bool changed = false;
+    ImGui::PushID(id);
+    if (ImGui::ColorButton("##swatch", {rgb[0], rgb[1], rgb[2], 1}, ImGuiColorEditFlags_NoTooltip, {S(34), ImGui::GetFrameHeight()})) ImGui::OpenPopup("picker");
+    if (ImGui::BeginPopup("picker")) {
+        changed |= ImGui::ColorPicker3("##pick", rgb, ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoInputs);
+        ImGui::EndPopup();
+    }
+    const char* channels[3] = {"R", "G", "B"};
+    for (int i = 0; i < 3; i++) {
+        ImGui::SameLine(0, S(10));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", channels[i]);
+        ImGui::SameLine(0, S(4));
+        int v = color::to_byte(rgb[i]);
+        ImGui::SetNextItemWidth(S(52));
+        ImGui::PushID(i);
+        if (ImGui::InputInt("##c", &v, 0, 0)) rgb[i] = std::clamp(v, 0, 255) / 255.0f, changed = true;
+        ImGui::PopID();
+    }
+    ImGui::SameLine(0, S(10));
+    char hex[16];
+    snprintf(hex, sizeof hex, "%s", color::to_hex(rgb).c_str());
+    ImGui::SetNextItemWidth(S(86));
+    if (ImGui::InputText("##hex", hex, sizeof hex, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsUppercase)) changed |= color::from_hex(hex, rgb);
+    ImGui::PopID();
+    return changed;
+}
+
 inline bool tint_card(const char* id, const char* title, const char* label, const char* hint, config::UvLight& u, const char* footnote) {
     bool changed = false;
     begin_card(id, title);
@@ -1600,7 +1630,7 @@ inline bool tint_card(const char* id, const char* title, const char* label, cons
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Color");
     ImGui::SameLine(S(150));
-    changed |= ImGui::ColorEdit3("##color", u.color, ImGuiColorEditFlags_NoInputs);
+    changed |= color_field("color", u.color);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Glow");
     ImGui::SameLine(S(150));
@@ -1636,11 +1666,11 @@ inline void visuals_page() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Night Hunter");
     ImGui::SameLine(S(150));
-    changed |= ImGui::ColorEdit3("##hunter", e.hunter, ImGuiColorEditFlags_NoInputs);
-    ImGui::SameLine(0, S(30));
+    changed |= color_field("hunter", e.hunter);
+    ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Survivors");
-    ImGui::SameLine();
-    changed |= ImGui::ColorEdit3("##survivor", e.survivor, ImGuiColorEditFlags_NoInputs);
+    ImGui::SameLine(S(150));
+    changed |= color_field("survivor", e.survivor);
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
 
@@ -1911,7 +1941,8 @@ inline void accent_swatches(bool& changed) {
         ImGui::SameLine(0, S(6));
         ImGui::PopID();
     }
-    if (ImGui::ColorEdit3("##custom", c.accent, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) changed = true;
+    ImGui::NewLine();
+    if (color_field("custom", c.accent)) changed = true;
 }
 
 inline void menu_key_combo(bool& changed) {

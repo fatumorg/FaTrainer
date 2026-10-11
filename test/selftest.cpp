@@ -1,5 +1,6 @@
 #include <cstdio>
 #include "cheats.h"
+#include "color.h"
 #include "config.h"
 #include "fake.h"
 #include "input.h"
@@ -990,6 +991,16 @@ int main(int argc, char** argv) {
     config::cfg.pages = {{"player", true}, {"combat", true}, {"give", true}, {"settings", true}};
     config::normalize({"player", "combat", "prison", "give", "settings"});
     CHECK(config::cfg.pages[2].id == "prison" && config::cfg.pages[3].id == "give");
+    {
+        float rgb[3] = {1.0f, 0.5f, 0.0f};
+        CHECK(color::to_hex(rgb) == "#FF8000");
+        CHECK(color::to_byte(0.5f) == 128 && color::to_byte(-1) == 0 && color::to_byte(2) == 255);
+        float parsed[3] = {0, 0, 0};
+        CHECK(color::from_hex("#3293c5", parsed) && color::to_byte(parsed[0]) == 0x32 && color::to_byte(parsed[2]) == 0xc5);
+        CHECK(color::from_hex("FF0000", parsed) && parsed[0] == 1.0f && parsed[1] == 0.0f);
+        float kept[3] = {0.1f, 0.2f, 0.3f};
+        CHECK(!color::from_hex("#12", kept) && !color::from_hex("zzzzzz", kept) && !color::from_hex("#1234567", kept) && kept[0] == 0.1f);
+    }
     if (FILE* f = fopen(path.c_str(), "w")) {
         fputs("hidden_config=hunter_rage\nhidden_config=survivor_legit\nhidden_config=hunter_rage\n", f);
         fclose(f);

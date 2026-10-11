@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b3
+
+Survivor Update
+
+- Every color in the menu (accent, ESP colors, UV light, Night Hunter glow) now has a color picker, R, G and B number fields from 0 to 255 and a hex field like #E8973A.
+
 ## 2.5 b2
 
 Survivor Update
