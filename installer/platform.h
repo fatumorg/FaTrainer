@@ -337,14 +337,22 @@ inline bool get_text(const std::string& url, std::string& out, std::string& erro
 
 const char* GAME_EXE = "DyingLightGame.exe";
 const char* GAME_LAUNCH_URL = "steam://rungameid/239140";
+const char* APP_ID = "239140";
 
 inline void launch_game() {
 #ifdef _WIN32
-    ShellExecuteA(nullptr, "open", GAME_LAUNCH_URL, nullptr, nullptr, SW_SHOWNORMAL);
+    std::string steam = registry_string(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamExe");
+    std::error_code ec;
+    if (steam.empty() || !fs::exists(fs::u8path(steam), ec) ||
+        (INT_PTR)ShellExecuteW(nullptr, L"open", fs::u8path(steam).c_str(), L"-applaunch 239140", nullptr, SW_SHOWNORMAL) <= 32)
+        ShellExecuteA(nullptr, "open", GAME_LAUNCH_URL, nullptr, nullptr, SW_SHOWNORMAL);
 #else
     std::thread([] {
-        for (const char* tool : {"xdg-open", "steam"}) {
-            int status = run({tool, GAME_LAUNCH_URL}, [](const char*, size_t) { return true; });
+        const std::vector<std::vector<std::string>> launchers = {{"steam", "-applaunch", APP_ID},
+                                                                 {"flatpak", "run", "com.valvesoftware.Steam", "-applaunch", APP_ID},
+                                                                 {"xdg-open", GAME_LAUNCH_URL}};
+        for (const auto& launcher : launchers) {
+            int status = run(launcher, [](const char*, size_t) { return true; });
             if (status != NOT_STARTED && status != NOT_FOUND) return;
         }
     }).detach();
@@ -353,7 +361,6 @@ inline void launch_game() {
 const char* DLL_NAME = "xinput1_3.dll";
 const char* BACKUP_NAME = "xinput1_3.dll.before-fatrainer";
 const char* DOWNLOAD_NAME = "xinput1_3.dll.fatrainer-download";
-const char* APP_ID = "239140";
 
 inline std::string read_file(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);

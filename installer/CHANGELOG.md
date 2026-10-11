@@ -1,5 +1,9 @@
 # FaTrainer launcher changelog
 
+## 2.2
+
+- Play starts the game through Steam's command line (`steam -applaunch`), so Steam no longer shows its Starting game window.
+
 ## 2.1
 
 - The version list is back: pick an older version and press Play. Play turns on Use older versions so it keeps working in game.
