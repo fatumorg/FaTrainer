@@ -59,3 +59,5 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 - Log file: `fatrainer.log` next to `DyingLightGame.exe`.
 
 <div align="center"><sub>MIT License</sub></div>
+
+Questions and ideas go to the [forum](https://github.com/ifatum/DyingLightFaTrainer/discussions); its rules are in section 4 of [Privacy, contact and forum rules](https://fatrainer.fatum.cc/legal.html#forum).
