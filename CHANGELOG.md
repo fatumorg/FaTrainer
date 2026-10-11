@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5 b2
+
+Survivor Update
+
+- Fixed: no survivor or Night Hunter slider on the PvP page did anything, also Melee reach and every dropkick and death from above slider. Since 2.3 b3 these sliders wait until the trainer knows your side, and it looked for your side in the wrong place, so it never found out. It now reads it the way the game itself does, and in story mode, where there are no sides, the sliders apply after 5 seconds again.
+- Fixed: Melee speed did nothing. The game adds the attack speed bonus instead of multiplying it, and the bonus is 0 without skills; x2 now really swings twice as fast.
+
 ## 2.5 b1
 
 Survivor Update

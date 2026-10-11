@@ -2,6 +2,7 @@
 #include <atomic>
 #include <deque>
 #include <random>
+#include <utility>
 #include <cstdio>
 #include <set>
 #include "config.h"
@@ -26,7 +27,7 @@ const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START 
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_SET_HEALTH = 4, HEALTH_VALUE = 0x964, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
 const int UV_CHARGE = 0x50, UV_EXHAUSTED = 0x55;
-const int GAME_PROFILE = 0x540, PROFILE_RANK_HUMAN = 0x2d98, PROFILE_RANK_ZOMBIE = 0x2dd0, PLAYER_RANK_HUMAN = 0x74c, PLAYER_RANK_ZOMBIE = 0x750;
+const int GAME_PROFILE = 0x540, PROFILE_PLAYER = 0x48, PROFILE_RANK_HUMAN = 0x2d98, PROFILE_RANK_ZOMBIE = 0x2dd0, PLAYER_RANK_HUMAN = 0x74c, PLAYER_RANK_ZOMBIE = 0x750;
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
 const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52, SLOT_KILL = 295;
 const float KILL_RADIUS = 80.0f;
@@ -96,6 +97,7 @@ struct Tweak {
     std::vector<const char*> params;
     std::vector<ScriptVar> vars = {};
     float max = 10.0f;
+    bool adds = false;
     std::atomic<float> factor{1.0f};
 };
 
@@ -134,8 +136,7 @@ inline Tweak TWEAKS[] = {
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee", "Reach of melee attacks and how far above or below your aim they still connect.",
      G_HUMAN, {"RangeMeleeMul", "MaxVerticalAngleForRangeMeleeCorrection"}},
-    {"melee_speed", "Melee speed", "How fast you swing every melee weapon, two-handed ones too.", G_WEAPONS,
-     {"MeeleAttackSpeedMul", "MeeleSwingSpeedMul", "BluntAttackSpeedMul", "CutAttackSpeedMul"}, {}, 3.0f},
+    {"melee_speed", "Melee speed", "How fast you swing every melee weapon, two-handed ones too.", G_WEAPONS, {"MeeleAttackSpeedMul"}, {}, 3.0f, true},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -160,7 +161,7 @@ inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 inline uintptr_t player = 0;
 enum Side { SIDE_PENDING, SIDE_UNKNOWN, SIDE_SURVIVOR, SIDE_HUNTER };
 inline std::atomic<int> side{SIDE_PENDING};
-const DWORD SIDE_SETTLE_MS = 5000;
+inline DWORD side_settle_ms = 5000;
 inline const char* SIDE_NAMES[] = {"pending", "unknown", "survivor", "night hunter"};
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
@@ -326,8 +327,18 @@ inline bool alive(uintptr_t p) {
 inline void no_log(const char*, ...) {}
 inline void (*logf_hook)(const char*, ...) = no_log;
 
+inline uintptr_t game_profile() { return profile_root ? rdv<uintptr_t>(rdv<uintptr_t>(profile_root) + GAME_PROFILE) : 0; }
+
+inline uintptr_t profile_player() {
+    uintptr_t profile = game_profile();
+    uintptr_t p = profile ? rdv<uintptr_t>(profile + PROFILE_PLAYER) : 0;
+    return alive(p) ? p : 0;
+}
+
+inline uintptr_t local_object() { return local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0; }
+
 inline uintptr_t find_player() {
-    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    uintptr_t local = local_object();
     if (alive(local)) return local;
     if (alive(player)) return player;
     for (uintptr_t p : g.players)
@@ -508,8 +519,13 @@ inline void apply_cached(const std::map<std::string, std::pair<float, bool>>& wa
 }
 
 inline uintptr_t local_provider() {
-    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    uintptr_t local = local_object();
     return alive(local) ? rdv<uintptr_t>(local + PARAM_PROVIDER) : 0;
+}
+
+inline bool own_provider(uintptr_t provider) {
+    uintptr_t from_profile = profile_player();
+    return provider && (provider == local_provider() || (from_profile && provider == rdv<uintptr_t>(from_profile + PARAM_PROVIDER)));
 }
 
 inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
@@ -520,7 +536,7 @@ inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     bool mine = provider == player_provider.load();
     if (mine) c.reads++;
     if (!kind && !c.stale) return param;
-    if (kind && !mine) mine = provider == local_provider();
+    if (kind && !mine) mine = own_provider(provider);
     if (!kind || !mine) {
         {
             std::lock_guard<std::mutex> l(cached_mx);
@@ -665,7 +681,7 @@ inline void apply_overrides() {
             float base = original_float(param_value(containers[0], name));
             if (std::isnan(base)) continue;
             auto it = want.find(name);
-            float v = base * factor;
+            float v = t.adds ? base + factor - 1.0f : base * factor;
             if (it == want.end() || v > it->second.first) want[name] = {v, false};
         }
     }
@@ -1393,8 +1409,6 @@ inline void replay_route() {
     if (route[route_at++].stop) route_mode = ROUTE_PAUSED;
 }
 
-inline uintptr_t game_profile() { return profile_root ? rdv<uintptr_t>(rdv<uintptr_t>(profile_root) + GAME_PROFILE) : 0; }
-
 const int RANK_TITLES = 11, RANK_WINS_PER_TITLE = 3;
 const float RANK_TITLE_GROWTH = 1.3f;
 
@@ -1671,7 +1685,7 @@ inline double now_seconds() {
 }
 
 inline uintptr_t local_player() {
-    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    uintptr_t local = local_object();
     return alive(local) ? local : 0;
 }
 
@@ -1978,12 +1992,17 @@ inline void note_gear(bool watched) {
     logf_hook("gear: %s", now.c_str());
 }
 
-inline void update_side(uintptr_t provider, bool new_player) {
+inline uintptr_t own_logical_player(uintptr_t who) {
+    uintptr_t from_profile = logical_player(profile_player());
+    return from_profile ? from_profile : logical_player(who);
+}
+
+inline void update_side(uintptr_t who, bool new_player) {
     static DWORD player_since = 0;
-    if (!provider || new_player) player_since = provider ? GetTickCount() : 0;
-    uintptr_t lp = provider ? logical_player(player) : 0;
+    if (!who || new_player) player_since = who ? GetTickCount() : 0;
+    uintptr_t lp = who ? own_logical_player(who) : 0;
     int now = lp ? (rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER ? SIDE_HUNTER : SIDE_SURVIVOR)
-                 : player_since && GetTickCount() - player_since >= SIDE_SETTLE_MS ? SIDE_UNKNOWN : SIDE_PENDING;
+                 : player_since && GetTickCount() - player_since >= side_settle_ms ? SIDE_UNKNOWN : SIDE_PENDING;
     if (side.exchange(now) != now) logf_hook("side: %s", SIDE_NAMES[now]);
 }
 
@@ -2017,7 +2036,10 @@ inline void tick() {
         logf_hook("player changed (respawn or level load), finding game objects again");
         respawned = true;
     }
-    update_side(provider, provider != before);
+    static uintptr_t last_player = 0;
+    uintptr_t who = alive(player) ? player : 0;
+    bool new_player = who != std::exchange(last_player, who) || (provider && before && provider != before);
+    update_side(who, new_player);
     install_var_hook();
     apply_dfa_fall_speed();
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
@@ -2046,20 +2068,21 @@ inline std::string tree_report() {
 }
 
 inline std::string local_class() {
-    uintptr_t local = local_player_root ? rdv<uintptr_t>(rdv<uintptr_t>(local_player_root) + LOCAL_PLAYER) : 0;
+    uintptr_t local = local_object();
     return local ? game::class_name(local) : "none";
 }
 
 inline std::string describe() {
     char b[2048];
     snprintf(b, sizeof b,
-             "player %s (%zu scanned, local root %s, local %s), side %s (logical player %s, role %d, provider %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
+             "player %s (%zu scanned, local root %s, local %s), side %s (logical player %s, role %d, provider %s, profile player %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
              "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, pound patch %s, spit radii %zu, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
              player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), SIDE_NAMES[side.load()],
-             !alive(player) ? "no player" : logical_player(player) ? "ok" : rdv<uintptr_t>(player + LOGICAL_PLAYER) ? "other class" : "none",
-             logical_player(player) ? rdv<int>(logical_player(player) + PLAYER_ROLE) : -1,
-             !alive(player) ? "no player" : !rdv<uintptr_t>(player + PARAM_PROVIDER) ? "none" : rdv<uintptr_t>(player + PARAM_PROVIDER) == player_provider ? "ok" : "not tracked",
+             !alive(player) ? "no player" : own_logical_player(player) ? "ok" : rdv<uintptr_t>(player + LOGICAL_PLAYER) ? "other class" : "none",
+             own_logical_player(player) ? rdv<int>(own_logical_player(player) + PLAYER_ROLE) : -1,
+             !alive(player) ? "no player" : own_provider(rdv<uintptr_t>(player + PARAM_PROVIDER)) ? "ok" : profile_player() && rdv<uintptr_t>(profile_player() + PARAM_PROVIDER) ? "profile" : "none",
+             !profile_player() ? (game_profile() ? "none" : "no profile") : profile_player() == player ? "same" : game::class_name(profile_player()).c_str(),
              health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",

@@ -376,7 +376,7 @@ int main(int argc, char** argv) {
     game::wr<float>(w.params + cheats::param_ids["AirKickRangeMul"] * 16 + 8, 1.0f);
     cheats::find("no_reload")->on = true;
     cheats::find_tweak("h_dropkick")->factor = 3.0f;
-    for (auto [n, v] : {std::pair{"RangeMeleeMul", 1.0f}, {"BestTargetMeleeRange", 3.0f}, {"MeeleAttackSpeedMul", 1.0f}, {"BluntAttackSpeedMul", 1.0f}})
+    for (auto [n, v] : {std::pair{"RangeMeleeMul", 1.0f}, {"BestTargetMeleeRange", 3.0f}, {"MeeleAttackSpeedMul", 0.0f}, {"BluntAttackSpeedMul", 0.25f}})
         game::wr<float>(w.params + cheats::param_ids[n] * 16 + 8, v);
     cheats::find_tweak("h_melee")->factor = 2.0f;
     cheats::find_tweak("melee_speed")->factor = 2.0f;
@@ -423,12 +423,50 @@ int main(int argc, char** argv) {
         cheats::local_player_root = saved_root;
         cheats::player_provider = tick_provider;
     }
+    {
+        int id = cheats::param_ids["RopeEnergyRegenTime"] + 1;
+        auto real_root = cheats::profile_root;
+        static uint8_t hunter_logical[0x800] = {}, profile[0x100] = {}, profile_player[0x1000] = {}, game_object[0x600] = {};
+        *(uintptr_t*)hunter_logical = game::g.vt_logical_player;
+        *(int*)(hunter_logical + cheats::PLAYER_ROLE) = cheats::ROLE_HUNTER;
+        *(uintptr_t*)profile_player = game::g.vt_player;
+        *(uintptr_t*)(profile_player + cheats::LOGICAL_PLAYER) = (uintptr_t)hunter_logical;
+        *(uintptr_t*)(profile_player + cheats::PARAM_PROVIDER) = 0x7000;
+        *(uintptr_t*)(profile + cheats::PROFILE_PLAYER) = (uintptr_t)profile_player;
+        *(uintptr_t*)(game_object + cheats::GAME_PROFILE) = (uintptr_t)profile;
+        static uintptr_t root_value = (uintptr_t)game_object;
+        cheats::profile_root = (uintptr_t)&root_value;
+        CHECK(cheats::own_provider(0x7000) && !cheats::own_provider(0x5000));
+        game::wr<float>(cached("RopeEnergyRegenTime") + 0x10, 7.0f);
+        cheats::cache_get_hook(0x7000, id);
+        CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f);
+        cheats::tick();
+        CHECK(cheats::side == cheats::SIDE_HUNTER);
+        cheats::profile_root = real_root;
+        cheats::tick();
+        CHECK(cheats::side == cheats::SIDE_SURVIVOR);
+    }
+    {
+        uintptr_t own = game::rdv<uintptr_t>(w.player + cheats::PARAM_PROVIDER), logical = game::rdv<uintptr_t>(w.player + cheats::LOGICAL_PLAYER);
+        DWORD settle = cheats::side_settle_ms;
+        game::wr<uintptr_t>(w.player + cheats::PARAM_PROVIDER, 0);
+        game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, 0);
+        cheats::side_settle_ms = 0;
+        cheats::tick();
+        cheats::tick();
+        CHECK(cheats::side == cheats::SIDE_UNKNOWN);
+        cheats::side_settle_ms = settle;
+        game::wr<uintptr_t>(w.player + cheats::PARAM_PROVIDER, own);
+        game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, logical);
+        cheats::tick();
+        CHECK(cheats::side == cheats::SIDE_SURVIVOR);
+    }
     CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && (game::rdv<uint8_t>(cached("RopeEnergyRegenTime") + 0x20) & 1));
     CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 3.0f && game::rdv<float>(cached("AirKickRangeMul") + 0x10) == 3.0f);
     CHECK(game::rdv<float>(param("RangeMeleeMul")) == 2.0f && game::rdv<float>(param("BestTargetMeleeRange")) == 3.0f);
-    CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 2.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 2.0f);
+    CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 1.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 0.25f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
     CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
