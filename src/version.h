@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.3 b1"
+#define FATRAINER_VERSION "2.3 b2"
 #define INSTALLER_VERSION "1.4"
 #define FATRAINER_EDITION "Fatum Version"
 #define FATRAINER_EDITION_CAPS "FATUM VERSION"

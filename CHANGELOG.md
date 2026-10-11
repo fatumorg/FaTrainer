@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3 b2
+
+- `fatrainer.log` records the grappling hook energy and the UV charge while Infinite grappling hook, Infinite UV flashlight or Slow down UV flashlight is on, to find out why they stop working.
+
 ## 2.3 b1
 
 - The menu is darker, in the same warm near-black as the FaTrainer website and installer.

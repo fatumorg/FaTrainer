@@ -1886,6 +1886,33 @@ inline int keep_rope_energy() {
     return live;
 }
 
+inline std::string gear_report() {
+    auto containers = param_containers();
+    char b[96];
+    snprintf(b, sizeof b, "rope max %.2f", containers.empty() ? NAN : rdv<float>(param_value(containers[0], "RopeMaxEnergy"), NAN));
+    std::string out = b;
+    for (uintptr_t r : g.ropes) {
+        snprintf(b, sizeof b, ", rope %s %.2f%s", rdv<uintptr_t>(r) == g.vt_rope ? "live" : "dead", rdv<float>(r + ROPE_ENERGY, NAN), rdv<uint8_t>(r + ROPE_DEPLETED) ? " depleted" : "");
+        out += b;
+    }
+    for (uintptr_t e : g.equipment) {
+        snprintf(b, sizeof b, ", uv %s %.3f%s", rdv<uintptr_t>(e) == g.vt_equipment ? "live" : "dead", rdv<float>(e + UV_CHARGE, NAN), rdv<uint8_t>(e + UV_EXHAUSTED) ? " exhausted" : "");
+        out += b;
+    }
+    return out;
+}
+
+inline void note_gear(bool watched) {
+    static std::string last;
+    static DWORD last_at = 0;
+    const DWORD GEAR_LOG_GAP = 3000;
+    if (!watched || GetTickCount() - last_at < GEAR_LOG_GAP) return;
+    std::string now = gear_report();
+    if (now == last) return;
+    last = now, last_at = GetTickCount();
+    logf_hook("gear: %s", now.c_str());
+}
+
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
     bool prison_missing = !pause_prison() && is_on("prison_pause");
@@ -1895,6 +1922,7 @@ inline void tick() {
     if (!is_on("uv") && uv_slow > 1.0f) uv_slow_missing = !slow_uv_drain(uv_slow);
     else uv_last_charge.clear();
     bool rope_missing = is_on("hook") && !keep_rope_energy();
+    note_gear(is_on("hook") || is_on("uv") || uv_slow > 1.0f);
     patch_lockpick(is_on("lockpick"));
     patch_pound(is_on("z_pound_hits"));
     block_forced_damage(is_on("god"));
