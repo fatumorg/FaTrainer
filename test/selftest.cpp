@@ -141,8 +141,8 @@ int main(int argc, char** argv) {
         CHECK(news.id == "7" && news.title == "Servers down" && news.text == "First line.\n\nSecond line.");
         CHECK(logic::parse_announcement("").id.empty() && logic::parse_announcement("title=No id\n\nText").title.empty() && logic::parse_announcement("404: Not Found").id.empty());
     }
-    auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
-    CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");
+    auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\nInstaller Update\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
+    CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].name == "Installer Update" && log[1].name.empty() && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(m);
     if (!m) return 1;
@@ -295,6 +295,10 @@ int main(int argc, char** argv) {
     game::wr<float>(w.params + cheats::param_ids["AirKickRangeMul"] * 16 + 8, 1.0f);
     cheats::find("no_reload")->on = true;
     cheats::find_tweak("h_dropkick")->factor = 3.0f;
+    static uint8_t survivor_logical[0x800] = {};
+    *(uintptr_t*)survivor_logical = game::g.vt_logical_player;
+    uintptr_t no_logical = game::rdv<uintptr_t>(w.player + cheats::LOGICAL_PLAYER);
+    game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, (uintptr_t)survivor_logical);
     cheats::scan_enemies();
     game::set_count(mat->items[0], 999);
     cheats::tick();
@@ -452,6 +456,8 @@ int main(int argc, char** argv) {
     for (auto* n : {"RopeEnergyRegenTime", "CanUseHook", "AirKickRangeMul"}) cheats::cache_get_hook(my_provider, cheats::param_ids[n] + 1);
     CHECK(game::rdv<uint64_t>(cached("AirKickRangeMul")) == ~0ull);
     CHECK(game::rdv<uint64_t>(cached("RopeEnergyRegenTime")) == ~0ull && game::rdv<uint64_t>(cached("CanUseHook")) == ~0ull);
+    CHECK(cheats::side == cheats::SIDE_SURVIVOR);
+    game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, no_logical);
     game::wr<uint64_t>(cached("CanUseHook"), 5);
     cheats::cache_get_hook(my_provider, cheats::param_ids["CanUseHook"] + 1);
     CHECK(game::rdv<uint64_t>(cached("CanUseHook")) == 5 && cheats::overridden_providers[cheats::param_ids["CanUseHook"] + 1].empty());
@@ -567,6 +573,8 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dropkick")->factor = 10.0f;
     cheats::tick();
     CHECK(fake_var_object == (uintptr_t)&cheats::var_vtable[1]);
+    CHECK(cheats::side == cheats::SIDE_PENDING && read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22);
+    cheats::side = cheats::SIDE_UNKNOWN;
     CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 180);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_zombie_grab_angle_max") == 7);
     CHECK(read_var("f_btz_other") == 7 && read_var("i_other") == 7);
@@ -803,12 +811,17 @@ int main(int argc, char** argv) {
     config::cfg.pages = {{"combat", false}, {"player", true}};
     config::cfg.cheats_on = {"god", "uv"};
     config::cfg.tweaks = {{"h_dfa", 4.5f}};
+    config::cfg.cheat_keys = {{"god", 'G'}, {"hook", VK_F5}};
+    config::cfg.hidden_configs = {"hunter_rage"};
     char tmp[MAX_PATH];
     GetTempPathA(MAX_PATH, tmp);
     std::string path = std::string(tmp) + "fatrainer_selftest.ini";
     CHECK(config::save(path));
     config::cfg = config::Config();
     config::load(path);
+    config::load(path);
+    CHECK(config::cfg.cheat_keys.size() == 2 && config::cfg.cheat_keys["god"] == 'G' && config::cfg.cheat_keys["hook"] == VK_F5);
+    CHECK(config::cfg.hidden_configs.size() == 1);
     config::normalize({"player", "combat", "settings"});
     CHECK(config::cfg.accent[0] == 0.25f && config::cfg.cheats_on.size() == 2 && config::cfg.cheats_on[1] == "uv");
     CHECK(config::cfg.pages.size() == 3 && config::cfg.pages[0].id == "combat" && !config::cfg.pages[0].visible);

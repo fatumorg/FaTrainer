@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,7 @@ struct Config {
     std::vector<std::string> cheats_on;
     std::vector<std::pair<std::string, float>> tweaks;
     int spit_keys[SPIT_KEYS] = {};
+    std::map<std::string, int> cheat_keys;
     Esp esp;
     UvLight uv, hunter_glow;
     Look look;
@@ -169,6 +171,8 @@ inline void load(const std::string& path) {
     cfg.pages.clear();
     cfg.cheats_on.clear();
     cfg.tweaks.clear();
+    cfg.hidden_configs.clear();
+    cfg.cheat_keys.clear();
     char line[512];
     while (fgets(line, sizeof line, f)) {
         std::string s = line;
@@ -184,6 +188,11 @@ inline void load(const std::string& path) {
         else if (k == "spit_key") {
             int i = -1, vk = 0;
             if (sscanf(v.c_str(), "%d,%d", &i, &vk) == 2 && i >= 0 && i < SPIT_KEYS) cfg.spit_keys[i] = vk;
+        }
+        else if (k == "cheat_key") {
+            size_t c = v.find(',');
+            int vk = c == std::string::npos ? 0 : atoi(v.c_str() + c + 1);
+            if (vk > 0 && vk < 256) cfg.cheat_keys[v.substr(0, c)] = vk;
         }
         else if (k == "esp") {
             int f[10] = {};
@@ -237,6 +246,7 @@ inline bool save(const std::string& path) {
     for (auto& [k, v] : cfg.tweaks) fprintf(f, "tweak=%s,%.2f\n", k.c_str(), v);
     for (int i = 0; i < SPIT_KEYS; i++)
         if (cfg.spit_keys[i]) fprintf(f, "spit_key=%d,%d\n", i, cfg.spit_keys[i]);
+    for (auto& [cheat, vk] : cfg.cheat_keys) fprintf(f, "cheat_key=%s,%d\n", cheat.c_str(), vk);
     auto& e = cfg.esp;
     fprintf(f, "esp=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.0f\n", e.on, e.box, e.role, e.health_bar, e.health_text, e.distance, e.rank, e.rage,
             e.snaplines, e.allies, e.max_distance);

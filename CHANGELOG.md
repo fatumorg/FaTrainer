@@ -1,14 +1,29 @@
 # Changelog
 
+## 2.3 b3
+
+Keybind Update
+
+- Every version now has a name after its most important change. 2.3 is the Keybind Update, and the changelog names the earlier ones too.
+- New: Keybinds page. Give any cheat its own key and press it while the menu is closed to turn the cheat on or off; a message at the bottom of the screen says which. You can change the menu key there too. A key can only belong to one thing, so picking a key takes it away from whatever had it before.
+- Fixed: after loading a save with a config or remembered sliders on, your weapons often hit nothing until you turned everything off and set it again. While the game loads, the trainer cannot tell yet whether you play a survivor or the Night Hunter, and it applied the Night Hunter sliders (Claws, Ground pound, Pounce, Tackle) to your survivor right while the game set up your character. Night Hunter and survivor sliders now wait until the trainer knows which side you play.
+- Fixed: `fatrainer.ini` listed every deleted built-in config several times.
+
 ## 2.3 b2
+
+Keybind Update
 
 - `fatrainer.log` records the grappling hook energy and the UV charge while Infinite grappling hook, Infinite UV flashlight or Slow down UV flashlight is on, to find out why they stop working.
 
 ## 2.3 b1
 
+Keybind Update
+
 - The menu is darker, in the same warm near-black as the FaTrainer website and installer.
 
 ## 2.2
+
+Skill Tree Update
 
 - 2.2 is the last build of 2.2: it comes after 2.2 b1, b2 and b3, and those builds update to it by themselves.
 - New: a skill tree editor on the Skills page. Every tree (Survivor, Agility, Power, Driver, Legend, and Night Hunter while you play the hunter) is laid out like the game's own skill menu. Click a skill to learn it or remove it; learning a skill also learns the skills it needs, removing one also removes the skills that need it. Legend skills go up and down a level at a time. Learn all and Remove all do a whole tree. Changes are saved with your game like skills you buy.
@@ -19,12 +34,16 @@
 
 ## 2.2 b2
 
+Skill Tree Update
+
 - The trainer no longer touches your items, enemies or the Night Hunter until you are in a game, so nothing is written while the game loads from the main menu.
 - When the game crashes, `fatrainer.log` now also records heap corruption and fail-fast crashes, with the chain of game functions that led there. Please attach it if the game closes on its own.
 - Fixed: as the Night Hunter your melee, tackle and ground pound often did nothing, especially after starting the game with the Pounce slider already on. Pounce also widened the pounce aim to all around you. The game uses the attack for a pounce whenever a survivor counts as a pounce target, so a survivor beside or behind you took over your swipes, and the pounce then failed. Pounce now only lengthens the range, and you pounce the survivor you aim at.
 - Fixed: the survivor sliders (Death from above, Dropkick, Melee and the other kicks) also changed the Night Hunter's attacks while you played the hunter, and the Night Hunter sliders changed a survivor's game. Each side's sliders now only work while you play that side.
 
 ## 2.2 b1
+
+Skill Tree Update
 
 - The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.
 - XP gain now multiplies experience in every skill tree, Survivor and Night Hunter included, and the game's XP popup shows the boosted amount. Before it only changed Agility, Power and Driver.
@@ -48,6 +67,8 @@
 
 ## 2.1
 
+Redesign Update
+
 - New: Dodge spit on the PvP page, under As a survivor. When a spit is about to hit you, you step aside on your own: after a human reaction time, for a short random moment, sideways when it can, using W A S D. It only reacts to spit that would really hit you, never presses against a key you hold and never touches your mouse. Also part of both Survivor presets.
 - New: Night Hunter glow color on the Visuals page. The veins that light up when UV hits the Night Hunter glow in your own color and brightness, like the UV light color.
 - Fixed: the Skills page showed no skill trees and could not change them. The trainer looked for them in the wrong place.
@@ -59,11 +80,15 @@
 
 ## 2.0
 
+Installer Update
+
 - New: FaTrainer Installer for Windows and Linux. It finds Dying Light in your Steam libraries (or lets you choose the folder) and puts the trainer next to the game. It also updates and uninstalls, shows this changelog and, on Linux, the Steam launch option with a copy button. The Fatum Version (from the website and GitHub) fetches the trainer from the GitHub release and checks it against the release checksum; the Nexus Version (from Nexus Mods) has the trainer inside and never connects to the internet.
 - New, Fatum Version only: update check. When the game starts, the trainer asks GitHub for the newest version number. If a newer FaTrainer is out, this version stays turned off and shows a short notice; open the installer and press Update. The game itself keeps working. Without internet the trainer works as before. The Nexus Version has no update check; track the mod on Nexus Mods to hear about new versions.
 - The trainer file now carries its version in its Windows file properties, so the installer and you can see which version is installed.
 
 ## 1.9
+
+Configs Update
 
 - New: configs on the Settings page. Save the cheats and sliders you have on under a name, then load or delete them with one click. Each config is a small file in fatrainer_configs next to the game.
 - New: Death from above height on the PvP page. The game only starts Death From Above once you are already falling fast (12 m/s, a long drop). At Max a normal jump is enough.
@@ -79,11 +104,15 @@
 
 ## 1.8.1
 
+Crash Fix Update
+
 - Fixed: the game could crash at start on Windows. The trainer's memory scan read game memory that the game was freeing at the same time; on Windows it now copies each block safely first.
 - Fixed: a crash when the trainer read the position of a character that was being removed (Kill all enemies, saved positions, prison sections).
 - Unbreakable weapons keeps each weapon's own durability full instead of relying on game settings, so it works for every melee weapon, including the Korek Machete.
 
 ## 1.8
+
+Prison Run Update
 
 - Fixed: zombies and NPCs standing still. Cheats that change game settings (for example the grappling hook) also changed a different setting of every zombie and NPC. They now only change your own settings.
 - Fixed: giving an item could crash the game when the trainer tried it in the ammo inventory. Only ammo goes there now.
@@ -107,6 +136,8 @@
 
 ## 1.7
 
+Prison Update
+
 - New: Prison page for Harran Prison. Pause the run timer and the reward room countdown, teleport to every prison section, and save and load your position anywhere.
 - Infinite grappling hook: the hook's wait comes from rope energy, not from a cooldown, so the rope now recharges instantly.
 - Infinite UV flashlight: the UV charge is held full directly on your equipment.
@@ -118,6 +149,8 @@
 - New pages are placed next to their group in the sidebar when you update.
 
 ## 1.6
+
+Lockpick Update
 
 - Infinite grappling hook and infinite UV flashlight: the trainer now hooks the function the game uses to read these settings, so the new values reach every place that uses them.
 - New: instant lockpicking. Every pick position opens the lock and lockpicks never break.
@@ -135,6 +168,8 @@
 
 ## 1.5
 
+Sidebar Update
+
 - New sidebar menu grouped into Cheats, Be The Zombie and Items. A dot marks pages with something turned on, and Turn all off resets everything.
 - Settings saved to fatrainer.ini: accent color, interface size, background dim, menu key, page order and visibility, remembered cheats.
 - The game ignores your mouse and keyboard while the menu is open, the background dims, and the mouse wheel scrolls the menu.
@@ -147,6 +182,8 @@
 - Your own character is found correctly in co-op.
 
 ## 1.0.0
+
+First Release
 
 - First release: cash, backpack, stash, materials, give any item or blueprint, weapon editor.
 - Works on Windows and on Linux with Proton.

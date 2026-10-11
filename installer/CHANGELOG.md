@@ -1,5 +1,9 @@
 # FaTrainer Installer changelog
 
+## 1.5
+
+- The changelog shows the name of every trainer version, like 2.3 Keybind Update, under its number.
+
 ## 1.4
 
 - New: Launch Dying Light button next to Install, starts the game through Steam. Starting it from Steam works the same.

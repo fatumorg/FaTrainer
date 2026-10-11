@@ -83,7 +83,7 @@ inline std::string trainer_version_in(const std::string& dll) {
     return dll.find("FaTrainer | Dying Light") != std::string::npos ? LEGACY_VERSION : "";
 }
 
-struct ChangelogEntry { std::string version; std::vector<std::string> lines; };
+struct ChangelogEntry { std::string version, name; std::vector<std::string> lines; };
 
 inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
     std::vector<ChangelogEntry> out;
@@ -93,7 +93,8 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
         std::string line = md.substr(at, end == std::string::npos ? std::string::npos : end - at);
         at = end == std::string::npos ? md.size() : end + 1;
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-        if (line.rfind("## ", 0) == 0) out.push_back({line.substr(3), {}});
+        if (line.rfind("## ", 0) == 0) out.push_back({line.substr(3), "", {}});
+        else if (!line.empty() && line[0] != '-' && line[0] != ' ' && !out.empty() && out.back().lines.empty() && out.back().name.empty()) out.back().name = line;
         else if (line.rfind("- ", 0) == 0 && !out.empty()) out.back().lines.push_back(line.substr(2));
         else if (!line.empty() && !out.empty() && !out.back().lines.empty() && line[0] == ' ') out.back().lines.back() += " " + line.substr(line.find_first_not_of(' '));
     }

@@ -150,8 +150,10 @@ inline Cheat* find(const std::string& key) {
 inline bool is_on(const char* key) { return find(key) && find(key)->on; }
 
 inline uintptr_t player = 0;
-enum Side { SIDE_UNKNOWN, SIDE_SURVIVOR, SIDE_HUNTER };
-inline std::atomic<int> side{SIDE_UNKNOWN};
+enum Side { SIDE_PENDING, SIDE_UNKNOWN, SIDE_SURVIVOR, SIDE_HUNTER };
+inline std::atomic<int> side{SIDE_PENDING};
+const DWORD SIDE_SETTLE_MS = 5000;
+inline const char* SIDE_NAMES[] = {"pending", "unknown", "survivor", "night hunter"};
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
@@ -623,6 +625,8 @@ inline void apply_spit_radius(float factor) {
 }
 
 inline bool tweak_applies(const Tweak& t) {
+    bool one_side = t.group == G_ZOMBIE || t.group == G_HUNTER || t.group == G_HUMAN;
+    if (one_side && side == SIDE_PENDING) return false;
     bool hunter_side = t.group == G_ZOMBIE || t.group == G_HUNTER;
     if (hunter_side) return side != SIDE_SURVIVOR;
     return t.group != G_HUMAN || side != SIDE_HUNTER;
@@ -1913,6 +1917,15 @@ inline void note_gear(bool watched) {
     logf_hook("gear: %s", now.c_str());
 }
 
+inline void update_side(uintptr_t provider, bool new_player) {
+    static DWORD player_since = 0;
+    if (!provider || new_player) player_since = provider ? GetTickCount() : 0;
+    uintptr_t lp = provider ? logical_player(player) : 0;
+    int now = lp ? (rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER ? SIDE_HUNTER : SIDE_SURVIVOR)
+                 : player_since && GetTickCount() - player_since >= SIDE_SETTLE_MS ? SIDE_UNKNOWN : SIDE_PENDING;
+    if (side.exchange(now) != now) logf_hook("side: %s", SIDE_NAMES[now]);
+}
+
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
     bool prison_missing = !pause_prison() && is_on("prison_pause");
@@ -1937,14 +1950,13 @@ inline void tick() {
         if (is_on("one_hit")) weaken_enemies();
         if (is_on("one_hit_hunter")) weaken_hunter();
     }
-    uintptr_t lp = alive(player) ? logical_player(player) : 0;
-    side = !lp ? SIDE_UNKNOWN : rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER ? SIDE_HUNTER : SIDE_SURVIVOR;
     uintptr_t provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
     uintptr_t before = player_provider.exchange(provider);
     if (provider && before && provider != before) {
         logf_hook("player changed (respawn or level load), finding game objects again");
         respawned = true;
     }
+    update_side(provider, provider != before);
     install_var_hook();
     apply_dfa_fall_speed();
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);

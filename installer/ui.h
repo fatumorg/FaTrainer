@@ -878,9 +878,12 @@ inline void changelog(float width) {
     for (size_t i = 0; i < entries.size(); i++) {
         Reveal r((int)std::min<size_t>(i, 6));
         ImVec2 a = ImGui::GetCursorScreenPos();
-        float version_w = S(150);
-        dl->AddText(F.hero, F.hero->FontSize * (i == 0 ? 1.0f : 0.7f), {a.x, a.y - S(4)}, C(i == 0 ? ACCENT : TEXT), entries[i].version.c_str());
-        if (i == 0) label_caps(dl, {a.x + S(2), a.y + F.hero->FontSize + S(4)}, "NEWEST", MUTED);
+        float version_size = F.hero->FontSize * (i == 0 ? 1.0f : 0.7f);
+        float version_w = std::max(S(150), F.hero->CalcTextSizeA(version_size, FLT_MAX, 0, entries[i].version.c_str()).x + S(24));
+        dl->AddText(F.hero, version_size, {a.x, a.y - S(4)}, C(i == 0 ? ACCENT : TEXT), entries[i].version.c_str());
+        float caps_y = a.y + version_size + S(4), caps_step = F.label->FontSize + S(5);
+        if (!entries[i].name.empty()) label_caps(dl, {a.x + S(2), caps_y}, entries[i].name.c_str(), i == 0 ? ACCENT : MUTED), caps_y += caps_step;
+        if (i == 0) label_caps(dl, {a.x + S(2), caps_y}, "NEWEST", MUTED), caps_y += caps_step;
         ImGui::SetCursorScreenPos({a.x + version_w, a.y + S(4)});
         ImGui::BeginGroup();
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width - version_w - S(10));
@@ -896,7 +899,7 @@ inline void changelog(float width) {
         ImGui::PopTextWrapPos();
         ImGui::EndGroup();
         ImVec2 end = ImGui::GetCursorScreenPos();
-        float bottom = std::max(end.y, a.y + F.hero->FontSize + S(30));
+        float bottom = std::max(end.y, caps_y + S(6));
         dl->AddLine({a.x, bottom + S(14)}, {a.x + width, bottom + S(14)}, C(LINE_SOFT));
         ImGui::SetCursorScreenPos({a.x, bottom + S(34)});
         ImGui::Dummy({width, 0});

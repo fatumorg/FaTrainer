@@ -217,6 +217,19 @@ static void poll_spit_keys() {
     }
 }
 
+static void poll_cheat_keys() {
+    static std::map<std::string, bool> held;
+    for (auto& [key, vk] : config::cfg.cheat_keys) {
+        bool down = GetAsyncKeyState(vk) & 0x8000;
+        auto* cheat = !held[key] && down && !g_open ? cheats::find(key) : nullptr;
+        held[key] = down;
+        if (!cheat) continue;
+        cheat->on = !cheat->on;
+        save_config();
+        toast(std::string(cheat->label) + (cheat->on ? " on" : " off"));
+    }
+}
+
 static void begin_passive_frame(IDXGISwapChain* sc) {
     ImGuiIO& io = ImGui::GetIO();
     DXGI_SWAP_CHAIN_DESC d{};
@@ -305,12 +318,14 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         }
     }
     poll_spit_keys();
+    poll_cheat_keys();
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
     float shown = g_ready ? menu::presence(g_open) : 0;
     float notice = g_outdated.empty() ? 0 : update_notice_alpha();
-    if (g_ready && (shown > 0 || esp || notice > 0)) {
+    bool toast_only = g_ready && shown <= 0 && toast_showing();
+    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -325,6 +340,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         ImGui::NewFrame();
         if (esp) menu::draw_esp();
         if (shown > 0) menu::draw(shown, g_open);
+        if (toast_only) menu::draw_toast();
         if (notice > 0) menu::draw_update_notice(g_outdated, notice, g_build == menu::NOTICE_UPDATE ? menu::NOTICE_OLDER : g_build.load());
         render_overlay(sc);
     }

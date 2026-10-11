@@ -44,12 +44,18 @@ inline std::mutex g_qmx;
 inline std::vector<std::function<void()>> g_queue;
 inline std::string g_toast;
 inline DWORD g_toast_at = 0;
+const DWORD TOAST_MS = 3500;
 
 inline void toast(const std::string& s) {
     logf("toast: %s", s.c_str());
     std::lock_guard<std::mutex> l(g_qmx);
     g_toast = s;
     g_toast_at = GetTickCount();
+}
+
+inline bool toast_showing() {
+    std::lock_guard<std::mutex> l(g_qmx);
+    return !g_toast.empty() && GetTickCount() - g_toast_at < TOAST_MS;
 }
 
 inline void on_game_thread(std::function<void()> f) {

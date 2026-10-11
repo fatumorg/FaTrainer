@@ -765,41 +765,60 @@ inline bool pressed_key(int& vk) {
 inline const char* SPIT_NAMES[config::SPIT_KEYS] = {"Horde Summoner spit", "UV Suppressor spit", "Sense Suppressor spit", "Toxic spit"};
 inline const char* SPIT_GAME_KEY_NAMES[config::SPIT_KEYS] = {"1", "2", "3", "4"};
 
-inline void spit_keys_card() {
-    static int capturing = -1;
+inline ImGuiID g_capturing_key = 0;
+
+inline void take_key_from_others(int vk, const std::string& keeper) {
+    for (auto it = config::cfg.cheat_keys.begin(); it != config::cfg.cheat_keys.end();)
+        it = it->second == vk && it->first != keeper ? config::cfg.cheat_keys.erase(it) : std::next(it);
+    for (int& spit : config::cfg.spit_keys)
+        if (spit == vk && keeper.rfind("spit", 0) != 0) spit = 0;
+}
+
+inline bool key_button(const char* id, int& vk) {
     static bool waiting_release = false;
-    begin_card("spit_keys", "SPIT KEYS");
-    note("Pick your own key for each spit type. The trainer presses the game's key for it (1 to 4) when you press yours while the menu is closed.");
-    if (capturing >= 0) {
-        int vk = 0;
-        bool any = pressed_key(vk);
+    ImGuiID me = ImGui::GetID(id);
+    bool changed = false;
+    if (g_capturing_key == me) {
+        int k = 0;
+        bool any = pressed_key(k);
         if (waiting_release) waiting_release = any;
         else if (any) {
-            if (vk == VK_ESCAPE) capturing = -1;
-            else {
-                config::cfg.spit_keys[capturing] = vk == VK_BACK || vk == VK_DELETE ? 0 : vk;
-                capturing = -1;
-                save_config();
-            }
+            bool reserved = k == VK_ESCAPE || k == config::cfg.menu_key || k == VK_F8;
+            if (!reserved) vk = k == VK_BACK || k == VK_DELETE ? 0 : k, changed = true;
+            g_capturing_key = 0;
         }
     }
+    std::string text = g_capturing_key == me ? "Press a key..." : vk ? key_name(vk) : "Not set";
+    if (ImGui::Button((text + "###" + id).c_str(), {S(170), 0})) g_capturing_key = me, waiting_release = true;
+    ImGui::SameLine(0, S(8));
+    ImGui::BeginDisabled(!vk);
+    if (ImGui::Button((std::string("Clear##") + id).c_str(), {S(70), 0})) vk = 0, changed = true;
+    ImGui::EndDisabled();
+    return changed;
+}
+
+inline void capture_note() {
+    if (g_capturing_key) note("Esc cancels, Backspace or Delete removes the key. The menu key and F8 cannot be used.");
+}
+
+inline void spit_keys_card() {
+    begin_card("spit_keys", "SPIT KEYS");
+    note("Pick your own key for each spit type. The trainer presses the game's key for it (1 to 4) when you press yours while the menu is closed.");
     for (int i = 0; i < config::SPIT_KEYS; i++) {
         ImGui::PushID(i);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(SPIT_NAMES[i]);
         ImGui::SameLine(S(220));
-        int vk = config::cfg.spit_keys[i];
-        std::string text = capturing == i ? "Press a key..." : vk ? key_name(vk) : "Not set";
-        if (ImGui::Button(text.c_str(), {S(170), 0})) capturing = i, waiting_release = true;
-        ImGui::SameLine(0, S(8));
-        ImGui::BeginDisabled(!vk);
-        if (ImGui::Button("Clear", {S(70), 0})) config::cfg.spit_keys[i] = 0, save_config();
-        ImGui::EndDisabled();
+        int& vk = config::cfg.spit_keys[i];
+        if (key_button("spit", vk)) {
+            if (vk) take_key_from_others(vk, "spit");
+            save_config();
+        }
         ImGui::SameLine(0, S(12));
         label((std::string("game key ") + SPIT_GAME_KEY_NAMES[i]).c_str());
         ImGui::PopID();
     }
-    if (capturing >= 0) note("Esc cancels, Backspace or Delete removes the key.");
+    capture_note();
     end_card();
 }
 
@@ -1753,6 +1772,10 @@ inline const Key KEYS[] = {{VK_INSERT, "Insert"}, {VK_F8, "F8"},   {VK_HOME, "Ho
                            {VK_F4, "F4"},         {VK_F5, "F5"},   {VK_F6, "F6"},     {VK_F7, "F7"},     {VK_F9, "F9"},
                            {VK_F10, "F10"},       {VK_F11, "F11"}, {VK_F12, "F12"}};
 
+inline void menu_key_combo(bool& changed);
+
+inline void keybinds_page();
+
 struct Page {
     const char* id;
     const char* title;
@@ -1781,6 +1804,7 @@ inline const Page PAGES[] = {
     {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always, "ITEMS", {}},
     {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, has_tools, "ITEMS", {}},
     {"give", "Give items", "Spawn any item in the game", give_page, always, "ITEMS", {}},
+    {"keys", "Keybinds", "Keys that turn cheats on and off", keybinds_page, always, "", {}},
     {"settings", "Settings", "Look, controls, configs and version", settings_page, always, "", {}},
 };
 
@@ -1828,6 +1852,7 @@ inline void about_card() {
     float pulse = motion() > 0 ? fmodf(now(), 2.2f) / 2.2f : -1;
     pill(dl, {p.x + tw + S(16), p.y + (big - font_size(f_small) - S(10)) / 2}, FATRAINER_EDITION, T.accent, pulse);
     ImGui::Dummy({0, big + S(2)});
+    ImGui::TextColored(V(T.accent), "%s", FATRAINER_NAME);
     label("FaTrainer | Dying Light");
     ImGui::Dummy({0, S(2)});
     note(edition_story());
@@ -1857,6 +1882,60 @@ inline void accent_swatches(bool& changed) {
         ImGui::PopID();
     }
     if (ImGui::ColorEdit3("##custom", c.accent, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) changed = true;
+}
+
+inline void menu_key_combo(bool& changed) {
+    auto& c = config::cfg;
+    setting_label("Menu key");
+    ImGui::SetNextItemWidth(S(180));
+    const char* current = "Insert";
+    for (auto& k : KEYS)
+        if (k.vk == c.menu_key) current = k.name;
+    if (ImGui::BeginCombo("##key", current)) {
+        for (auto& k : KEYS)
+            if (ImGui::Selectable(k.name, k.vk == c.menu_key)) c.menu_key = k.vk, take_key_from_others(k.vk, ""), changed = true;
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    label("F8 always works too.");
+}
+
+inline void keybinds_page() {
+    bool changed = false;
+    begin_card("menu_key", "MENU");
+    menu_key_combo(changed);
+    end_card();
+    capture_note();
+    for (auto& page : PAGES) {
+        bool any = false;
+        for (const char* key : page.keys) any |= cheats::find(key) != nullptr;
+        if (!any) continue;
+        std::string title = page.title;
+        for (char& ch : title) ch = (char)toupper((unsigned char)ch);
+        begin_card((std::string("keys_") + page.id).c_str(), title.c_str());
+        for (const char* key : page.keys) {
+            auto* cheat = cheats::find(key);
+            if (!cheat) continue;
+            ImGui::PushID(key);
+            ImGui::AlignTextToFramePadding();
+            ImGui::PushStyleColor(ImGuiCol_Text, cheat->on ? V(T.accent) : V(T.text));
+            ImGui::TextUnformatted(cheat->label);
+            ImGui::PopStyleColor();
+            ImGui::SameLine(S(300));
+            auto found = config::cfg.cheat_keys.find(key);
+            int vk = found == config::cfg.cheat_keys.end() ? 0 : found->second;
+            if (key_button("bind", vk)) {
+                if (vk) take_key_from_others(vk, key), config::cfg.cheat_keys[key] = vk;
+                else config::cfg.cheat_keys.erase(key);
+                changed = true;
+            }
+            ImGui::PopID();
+        }
+        end_card();
+    }
+    note("Press a cheat's key while the menu is closed to turn it on or off. A message at the bottom of the screen says which. "
+         "Spit keys are on the Night Hunter page.");
+    if (changed) save_config();
 }
 
 inline void settings_page() {
@@ -1904,18 +1983,7 @@ inline void settings_page() {
     end_card();
 
     begin_card("controls", "CONTROLS");
-    setting_label("Menu key");
-    ImGui::SetNextItemWidth(S(180));
-    const char* current = "Insert";
-    for (auto& k : KEYS)
-        if (k.vk == c.menu_key) current = k.name;
-    if (ImGui::BeginCombo("##key", current)) {
-        for (auto& k : KEYS)
-            if (ImGui::Selectable(k.name, k.vk == c.menu_key)) c.menu_key = k.vk, changed = true;
-        ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    label("F8 always works too.");
+    menu_key_combo(changed);
     bool remember = c.remember_cheats;
     if (switch_row("Remember cheats", "Turn your cheats back on the next time the game starts.", remember)) c.remember_cheats = remember, changed = true;
     bool older = c.allow_older;
@@ -2135,7 +2203,7 @@ inline void draw_toast() {
         std::lock_guard<std::mutex> q(g_qmx);
         msg = g_toast, at = g_toast_at;
     }
-    const float SHOW = 3.5f;
+    const float SHOW = TOAST_MS / 1000.0f;
     float age = (GetTickCount() - at) / 1000.0f;
     if (msg.empty() || age > SHOW) return;
     float m = motion();
