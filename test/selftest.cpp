@@ -118,12 +118,32 @@ int main(int argc, char** argv) {
     {
         const char* hypr = "Monitor DP-5 (ID 1):\n\t1920x1080@179.96400 at 0x500\n\treserved: 0 0 56 0\n\tscale: 1\n\tfocused: no\n"
                            "Monitor DP-6 (ID 0):\n\t2560x1440@180.00000 at 1920x0\n\treserved: 0 40 0 0\n\tscale: 1.25\n\tfocused: yes\n";
-        logic::Area area = logic::hyprland_focused_monitor(hypr);
-        CHECK(area.x == 1920 && area.y == 40 && area.w == 2048 && area.h == 1112);
-        CHECK(logic::hyprland_focused_monitor("garbage").w == 0);
+        logic::Screen screen = logic::hyprland_focused_monitor(hypr);
+        CHECK(screen.work.x == 1920 && screen.work.y == 40 && screen.work.w == 2048 && screen.work.h == 1112);
+        CHECK(screen.full.x == 1920 && screen.full.y == 0 && screen.full.w == 2048 && screen.full.h == 1152);
+        CHECK(logic::hyprland_focused_monitor("garbage").full.w == 0);
+        logic::Screen desk{{1920, 0, 2560, 1440}, {1976, 0, 2504, 1440}};
+        logic::Area spot = logic::centered(desk, 1120, 740);
+        CHECK(spot.x == 2640 && spot.y == 350);
+        logic::Screen small{{0, 0, 1366, 768}, {0, 40, 1366, 728}};
+        spot = logic::centered(small, 1120, 740);
+        CHECK(spot.x == 123 && spot.y == 40);
+        logic::Screen side{{0, 0, 1200, 900}, {300, 0, 900, 900}};
+        spot = logic::centered(side, 1120, 740);
+        CHECK(spot.x == 300 && spot.y == 80);
         CHECK(newer_version("9.9", INSTALLER_VERSION) && !newer_version(INSTALLER_VERSION, INSTALLER_VERSION));
     }
     {
+        std::string json = "[{\"tag_name\": \"installer\", \"assets\": [{\"browser_download_url\": \"https://x/installer-linux.txt\"}]},"
+                           "{\"tag_name\": \"v2.2-b1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.2-b1/xinput1_3.dll\"}, {\"browser_download_url\": \"https://x/v2.2-b1/version.txt\"}]},"
+                           "{\"tag_name\": \"v1.4\", \"assets\": [{\"browser_download_url\": \"https://x/v1.4/xinput1_3.dll\"}]},"
+                           "{\"tag_name\": \"v2.1\", \"assets\": [{\"browser_download_url\": \"https://x/v2.1/version.txt\"}, {\"browser_download_url\": \"https://x/v2.1/xinput1_3.dll\"}]}]";
+        auto releases = logic::installable_releases(json);
+        CHECK(releases.size() == 2 && releases[0].tag == "v2.2-b1" && releases[0].version == "2.2 b1" && releases[1].version == "2.1");
+        std::string builds = "[{\"tag_name\": \"v2.2-b1\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},{\"tag_name\": \"v2.2-b3\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},"
+                             "{\"tag_name\": \"v2.2\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"},{\"tag_name\": \"v2.3\", \"a\": \"/xinput1_3.dll\" \"/version.txt\"}]";
+        auto newest = logic::installable_releases(builds);
+        CHECK(newest.size() == 2 && newest[0].version == "2.3" && newest[1].version == "2.2" && newest[1].tag == "v2.2");
         CHECK(logic::needs_install("", "2.3", true, false) && logic::needs_install(logic::LEGACY_VERSION, "2.3", true, false) && logic::needs_install("2.2", "2.3", true, false));
         CHECK(!logic::needs_install("2.3", "2.3", true, false) && !logic::needs_install("2.2", "2.3", false, false) && !logic::needs_install("", "2.3", false, true));
         CHECK(!logic::needs_install("2.4 b1", "2.3", true, true) && logic::needs_install("2.4 b1", "2.3", true, false) && logic::needs_install("2.3", "2.4 b1", true, true));

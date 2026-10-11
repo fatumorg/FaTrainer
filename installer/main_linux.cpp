@@ -29,13 +29,14 @@ static void ask_to_float(GLFWwindow* window) {
     change(display, glfwGetX11Window(window), type, ATOM_TYPE, FORMAT_32, REPLACE, (const unsigned char*)&dialog, 1);
 }
 
-static logic::Area focused_area() {
-    logic::Area area;
+static logic::Screen focused_screen() {
+    logic::Screen screen;
     if (getenv("HYPRLAND_INSTANCE_SIGNATURE")) {
         std::string text;
         platform::run({"hyprctl", "monitors"}, [&](const char* d, size_t n) { text.append(d, n); return true; });
-        area = logic::hyprland_focused_monitor(text);
-        if (area.w > 0) return area;
+        screen = logic::hyprland_focused_monitor(text);
+        if (screen.full.w > 0 && screen.work.w > 0) return screen;
+        screen = {};
     }
     using DefaultRoot = unsigned long (*)(void*);
     using QueryPointer = int (*)(void*, unsigned long, unsigned long*, unsigned long*, int*, int*, int*, int*, unsigned int*);
@@ -50,21 +51,27 @@ static logic::Area focused_area() {
     int count = 0;
     GLFWmonitor** monitors = glfwGetMonitors(&count);
     for (int i = 0; i < count; i++) {
-        logic::Area a;
-        glfwGetMonitorWorkarea(monitors[i], &a.x, &a.y, &a.w, &a.h);
-        bool inside = pointer && px >= a.x && px < a.x + a.w && py >= a.y && py < a.y + a.h;
-        if (inside || (i == 0 && area.w == 0)) area = a;
+        logic::Screen s;
+        const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+        if (!mode) continue;
+        glfwGetMonitorPos(monitors[i], &s.full.x, &s.full.y);
+        s.full.w = mode->width, s.full.h = mode->height;
+        glfwGetMonitorWorkarea(monitors[i], &s.work.x, &s.work.y, &s.work.w, &s.work.h);
+        if (s.work.w <= 0) s.work = s.full;
+        bool inside = pointer && px >= s.full.x && px < s.full.x + s.full.w && py >= s.full.y && py < s.full.y + s.full.h;
+        if (inside || screen.full.w == 0) screen = s;
         if (inside) break;
     }
-    return area;
+    return screen;
 }
 
 static void center(GLFWwindow* window) {
-    logic::Area area = focused_area();
-    if (area.w <= 0) return;
+    logic::Screen screen = focused_screen();
+    if (screen.full.w <= 0) return;
     int w = 0, h = 0;
     glfwGetWindowSize(window, &w, &h);
-    glfwSetWindowPos(window, area.x + std::max(0, (area.w - w) / 2), area.y + std::max(0, (area.h - h) / 2));
+    logic::Area spot = logic::centered(screen, w, h);
+    glfwSetWindowPos(window, spot.x, spot.y);
 }
 
 static void nixos_hint() {

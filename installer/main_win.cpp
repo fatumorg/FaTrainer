@@ -121,9 +121,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     UINT dpi = GetDpiForSystem();
     float scale = dpi / 96.0f;
     int width = (int)(1120 * scale), height = (int)(740 * scale);
-    RECT area = info.rcWork;
-    HWND window = CreateWindowExW(0, wc.lpszClassName, L"FaTrainer (" FATRAINER_EDITION ")", WS_OVERLAPPEDWINDOW, area.left + (area.right - area.left - width) / 2,
-                                  area.top + (area.bottom - area.top - height) / 2, width, height, nullptr, nullptr, instance, nullptr);
+    RECT full = info.rcMonitor, work = info.rcWork;
+    logic::Screen screen{{full.left, full.top, full.right - full.left, full.bottom - full.top}, {work.left, work.top, work.right - work.left, work.bottom - work.top}};
+    logic::Area spot = logic::centered(screen, width, height);
+    HWND window = CreateWindowExW(0, wc.lpszClassName, L"FaTrainer (" FATRAINER_EDITION ")", WS_OVERLAPPEDWINDOW, spot.x, spot.y, width, height, nullptr, nullptr, instance, nullptr);
     BOOL dark = TRUE;
     const DWORD IMMERSIVE_DARK_MODE = 20;
     DwmSetWindowAttribute(window, IMMERSIVE_DARK_MODE, &dark, sizeof dark);

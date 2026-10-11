@@ -35,7 +35,7 @@ Download FaTrainer, the launcher (Fatum Version), from the [launcher release](ht
 
 On Linux, Dying Light has to run through Proton (Properties → Compatibility → force a Proton version); the trainer does not load in the native Linux version.
 
-FaTrainer finds Dying Light in your Steam libraries (or lets you choose the folder). Press Play: it downloads `xinput1_3.dll` from the release when yours is older, checks it against the release checksum, puts it next to `DyingLightGame.exe` and starts the game through Steam with the trainer on. Start Dying Light from Steam instead and you play the normal game: the file stays, but the trainer does nothing. Remove from game deletes it. Add shortcut puts FaTrainer on the desktop and in the Start menu, or in the Linux app menu. On Linux it also shows the Steam launch option Proton needs:
+FaTrainer finds Dying Light in your Steam libraries (or lets you choose the folder). Press Play: it downloads `xinput1_3.dll` from the release when yours is older, checks it against the release checksum, puts it next to `DyingLightGame.exe` and starts the game through Steam with the trainer on. Start Dying Light from Steam instead and you play the normal game: the file stays, but the trainer does nothing. The version list lets you play an older version. Remove from game deletes it. Add shortcut puts FaTrainer on the desktop and in the Start menu, or in the Linux app menu. On Linux it also shows the Steam launch option Proton needs:
 
 ```
 WINEDLLOVERRIDES="xinput1_3=n,b" %command%

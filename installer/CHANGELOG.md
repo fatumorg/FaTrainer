@@ -1,5 +1,10 @@
 # FaTrainer launcher changelog
 
+## 2.1
+
+- The version list is back: pick an older version and press Play. Play turns on Use older versions so it keeps working in game.
+- FaTrainer opens in the center of the screen, not of the space next to a taskbar or panel.
+
 ## 2.0
 
 - The installer is now the FaTrainer launcher. Press Play: it installs or updates the trainer and starts Dying Light with it.

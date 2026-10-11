@@ -103,6 +103,33 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
     return out;
 }
 
+struct Release { std::string tag, version; };
+
+inline std::vector<Release> installable_releases(const std::string& json) {
+    const std::string TAG = "\"tag_name\"";
+    std::vector<Release> out;
+    size_t at = json.find(TAG);
+    while (at != std::string::npos) {
+        size_t next = json.find(TAG, at + TAG.size());
+        size_t open = json.find('"', json.find(':', at + TAG.size()));
+        size_t close = open == std::string::npos ? open : json.find('"', open + 1);
+        std::string tag = close == std::string::npos ? "" : json.substr(open + 1, close - open - 1);
+        std::string rest = json.substr(at, next == std::string::npos ? std::string::npos : next - at);
+        bool installable = rest.find("/version.txt\"") != std::string::npos && rest.find("/xinput1_3.dll\"") != std::string::npos;
+        if (installable && tag.size() > 1 && tag[0] == 'v') {
+            std::string version = tag.substr(1);
+            for (char& c : version)
+                if (c == '-') c = ' ';
+            auto same = std::find_if(out.begin(), out.end(), [&](const Release& r) { return same_version(r.version, version); });
+            if (same == out.end()) out.push_back({tag, version});
+            else if (newer_version(version, same->version)) *same = {tag, version};
+        }
+        at = next;
+    }
+    std::sort(out.begin(), out.end(), [](const Release& a, const Release& b) { return newer_version(a.version, b.version); });
+    return out;
+}
+
 inline bool needs_install(const std::string& installed, const std::string& latest, bool ready, bool beta) {
     if (!ready || installed == latest) return false;
     return !(beta && newer_version(installed, latest));
@@ -160,8 +187,20 @@ inline Announcement parse_announcement(std::string file) {
 
 struct Area { int x = 0, y = 0, w = 0, h = 0; };
 
-inline Area hyprland_focused_monitor(const std::string& text) {
-    Area found, current;
+struct Screen { Area full, work; };
+
+inline int centered_in(int full_at, int full_size, int work_at, int work_size, int size) {
+    if (size >= work_size) return work_at;
+    return std::clamp(full_at + (full_size - size) / 2, work_at, work_at + work_size - size);
+}
+
+inline Area centered(const Screen& screen, int w, int h) {
+    return {centered_in(screen.full.x, screen.full.w, screen.work.x, screen.work.w, w), centered_in(screen.full.y, screen.full.h, screen.work.y, screen.work.h, h), w, h};
+}
+
+inline Screen hyprland_focused_monitor(const std::string& text) {
+    Screen found;
+    Area current;
     int left = 0, top = 0, right = 0, bottom = 0, width = 0, height = 0;
     float scale = 1;
     size_t at = 0;
@@ -177,8 +216,8 @@ inline Area hyprland_focused_monitor(const std::string& text) {
         else if (sscanf(line.c_str(), "reserved: %d %d %d %d", &left, &top, &right, &bottom) == 4) {}
         else if (sscanf(line.c_str(), "scale: %f", &scale) == 1) {}
         else if (line == "focused: yes" && width > 0 && scale > 0) {
-            found.x = current.x + left, found.y = current.y + top;
-            found.w = (int)(width / scale) - left - right, found.h = (int)(height / scale) - top - bottom;
+            found.full = {current.x, current.y, (int)(width / scale), (int)(height / scale)};
+            found.work = {current.x + left, current.y + top, found.full.w - left - right, found.full.h - top - bottom};
         }
     }
     return found;

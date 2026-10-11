@@ -113,7 +113,9 @@ struct Model {
     bool message_bad = false;
     bool picking = false, picked_ready = false, picker_missing = false;
     std::string picked;
-    bool beta = false;
+    std::vector<logic::Release> releases;
+    logic::Release chosen;
+    bool allow_older = false, beta = false;
     logic::Announcement announcement;
 };
 inline Model M;
@@ -147,6 +149,7 @@ inline void refresh_installed() {
     fs::path ini = M.game / "fatrainer.ini";
     std::string text = !M.game.empty() && fs::exists(ini, ec) ? platform::read_file(ini) : "";
     bool beta = logic::ini_value(text, "beta") == "1";
+    M.allow_older = logic::ini_value(text, "allow_older") == "1";
     if (beta != M.beta) M.beta = beta, M.refetch = true;
 }
 
@@ -191,9 +194,13 @@ inline void fetch_release() {
         std::string installer_text;
         platform::net::get_text(std::string(INSTALLER_DOWNLOADS) + platform::INSTALLER_INFO, installer_text, ignored);
         ReleaseInfo installer = parse_release_info(installer_text);
+        std::string listing;
+        std::vector<logic::Release> releases;
+        if (platform::net::get_text(RELEASES_API, listing, ignored)) releases = logic::installable_releases(listing);
         bool installer_newer = newer_version(installer.version, INSTALLER_VERSION) && installer.sha256.size() == 64;
         std::lock_guard<std::mutex> l(M.mx);
         M.installer_update = installer_newer ? installer : ReleaseInfo{};
+        if (!releases.empty()) M.releases = releases;
         M.on_beta = on_beta;
         M.fetch = ok ? Fetch::ready : Fetch::failed;
         M.fetch_error = error;
@@ -223,19 +230,28 @@ inline void start_play() {
     fs::path game;
     bool on_beta, install;
     ReleaseInfo latest;
-    std::string installed;
+    std::string installed, newest;
+    logic::Release chosen;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
-        game = M.game, latest = M.latest, on_beta = M.on_beta, installed = M.installed;
+        game = M.game, latest = M.latest, on_beta = M.on_beta, installed = M.installed, chosen = M.chosen, newest = M.latest.version;
         install = logic::needs_install(M.installed, M.latest.version, M.fetch == Fetch::ready, M.beta);
+        if (!chosen.tag.empty()) install = installed != chosen.version;
         M.job = Job::working, M.step = install ? "Downloading" : "Starting Dying Light", M.progress = 0, M.message.clear();
     }
-    std::thread([game, latest, on_beta, install, installed]() mutable {
+    std::thread([game, latest, on_beta, install, installed, chosen, newest]() mutable {
         std::error_code ec;
         if (install) {
             const unsigned long long LIMIT = 64ull << 20;
             std::string data, error, base = on_beta ? BETA_DOWNLOADS : RELEASE_DOWNLOADS;
+            if (!chosen.tag.empty()) {
+                base = std::string(RELEASE_TAG_DOWNLOADS) + chosen.tag + "/";
+                std::string text;
+                if (!platform::net::get_text(base + "version.txt", text, error)) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
+                latest = parse_release_info(text);
+                if (latest.version.empty() || latest.sha256.size() != 64) return finish(Job::failed, "FaTrainer " + chosen.version + " has no valid version.txt. Nothing was changed.");
+            }
             bool ok = platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
                 data.append(d, n);
                 unsigned long long expected = latest.size ? latest.size : total;
@@ -276,6 +292,14 @@ inline void start_play() {
             installed = latest.version;
             std::lock_guard<std::mutex> l(M.mx);
             if (M.game == game) M.installed = installed;
+        }
+        if (!chosen.tag.empty() && newer_version(newest, installed)) {
+            bool written;
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                written = M.game != game || M.allow_older || set_ini_flag("allow_older", true);
+            }
+            if (!written) return finish(Job::failed, "Could not write fatrainer.ini. " + replace_hint());
         }
         fs::path arm = game / LAUNCH_FILE;
         bool armed = !newer_version(FIRST_ARMED_VERSION, installed);
@@ -655,7 +679,7 @@ inline void detail(float width) {
         view.job = M.job, view.step = M.step, view.progress = M.progress, view.finished_at = M.finished_at, view.message = M.message;
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
         view.installer_update = M.installer_update;
-        view.beta = M.beta, view.on_beta = M.on_beta;
+        view.releases = M.releases, view.chosen = M.chosen, view.beta = M.beta, view.on_beta = M.on_beta;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -762,14 +786,45 @@ inline void detail(float width) {
     {
         Reveal r(3);
         ImVec2 a = ImGui::GetCursorScreenPos();
-        label_caps(dl, a, "UPDATES", MUTED);
+        label_caps(dl, a, "VERSION", MUTED);
         ImGui::Dummy({0, S(14)});
+        std::string latest_label = !ready ? "Latest" : (view.on_beta ? "Beta, " : "Latest, ") + view.latest.version;
+        std::string current = view.chosen.tag.empty() ? latest_label : view.chosen.version;
+        ImGui::SetNextItemWidth(S(300));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {S(14), S(13)});
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(10));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(8), S(8)});
+        bool open = ImGui::BeginCombo("##version", current.c_str());
+        ImGui::PopStyleVar();
+        if (open) {
+            if (ImGui::Selectable(latest_label.c_str(), view.chosen.tag.empty())) {
+                std::lock_guard<std::mutex> l(M.mx);
+                M.chosen = {};
+            }
+            for (const logic::Release& release : view.releases) {
+                if (ready && release.version == view.latest.version && !view.on_beta) continue;
+                if (ImGui::Selectable(release.version.c_str(), release.tag == view.chosen.tag)) {
+                    std::lock_guard<std::mutex> l(M.mx);
+                    M.chosen = release;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        platform::caption_holes.push_back({ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y, ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y});
+        ImGui::PopStyleVar(2);
+        ImGui::SameLine(0, S(18));
         ImVec2 beta_box = ImGui::GetCursorScreenPos();
+        beta_box.y += (S(44) - S(20)) / 2;
         bool beta = view.beta;
         if (check_box(dl, "beta", "Beta builds", beta_box, beta, found)) toggle_ini_flag("beta", !beta);
-        ImGui::SetCursorScreenPos({beta_box.x, beta_box.y + S(20) + S(8)});
-        muted_note(width, beta ? "Play uses the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
-                               : "Optional. Beta builds are the version being worked on right now, open to everyone. They may have bugs, so Play uses the published release unless you tick this.");
+        ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10)});
+        bool older = !view.chosen.tag.empty() && ready && newer_version(view.latest.version, view.chosen.version);
+        bool unarmed = !view.chosen.tag.empty() && newer_version(FIRST_ARMED_VERSION, view.chosen.version);
+        std::string note = unarmed ? "Versions before " + std::string(FIRST_ARMED_VERSION) + " also run when you start Dying Light from Steam. Play turns on Use older versions so it keeps working in game."
+                           : older ? "Play turns on Use older versions so this version keeps working in game after newer ones are out."
+                           : beta  ? "Play uses the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
+                                   : "Play always uses the newest version. Pick an older one here, or tick Beta builds for the version being worked on right now, which may have bugs.";
+        muted_note(width, note.c_str());
         ImGui::Dummy({0, S(8)});
     }
 
@@ -779,7 +834,8 @@ inline void detail(float width) {
         float progress = -1;
         bool enabled = false;
         bool celebrate = view.job == Job::done && ImGui::GetTime() - view.finished_at < 2.6;
-        bool install = logic::needs_install(view.installed, view.latest.version, ready, view.beta);
+        bool install = view.chosen.tag.empty() ? logic::needs_install(view.installed, view.latest.version, ready, view.beta) : view.installed != view.chosen.version;
+        std::string target = view.chosen.tag.empty() ? view.latest.version : view.chosen.version;
         bool playable = found && (ready || (!view.installed.empty() && view.installed != logic::LEGACY_VERSION));
         if (view.job == Job::working) text = view.step + (view.progress < 0.97f ? "  " + std::to_string((int)(view.progress * 100)) + "%" : ""), progress = view.progress;
         else if (celebrate) text = "Running", progress = 1;
@@ -787,7 +843,7 @@ inline void detail(float width) {
         else if (view.fetch == Fetch::loading) text = "Checking for updates";
         else if (!found) text = "Choose the game folder first";
         else if (!playable) text = "Cannot reach GitHub";
-        else text = !install ? "Play" : (newer_version(view.latest.version, view.installed) ? "Update to " : "Install ") + view.latest.version + " and play", enabled = true;
+        else text = !install ? "Play" : (newer_version(target, view.installed) ? "Update to " : "Install ") + target + " and play", enabled = true;
         ImVec2 at = ImGui::GetCursorScreenPos();
         float shown_progress = progress >= 0 ? follow(anim("progress"), progress, 10) : (anim("progress") = 0);
         if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))
