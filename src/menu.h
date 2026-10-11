@@ -469,6 +469,21 @@ inline void search_box(const char* id, const char* hint, char* buf, size_t size)
     ImGui::InputTextWithHint(id, hint, buf, size);
 }
 
+inline void delete_item(const game::Inventory& inv, const game::Item& it) {
+    uintptr_t obj = inv.obj, item = it.addr;
+    game::Kind kind = inv.kind;
+    std::string name = it.name;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        bool gone = game::remove_item(obj, item, kind);
+        if (gone)
+            for (auto& i : game::g.invs)
+                if (i.obj == obj) i.items.erase(std::remove_if(i.items.begin(), i.items.end(), [&](const game::Item& x) { return x.addr == item; }), i.items.end());
+        logf("delete %s from %s: %s", name.c_str(), game::KIND_NAMES[kind], gone ? "done" : "refused");
+        toast(gone ? "Deleted " + name : "The game kept " + name + ". Press Refresh and try again.");
+    });
+}
+
 inline void inventory_page(game::Kind kind) {
     static char filter[64] = "";
     search_box("##f", "Search items...", filter, sizeof filter);
@@ -485,7 +500,7 @@ inline void inventory_page(game::Kind kind) {
         caps(title.c_str());
         if (!ImGui::BeginTable(("t" + std::to_string(i)).c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) continue;
         ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Amount", ImGuiTableColumnFlags_WidthFixed, S(250));
+        ImGui::TableSetupColumn("Amount", ImGuiTableColumnFlags_WidthFixed, S(322));
         for (size_t j = 0; j < inv.items.size(); j++) {
             auto& it = inv.items[j];
             const char* id = it.info ? it.info->id : "";
@@ -498,12 +513,18 @@ inline void inventory_page(game::Kind kind) {
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + S(6));
             int v = game::count(it);
             float bw = ImGui::GetFrameHeight();
-            if (ImGui::Button("-", {bw, 0})) game::set_count(it, std::max(0, v - 1));
+            if (ImGui::Button("-", {bw, 0})) {
+                if (v > 1) game::set_count(it, v - 1);
+                else delete_item(inv, it);
+            }
             ImGui::SameLine(0, S(4));
             ImGui::SetNextItemWidth(S(70));
             int e = v;
             ImGui::InputInt("##c", &e, 0, 0);
-            if (ImGui::IsItemDeactivatedAfterEdit()) game::set_count(it, e);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                if (e > 0) game::set_count(it, e);
+                else delete_item(inv, it);
+            }
             ImGui::SameLine(0, S(4));
             if (ImGui::Button("+", {bw, 0})) game::set_count(it, v + 1);
             ImGui::SameLine(0, S(8));
@@ -516,6 +537,13 @@ inline void inventory_page(game::Kind kind) {
                 if (ImGui::Button("Edit", {S(64), 0})) open_editor(it, id);
             } else if (ImGui::Button("Set 99", {S(64), 0})) {
                 game::set_count(it, 99);
+            }
+            ImGui::SameLine(0, S(4));
+            static uintptr_t confirm_delete_item = 0;
+            bool sure = confirm_delete_item == it.addr;
+            if (ImGui::Button(sure ? "Sure?" : "Delete", {S(64), 0})) {
+                if (sure) delete_item(inv, it), confirm_delete_item = 0;
+                else confirm_delete_item = it.addr;
             }
             ImGui::PopID();
         }

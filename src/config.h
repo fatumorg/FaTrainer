@@ -221,7 +221,9 @@ inline void load(const std::string& path) {
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
-        else if (k == "hidden_config") cfg.hidden_configs.push_back(v);
+        else if (k == "hidden_config") {
+            if (std::find(cfg.hidden_configs.begin(), cfg.hidden_configs.end(), v) == cfg.hidden_configs.end()) cfg.hidden_configs.push_back(v);
+        }
         else if (Profile p; read_cheat_line(k, v, p)) {
             cfg.cheats_on.insert(cfg.cheats_on.end(), p.cheats.begin(), p.cheats.end());
             cfg.tweaks.insert(cfg.tweaks.end(), p.tweaks.begin(), p.tweaks.end());

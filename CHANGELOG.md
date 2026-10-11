@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4
+
+Refill Update
+
+- 2.4 is the last build of 2.4: it comes after 2.4 b1, which updates to it by itself.
+- New: Delete next to every item on the Backpack, Stash, Materials and Tools pages removes it from the game. Lowering an amount to 0 removes the item too; before, it stayed as an empty item.
+- Fixed: `fatrainer.ini` kept every deleted built-in config several times when an older version had written it that way. The trainer now reads each one once.
+- The log line `cheats:` now says which side the trainer thinks you play and whether it found your player's settings, to find out why survivor sliders do nothing in some games.
+
 ## 2.4 b1
 
 Refill Update

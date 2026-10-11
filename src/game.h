@@ -601,6 +601,28 @@ inline bool give(uintptr_t inv, uintptr_t tmpl_item, uintptr_t desc, int amount)
     return count_of(inv, desc) != before;
 }
 
+using RemoveOneFn = bool(__fastcall*)(uintptr_t inv, uintptr_t item, int reason);
+using RemoveStackFn = int(__fastcall*)(uintptr_t inv, uintptr_t item, int count, int reason);
+const int SLOT_REMOVE_ONE = 9, SLOT_REMOVE_STACK = 10, WHOLE_STACK = -1;
+
+inline bool holds(uintptr_t inv, uintptr_t item) {
+    uintptr_t arr = rdv<uintptr_t>(inv + 0x40);
+    uint32_t n = rdv<uint32_t>(inv + 0x48);
+    for (uint32_t i = 0; i < n && i < 4000; i++)
+        if (rdv<uintptr_t>(arr + i * 8) == item) return true;
+    return false;
+}
+
+inline bool remove_item(uintptr_t inv, uintptr_t item, Kind kind) {
+    uintptr_t vt = rdv<uintptr_t>(inv);
+    if (!vt || !holds(inv, item)) return false;
+    if (kind != K_AMMO)
+        if (auto stack = (RemoveStackFn)rdv<uintptr_t>(vt + SLOT_REMOVE_STACK * 8)) stack(inv, item, WHOLE_STACK, 0);
+    if (!holds(inv, item)) return true;
+    if (auto one = (RemoveOneFn)rdv<uintptr_t>(vt + SLOT_REMOVE_ONE * 8)) one(inv, item, 0);
+    return !holds(inv, item);
+}
+
 inline std::vector<Kind> give_order(Kind first) {
     std::vector<Kind> order = {first};
     for (Kind k : {K_MATERIALS, K_BACKPACK, K_TOOLS, K_COLLECTABLES, K_STASH})

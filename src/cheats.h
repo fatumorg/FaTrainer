@@ -1990,12 +1990,16 @@ inline std::string local_class() {
 }
 
 inline std::string describe() {
-    char b[1600];
+    char b[2048];
     snprintf(b, sizeof b,
-             "player %s (%zu scanned, local root %s, local %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
+             "player %s (%zu scanned, local root %s, local %s), side %s (logical player %s, role %d, provider %s), health %.0f, stamina %.0f, params %zu, cache hook %s (hook reads %u, uv reads %u), "
              "ammo flag %s, set level %s, xp level %s, script vars %s, lockpick %s, god patch %s, pound patch %s, spit radii %zu, pvp rank survivor %d hunter %d, trees %s, enemies %zu, overrides %zu, equipment %zu, ropes %zu, "
              "prison data %zu (start %.1f end %.1f), prison sensors %zu, positions %s (player +%x, sensor +%x/+%x)",
-             player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), health(), stamina(),
+             player ? "ok" : "missing", g.players.size(), local_player_root ? "ok" : "missing", local_class().c_str(), SIDE_NAMES[side.load()],
+             !alive(player) ? "no player" : logical_player(player) ? "ok" : rdv<uintptr_t>(player + LOGICAL_PLAYER) ? "other class" : "none",
+             logical_player(player) ? rdv<int>(logical_player(player) + PLAYER_ROLE) : -1,
+             !alive(player) ? "no player" : !rdv<uintptr_t>(player + PARAM_PROVIDER) ? "none" : rdv<uintptr_t>(player + PARAM_PROVIDER) == player_provider ? "ok" : "not tracked",
+             health(), stamina(),
              param_ids.size(), cache_get_original ? "ok" : cache_get_fn ? "not installed" : "missing", reads_of("GrapplingHookCooldown"),
              reads_of("FlashlightDrainMul"), unlimited_ammo_flag ? "ok" : "missing", set_level_fn ? "ok" : "missing",
              level_from_xp_fn ? "ok" : "missing", var_root ? "ok" : "missing", !lockpick_patch ? "missing" : lockpick_patched() ? "on" : "ready",

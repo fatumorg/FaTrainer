@@ -25,6 +25,31 @@ static void __fastcall fake_add(uintptr_t inv, void* data, int, bool) {
     w.put<uint32_t>(inv + 0x48, n + 1);
 }
 
+static void erase_item(uintptr_t inv, uintptr_t item) {
+    uintptr_t arr = game::rdv<uintptr_t>(inv + 0x40);
+    uint32_t n = game::rdv<uint32_t>(inv + 0x48);
+    for (uint32_t i = 0; i < n; i++)
+        if (game::rdv<uintptr_t>(arr + i * 8) == item) {
+            memmove((void*)(arr + i * 8), (void*)(arr + (i + 1) * 8), (n - i - 1) * 8);
+            w.put<uint32_t>(inv + 0x48, n - 1);
+            return;
+        }
+}
+
+static bool __fastcall fake_remove_one(uintptr_t inv, uintptr_t item, int) {
+    int count = game::rdv<int>(item + 0x40);
+    if (count > 1) w.put<int>(item + 0x40, count - 1);
+    else erase_item(inv, item);
+    return true;
+}
+
+static int __fastcall fake_remove_stack(uintptr_t inv, uintptr_t item, int, int) {
+    int count = game::rdv<int>(item + 0x40);
+    if (count <= 1) return 0;
+    erase_item(inv, item);
+    return count;
+}
+
 static float fake_var_float(uintptr_t, uintptr_t name, uintptr_t, uintptr_t) {
     const char* s = *(const char**)name;
     if (!strcmp(s, "f_btz_zombie_grab_range")) return 10;
@@ -172,6 +197,15 @@ int main(int argc, char** argv) {
     if (!m) return 1;
     CHECK(game::resolve_classes((uintptr_t)m));
     CHECK(game::g.vt_manager && game::g.vt_inv[1] && game::g.vt_inv[2]);
+    {
+        const uint8_t remove_one_start[] = {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57};
+        const uint8_t remove_stack_start[] = {0x40, 0x55, 0x57, 0x41, 0x55, 0x41, 0x56, 0x48, 0x83, 0xEC, 0x28, 0x45, 0x8B, 0xE9};
+        for (int i = 0; i < 3; i++) {
+            uintptr_t vt = game::g.vt_inv[i];
+            CHECK(vt && !memcmp((const void*)game::rdv<uintptr_t>(vt + game::SLOT_REMOVE_ONE * 8), remove_one_start, sizeof remove_one_start));
+            CHECK(vt && !memcmp((const void*)game::rdv<uintptr_t>(vt + game::SLOT_REMOVE_STACK * 8), remove_stack_start, sizeof remove_stack_start));
+        }
+    }
     const uint8_t* f16 = *(const uint8_t**)(game::g.vt_money + 16 * 8);
     CHECK(memcmp(f16 + 7, "\x8b\x41\x40", 3) == 0);
 
@@ -234,6 +268,26 @@ int main(int argc, char** argv) {
     CHECK(game::give(inv, tmpl, medkit, 5));
     uintptr_t added = game::rdv<uintptr_t>(arr);
     CHECK(game::rdv<int>(added + 0x40) == 5 && game::rdv<uintptr_t>(added + 0x60) == medkit);
+    {
+        uintptr_t remove_vt[11] = {};
+        remove_vt[9] = (uintptr_t)&fake_remove_one;
+        remove_vt[10] = (uintptr_t)&fake_remove_stack;
+        uintptr_t bag = w.alloc(0x80), slots = w.alloc(8 * 4), stack = w.alloc(0x100), sword = w.alloc(0x100);
+        w.put<uintptr_t>(bag, (uintptr_t)remove_vt);
+        w.put<uintptr_t>(bag + 0x40, slots);
+        w.put<uintptr_t>(slots, stack);
+        w.put<uintptr_t>(slots + 8, sword);
+        w.put<uint32_t>(bag + 0x48, 2);
+        w.put<int>(stack + 0x40, 7);
+        w.put<int>(sword + 0x40, 1);
+        CHECK(game::remove_item(bag, stack, game::K_MATERIALS) && game::rdv<uint32_t>(bag + 0x48) == 1 && game::rdv<uintptr_t>(slots) == sword);
+        CHECK(game::remove_item(bag, sword, game::K_BACKPACK) && game::rdv<uint32_t>(bag + 0x48) == 0);
+        CHECK(!game::remove_item(bag, sword, game::K_BACKPACK));
+        w.put<uintptr_t>(slots, stack);
+        w.put<uint32_t>(bag + 0x48, 1);
+        w.put<int>(stack + 0x40, 3);
+        CHECK(!game::remove_item(bag, stack, game::K_AMMO) && game::rdv<int>(stack + 0x40) == 2);
+    }
     CHECK(game::default_target("Craft_Gauze") == game::K_MATERIALS && game::default_target("Melee_MacheteAGen") == game::K_BACKPACK);
     CHECK(game::default_target("Ammo_PistolBig") == game::K_AMMO);
     {
@@ -856,6 +910,12 @@ int main(int argc, char** argv) {
     config::cfg.pages = {{"player", true}, {"combat", true}, {"give", true}, {"settings", true}};
     config::normalize({"player", "combat", "prison", "give", "settings"});
     CHECK(config::cfg.pages[2].id == "prison" && config::cfg.pages[3].id == "give");
+    if (FILE* f = fopen(path.c_str(), "w")) {
+        fputs("hidden_config=hunter_rage\nhidden_config=survivor_legit\nhidden_config=hunter_rage\n", f);
+        fclose(f);
+    }
+    config::load(path);
+    CHECK(config::cfg.hidden_configs.size() == 2 && config::cfg.hidden_configs[1] == "survivor_legit");
     DeleteFileA(path.c_str());
 
     static int position_calls = 0;
