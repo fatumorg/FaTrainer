@@ -835,7 +835,7 @@ int main(int argc, char** argv) {
     config::cfg.pages = {{"combat", false}, {"player", true}};
     config::cfg.cheats_on = {"god", "uv"};
     config::cfg.tweaks = {{"h_dfa", 4.5f}};
-    config::cfg.cheat_keys = {{"god", 'G'}, {"hook", VK_F5}};
+    config::cfg.cheat_keys = {{"god", 'G'}, {"hook", VK_F5}, {REFILL_KEY, 'R'}};
     config::cfg.hidden_configs = {"hunter_rage"};
     char tmp[MAX_PATH];
     GetTempPathA(MAX_PATH, tmp);
@@ -844,7 +844,7 @@ int main(int argc, char** argv) {
     config::cfg = config::Config();
     config::load(path);
     config::load(path);
-    CHECK(config::cfg.cheat_keys.size() == 2 && config::cfg.cheat_keys["god"] == 'G' && config::cfg.cheat_keys["hook"] == VK_F5);
+    CHECK(config::cfg.cheat_keys.size() == 3 && config::cfg.cheat_keys["god"] == 'G' && config::cfg.cheat_keys["hook"] == VK_F5 && config::cfg.cheat_keys[REFILL_KEY] == 'R');
     CHECK(config::cfg.hidden_configs.size() == 1);
     config::normalize({"player", "combat", "settings"});
     CHECK(config::cfg.accent[0] == 0.25f && config::cfg.cheats_on.size() == 2 && config::cfg.cheats_on[1] == "uv");

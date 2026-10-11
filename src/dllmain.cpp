@@ -222,8 +222,17 @@ static void poll_cheat_keys() {
     static std::map<std::string, bool> held;
     for (auto& [key, vk] : config::cfg.cheat_keys) {
         bool down = GetAsyncKeyState(vk) & 0x8000;
-        auto* cheat = !held[key] && down && !g_open ? cheats::find(key) : nullptr;
+        bool pressed = !held[key] && down && !g_open;
         held[key] = down;
+        if (pressed && key == REFILL_KEY) {
+            on_game_thread([] {
+                std::lock_guard<std::mutex> l(game::mx);
+                cheats::refill();
+            });
+            toast("Health & stamina refilled");
+            continue;
+        }
+        auto* cheat = pressed ? cheats::find(key) : nullptr;
         if (!cheat) continue;
         cheat->on = !cheat->on;
         save_config();

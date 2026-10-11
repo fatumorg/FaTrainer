@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+inline const char* REFILL_KEY = "refill";
+
 namespace config {
 
 struct PageEntry { std::string id; bool visible = true; };

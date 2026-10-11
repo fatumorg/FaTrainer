@@ -1905,6 +1905,18 @@ inline void keybinds_page() {
     begin_card("menu_key", "MENU");
     menu_key_combo(changed);
     end_card();
+    begin_card("keys_actions", "ACTIONS");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Refill health & stamina");
+    ImGui::SameLine(S(300));
+    auto refill = config::cfg.cheat_keys.find(REFILL_KEY);
+    int refill_vk = refill == config::cfg.cheat_keys.end() ? 0 : refill->second;
+    if (key_button("bind_refill", refill_vk)) {
+        if (refill_vk) take_key_from_others(refill_vk, REFILL_KEY), config::cfg.cheat_keys[REFILL_KEY] = refill_vk;
+        else config::cfg.cheat_keys.erase(REFILL_KEY);
+        changed = true;
+    }
+    end_card();
     capture_note();
     for (auto& page : PAGES) {
         bool any = false;
@@ -1933,7 +1945,7 @@ inline void keybinds_page() {
         }
         end_card();
     }
-    note("Press a cheat's key while the menu is closed to turn it on or off. A message at the bottom of the screen says which. "
+    note("Press a cheat's key while the menu is closed to turn it on or off, or the refill key to refill health and stamina. A message at the bottom of the screen says which. "
          "Spit keys are on the Night Hunter page.");
     if (changed) save_config();
 }
