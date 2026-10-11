@@ -17,12 +17,6 @@ EMBED(changelog_md, "CHANGELOG.md")
 #ifndef _WIN32
 EMBED(icon_png, "installer/icon.png")
 #endif
-#ifdef FATRAINER_OFFLINE
-EMBED(trainer_dll, "dist/nexus/xinput1_3.dll")
-const bool OFFLINE = true;
-#else
-const bool OFFLINE = false;
-#endif
 
 namespace app {
 
@@ -120,8 +114,31 @@ struct Model {
     std::vector<logic::Release> releases;
     logic::Release chosen;
     bool allow_older = false, beta = false;
+    logic::Announcement announcement;
 };
 inline Model M;
+
+inline fs::path installer_ini() { return platform::config_dir() / "installer.ini"; }
+
+inline void fetch_announcement() {
+    std::thread([] {
+        std::string text, error;
+        if (!platform::net::get_text(ANNOUNCEMENT_URL, text, error)) return;
+        logic::Announcement a = logic::parse_announcement(text);
+        if (a.id.empty() || a.id == logic::ini_value(platform::read_file(installer_ini()), "announcement")) return;
+        std::lock_guard<std::mutex> l(M.mx);
+        M.announcement = a;
+    }).detach();
+}
+
+inline void dismiss_announcement(const std::string& id) {
+    std::error_code ec;
+    fs::create_directories(platform::config_dir(), ec);
+    std::string text = platform::read_file(installer_ini());
+    std::ofstream(installer_ini(), std::ios::binary | std::ios::trunc) << logic::with_ini_value(text, "announcement", id);
+    std::lock_guard<std::mutex> l(M.mx);
+    M.announcement = {};
+}
 
 inline void refresh_installed() {
     std::error_code ec;
@@ -148,11 +165,6 @@ inline bool set_ini_flag(const char* key, bool on) {
 }
 
 inline void fetch_release() {
-#ifdef FATRAINER_OFFLINE
-    std::string dll((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
-    M.latest = {logic::trainer_version_in(dll), logic::sha256_hex(dll), dll.size()};
-    M.fetch = Fetch::ready;
-#else
     {
         std::lock_guard<std::mutex> l(M.mx);
         M.fetch = Fetch::loading;
@@ -196,7 +208,6 @@ inline void fetch_release() {
             if (!parsed.empty()) M.changelog = parsed;
         }
     }).detach();
-#endif
 }
 
 inline void finish(Job job, const std::string& message) {
@@ -222,12 +233,9 @@ inline void start_install() {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
         game = M.game, latest = M.latest, on_beta = M.on_beta, chosen = M.chosen;
-        M.job = Job::working, M.step = OFFLINE ? "Installing" : "Downloading", M.progress = 0, M.message.clear();
+        M.job = Job::working, M.step = "Downloading", M.progress = 0, M.message.clear();
     }
     std::thread([game, latest, on_beta, chosen]() mutable {
-#ifdef FATRAINER_OFFLINE
-        std::string data((const char*)trainer_dll, (size_t)(trainer_dll_end - trainer_dll));
-#else
         const unsigned long long LIMIT = 64ull << 20;
         std::string data, error, base = on_beta ? BETA_DOWNLOADS : RELEASE_DOWNLOADS;
         if (!chosen.tag.empty()) {
@@ -245,7 +253,6 @@ inline void start_install() {
             return data.size() <= LIMIT;
         }, error);
         if (!ok) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
-#endif
         {
             std::lock_guard<std::mutex> l(M.mx);
             M.step = "Checking", M.progress = 0.92f;
@@ -286,7 +293,6 @@ inline void start_install() {
 }
 
 inline void start_self_update() {
-#ifndef FATRAINER_OFFLINE
     ReleaseInfo update;
     {
         std::lock_guard<std::mutex> l(M.mx);
@@ -314,7 +320,6 @@ inline void start_self_update() {
         }
         finish(Job::done, "Updated to FaTrainer Installer " + update.version + ". Restarting.");
     }).detach();
-#endif
 }
 
 inline void uninstall() {
@@ -399,6 +404,7 @@ inline void init(float dpi_scale) {
     M.game = platform::find_game();
     refresh_installed();
     fetch_release();
+    fetch_announcement();
 }
 
 inline int tab = 0;
@@ -457,7 +463,7 @@ inline void status_pill(ImVec2 right_top) {
         std::lock_guard<std::mutex> l(M.mx);
         fetch = M.fetch;
         if (fetch == Fetch::ready && M.on_beta) text = "Beta build " + M.latest.version, dot = ACCENT;
-        else if (fetch == Fetch::ready) text = OFFLINE ? FATRAINER_EDITION " " + M.latest.version : FATRAINER_EDITION ", latest " + M.latest.version, dot = GOOD;
+        else if (fetch == Fetch::ready) text = FATRAINER_EDITION ", latest " + M.latest.version, dot = GOOD;
         else if (fetch == Fetch::failed) text = "GitHub not reachable", dot = BAD;
         else text = "Checking GitHub";
     }
@@ -678,7 +684,7 @@ inline void detail(float width) {
         Stat stats[3] = {
             {"INSTALLED", view.installed.empty() ? "Not yet" : view.installed == logic::LEGACY_VERSION ? "Older than 2.0" : view.installed,
              outdated ? ACCENT : current ? GOOD : SOFT},
-            {OFFLINE ? "IN THIS INSTALLER" : "LATEST", ready ? view.latest.version : view.fetch == Fetch::loading ? "Checking" : "Unknown", TEXT},
+            {"LATEST", ready ? view.latest.version : view.fetch == Fetch::loading ? "Checking" : "Unknown", TEXT},
             {"RUNS ON", platform::LINUX ? "Linux, Proton" : "Windows", TEXT}};
         for (int i = 0; i < 3; i++) {
             ImVec2 c0{a.x + i * (cell + S(12)), a.y}, c1{c0.x + cell, c0.y + S(78)};
@@ -741,7 +747,7 @@ inline void detail(float width) {
     }
     ImGui::Dummy({0, S(8)});
 
-    if (!OFFLINE) {
+    {
         Reveal r(3);
         ImVec2 a = ImGui::GetCursorScreenPos();
         label_caps(dl, a, "VERSION", MUTED);
@@ -888,6 +894,56 @@ inline void changelog(float width) {
     }
 }
 
+inline void announcement_dialog(ImVec2 size, float t) {
+    logic::Announcement a;
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        a = M.announcement;
+    }
+    if (a.id.empty() || t < CONTENT_AT + 0.6f) return;
+    float shown = ease_out(follow(anim("announcement"), 1.0f, 6));
+    const float W = std::min(size.x - S(48), S(560)), PAD = S(28);
+    ImGui::SetNextWindowPos({size.x / 2, size.y / 2 + (1 - shown) * S(24)}, ImGuiCond_Always, {0.5f, 0.5f});
+    ImGui::SetNextWindowSize({W, 0});
+    ImGui::SetNextWindowSizeConstraints({W, 0}, {W, size.y - S(80)});
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImGui::ColorConvertU32ToFloat4(C(GROUND, 0.72f * shown)));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImGui::ColorConvertU32ToFloat4(RAISED));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {PAD, PAD});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, S(16));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, shown);
+    if (!ImGui::IsPopupOpen("announcement")) ImGui::OpenPopup("announcement");
+    if (ImGui::BeginPopupModal("announcement", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        dl->AddRectFilled({p.x, p.y + S(3)}, {p.x + S(8), p.y + S(11)}, C(ACCENT), S(4));
+        label_caps(dl, {p.x + S(16), p.y}, "ANNOUNCEMENT", ACCENT);
+        ImGui::Dummy({0, S(22)});
+        ImGui::PushFont(F.heading);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextUnformatted(a.title.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+        if (!a.text.empty()) {
+            ImGui::Dummy({0, S(2)});
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(SOFT));
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextUnformatted(a.text.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+        }
+        ImGui::Dummy({0, S(10)});
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - PAD - S(140));
+        if (button("announcement_ok", "Got it", {S(140), S(46)}, Kind::primary)) {
+            dismiss_announcement(a.id);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(4);
+    ImGui::PopStyleColor(2);
+}
+
 inline void frame() {
     ImGuiIO& io = ImGui::GetIO();
     float t = (float)ImGui::GetTime();
@@ -954,6 +1010,7 @@ inline void frame() {
         }
     }
     ImGui::End();
+    announcement_dialog(size, t);
     soft_glow(ImGui::GetForegroundDrawList(), {size.x * 0.82f + sinf(t * 0.21f) * S(60), -S(120)}, S(520), ACCENT, 0.08f);
 }
 

@@ -159,6 +159,18 @@ inline std::string with_ini_value(const std::string& text, const std::string& ke
     return out;
 }
 
+struct Announcement { std::string id, title, text; };
+
+inline Announcement parse_announcement(std::string file) {
+    file.erase(std::remove(file.begin(), file.end(), '\r'), file.end());
+    size_t split = file.find("\n\n");
+    std::string head = file.substr(0, split), text = split == std::string::npos ? "" : file.substr(split + 2);
+    while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+    Announcement a{ini_value(head, "id"), ini_value(head, "title"), text};
+    if (a.id.empty() || a.title.empty()) return {};
+    return a;
+}
+
 struct Area { int x = 0, y = 0, w = 0, h = 0; };
 
 inline Area hyprland_focused_monitor(const std::string& text) {

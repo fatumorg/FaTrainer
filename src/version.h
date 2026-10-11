@@ -6,7 +6,7 @@
 #include <vector>
 
 #define FATRAINER_VERSION "2.2"
-#define INSTALLER_VERSION "1.2"
+#define INSTALLER_VERSION "1.3"
 #ifdef FATRAINER_OFFLINE
 #define FATRAINER_EDITION "Nexus Version"
 #define FATRAINER_EDITION_CAPS "NEXUS VERSION"
@@ -21,6 +21,7 @@ inline const char* RELEASE_TAG_DOWNLOADS = "https://github.com/ifatum/DyingLight
 inline const char* RELEASES_API = "https://api.github.com/repos/ifatum/DyingLightFaTrainer/releases?per_page=100";
 inline const char* BETA_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/beta/";
 inline const char* INSTALLER_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/";
+inline const char* ANNOUNCEMENT_URL = "https://raw.githubusercontent.com/ifatum/DyingLightFaTrainer/main/announcement.txt";
 
 const size_t VERSION_NUMBERS = 4;
 const long FINAL_BUILD = LONG_MAX;

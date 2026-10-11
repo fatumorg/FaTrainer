@@ -18,10 +18,9 @@ else
 fi
 printf 'sha256 %s\nsize %s\n' "$(sha256sum xinput1_3.dll | cut -d' ' -f1)" "$(stat -c%s xinput1_3.dll)" >> "$OUT/version.txt"
 awk -v v="## $VER" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > "$OUT/notes.md"
+./build.sh --nexus
 NEXUS=$(mktemp -d)
-mkdir -p "$NEXUS/manual"
-cp dist/nexus/FaTrainer-Nexus-Version-Installer.exe dist/nexus/FaTrainer-Nexus-Version-Installer "$NEXUS/"
-cp dist/nexus/xinput1_3.dll "$NEXUS/manual/"
+cp dist/nexus/xinput1_3.dll "$NEXUS/"
 [ -f nexus/readme.txt ] && cp nexus/readme.txt "$NEXUS/"
 rm -f "dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"
 ZIP="$(pwd)/dist/nexus/FaTrainer-$SLUG-Nexus-Version.zip"

@@ -137,6 +137,9 @@ int main(int argc, char** argv) {
         CHECK(logic::ini_value(ini, "allow_older") == "0" && logic::ini_value(ini, "missing").empty());
         std::string changed = logic::with_ini_value(ini, "allow_older", "1");
         CHECK(changed == "accent=1,1,1\nallow_older=1\ncheat=god\n" && logic::with_ini_value("", "allow_older", "1") == "allow_older=1\n");
+        auto news = logic::parse_announcement("id=7\r\ntitle=Servers down\r\n\r\nFirst line.\r\n\r\nSecond line.\r\n");
+        CHECK(news.id == "7" && news.title == "Servers down" && news.text == "First line.\n\nSecond line.");
+        CHECK(logic::parse_announcement("").id.empty() && logic::parse_announcement("title=No id\n\nText").title.empty() && logic::parse_announcement("404: Not Found").id.empty());
     }
     auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
     CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");

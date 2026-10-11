@@ -1,5 +1,9 @@
 # FaTrainer Installer changelog
 
+## 1.3
+
+- New: announcements. When there is news, like a new version or a known problem, the installer shows it once in a dialog when it opens.
+
 ## 1.2
 
 - Fixed: ticking Use older versions or Beta builds did not show the tick, so the boxes looked like they could not be checked.

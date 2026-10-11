@@ -762,6 +762,21 @@ inline bool pressed_key(int& vk) {
     return false;
 }
 
+inline void begin_locked(bool locked) {
+    ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 0.3f);
+    ImGui::BeginDisabled(locked);
+    ImGui::PopStyleVar();
+}
+
+inline bool multiplayer_locked(const char* id) {
+    if (cheats::MULTIPLAYER) return false;
+    begin_card(id, "NOT IN THE NEXUS VERSION");
+    note("Multiplayer features are cut from the Nexus Version, so they are grayed out, and every cheat turns off while you play the Night Hunter. "
+         "The Nexus Version is an older version. The newest FaTrainer, with every feature, is on fatrainer.fatum.cc and GitHub (github.com/ifatum/DyingLightFaTrainer).");
+    end_card();
+    return true;
+}
+
 inline const char* SPIT_NAMES[config::SPIT_KEYS] = {"Horde Summoner spit", "UV Suppressor spit", "Sense Suppressor spit", "Toxic spit"};
 inline const char* SPIT_GAME_KEY_NAMES[config::SPIT_KEYS] = {"1", "2", "3", "4"};
 
@@ -804,6 +819,7 @@ inline void spit_keys_card() {
 }
 
 inline void zombie_page() {
+    begin_locked(multiplayer_locked("nexus_zombie"));
     begin_card("about");
     note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match. "
          "Built-in Legit and Rage configs are on the PvP page and in Settings.");
@@ -823,6 +839,7 @@ inline void zombie_page() {
     end_card();
     spit_keys_card();
     note("Attack ranges and aim angles are on the PvP page.");
+    ImGui::EndDisabled();
 }
 
 inline const char* SURVIVOR_RANKS[] = {"Prey", "Casualty", "Endangered", "Underdog", "Runner", "Contender",
@@ -1048,6 +1065,9 @@ inline void skill_tree_card() {
     float width = ImGui::GetContentRegionAvail().x;
     segmented("skilltabs", names.data(), (int)names.size(), tab, width);
     int tree = tabs[tab]->tree;
+    bool locked = !cheats::MULTIPLAYER && tree == 0;
+    if (locked) ImGui::Dummy({0, S(6)}), note("The Night Hunter is only played in Be The Zombie matches, so its skill tree is grayed out in the Nexus Version.");
+    begin_locked(locked);
     ImGui::Dummy({0, S(10)});
     float aspect = skill_aspect(tree);
     float h = std::min(width / aspect, S(560)), w = h * aspect;
@@ -1180,6 +1200,7 @@ inline void skill_tree_card() {
     if (accent_button("Learn all", {bw, 0}))
         on_game_thread([tree] { std::lock_guard<std::mutex> l(game::mx); cheats::set_whole_tree(tree, true); cheats::read_skill_levels(); });
     ImGui::EndDisabled();
+    ImGui::EndDisabled();
     end_card();
 }
 
@@ -1199,11 +1220,15 @@ inline void skills_page() {
     float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
     for (size_t i = 0; i < trees.size(); i++) {
         if (i % 2) ImGui::SameLine(0, S(12));
+        begin_locked(!cheats::MULTIPLAYER && trees[i].type == 0);
         tree_tile(trees[i], tile);
+        ImGui::EndDisabled();
         if (i % 2 || i + 1 == trees.size()) ImGui::Dummy({0, S(4)});
     }
     skill_tree_card();
+    begin_locked(multiplayer_locked("nexus_skills"));
     ranks_card();
+    ImGui::EndDisabled();
 }
 
 inline void apply_preset(const cheats::Preset& p) {
@@ -1449,8 +1474,10 @@ inline void configs_card() {
         i++;
     };
     auto& hidden = config::cfg.hidden_configs;
+    begin_locked(!cheats::MULTIPLAYER);
     for (auto& p : cheats::PRESETS)
         if (std::find(hidden.begin(), hidden.end(), p.key) == hidden.end()) place(), preset_tile(p, w, h);
+    ImGui::EndDisabled();
     OwnConfigs& own = own_configs();
     std::vector<std::string> names = own.names;
     for (auto& n : names)
@@ -1464,6 +1491,7 @@ inline void configs_card() {
 }
 
 inline void pvp_page() {
+    begin_locked(multiplayer_locked("nexus_pvp"));
     configs_card();
     begin_card("about");
     note("Slide right to reach further. At Max the pounce, dropkick and death from above also hit targets that are not in front of you. Each player's game decides its own attacks.");
@@ -1476,6 +1504,7 @@ inline void pvp_page() {
     cheat_switch("one_hit_hunter");
     tweak_sliders(cheats::G_HUMAN);
     end_card();
+    ImGui::EndDisabled();
 }
 
 inline ImU32 rgb(const float c[3], float alpha = 1.0f) { return IM_COL32((int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), (int)(alpha * 255)); }
@@ -1567,6 +1596,8 @@ inline bool tint_card(const char* id, const char* title, const char* label, cons
 inline void visuals_page() {
     auto& e = config::cfg.esp;
     bool changed = false;
+    bool locked = multiplayer_locked("nexus_visuals");
+    begin_locked(locked);
     begin_card("esp", "PLAYER ESP");
     changed |= switch_row("Show players", "Draws every other player in your game through walls: survivors and the Night Hunter.", e.on);
     ImGui::SetNextItemWidth(-1);
@@ -1594,12 +1625,15 @@ inline void visuals_page() {
     changed |= ImGui::ColorEdit3("##survivor", e.survivor, ImGuiColorEditFlags_NoInputs);
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
+    ImGui::EndDisabled();
 
     changed |= tint_card("uv", "UV LIGHT", "Custom UV light color", "Your UV flashlight shines in your own color.", config::cfg.uv,
                          "Glow scales the light's brightness and its visible beam. If the color does not change right away, switch the UV light off and on.");
+    begin_locked(locked);
     changed |= tint_card("hunter_glow", "NIGHT HUNTER GLOW", "Custom Night Hunter glow color",
                          "The veins that light up when UV hits the Night Hunter glow in your own color.", config::cfg.hunter_glow,
                          "Only you see it: as a survivor on the hunter you hit, as the Night Hunter on your own arms. Glow scales how bright the veins get.");
+    ImGui::EndDisabled();
     if (changed) save_config();
 }
 
@@ -1813,8 +1847,8 @@ inline void setting_label(const char* text) {
 
 inline const char* edition_story() {
 #ifdef FATRAINER_OFFLINE
-    return "You have the Nexus Version, downloaded from Nexus Mods. It never connects to the internet and never checks for updates. "
-           "New versions are posted on the Nexus Mods page; install them with the FaTrainer Installer that comes with them.";
+    return "You have the Nexus Version, downloaded from Nexus Mods: just the trainer file, no installer. It never connects to the internet and never checks for updates. "
+           "It is an older version without multiplayer features. The newest FaTrainer, with every feature and updates through the FaTrainer Installer, is on fatrainer.fatum.cc and GitHub.";
 #else
     return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. When the game starts it asks GitHub once which version is the newest. "
            "If a newer one is out, the trainer turns itself off until you update with the FaTrainer Installer, unless Use older versions is on. "
