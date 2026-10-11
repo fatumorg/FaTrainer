@@ -23,6 +23,11 @@ struct Esp {
     float survivor[3] = {0.30f, 0.75f, 1.00f};
 };
 
+struct HudColor {
+    bool on = false;
+    float color[3] = {1, 1, 1};
+};
+
 struct UvLight {
     bool on = false;
     float color[3] = {50 / 255.0f, 0, 1};
@@ -56,6 +61,9 @@ struct Config {
     std::map<std::string, int> cheat_keys;
     Esp esp;
     UvLight uv, hunter_glow;
+    HudColor hud_tint;
+    std::map<std::string, HudColor> hud_parts;
+    std::map<std::string, std::string> texts;
     Look look;
 };
 
@@ -167,6 +175,32 @@ inline void normalize(const std::vector<std::string>& known) {
     cfg.look.motion = std::clamp(cfg.look.motion, (int)MOTION_OFF, (int)MOTION_FULL);
 }
 
+inline std::string escape_text(const std::string& text) {
+    std::string out;
+    for (char c : text) {
+        if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c != '\r') out += c;
+    }
+    return out;
+}
+
+inline std::string unescape_text(const std::string& text) {
+    std::string out;
+    for (size_t i = 0; i < text.size(); i++) {
+        if (text[i] != '\\' || i + 1 == text.size()) out += text[i];
+        else out += text[++i] == 'n' ? '\n' : text[i];
+    }
+    return out;
+}
+
+inline bool read_hud_color(const char* text, HudColor& h) {
+    int on = 0;
+    if (sscanf(text, "%d,%f,%f,%f", &on, &h.color[0], &h.color[1], &h.color[2]) != 4) return false;
+    h.on = on != 0;
+    return true;
+}
+
 inline void load(const std::string& path) {
     FILE* f = fopen(path.c_str(), "r");
     if (!f) return;
@@ -175,7 +209,9 @@ inline void load(const std::string& path) {
     cfg.tweaks.clear();
     cfg.hidden_configs.clear();
     cfg.cheat_keys.clear();
-    char line[512];
+    cfg.hud_parts.clear();
+    cfg.texts.clear();
+    char line[4096];
     while (fgets(line, sizeof line, f)) {
         std::string s = line;
         while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
@@ -221,6 +257,13 @@ inline void load(const std::string& path) {
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
+        else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
+        else if (k == "hud" || k == "text") {
+            size_t c = v.find(',');
+            if (c == std::string::npos || !c) continue;
+            if (k == "text") cfg.texts[v.substr(0, c)] = unescape_text(v.substr(c + 1));
+            else if (HudColor h; read_hud_color(v.c_str() + c + 1, h)) cfg.hud_parts[v.substr(0, c)] = h;
+        }
         else if (k == "hidden_config") {
             if (std::find(cfg.hidden_configs.begin(), cfg.hidden_configs.end(), v) == cfg.hidden_configs.end()) cfg.hidden_configs.push_back(v);
         }
@@ -258,6 +301,9 @@ inline bool save(const std::string& path) {
             e.survivor[1], e.survivor[2]);
     for (auto [key, u] : {std::pair{"uv_light", &cfg.uv}, std::pair{"hunter_glow", &cfg.hunter_glow}})
         fprintf(f, "%s=%d,%.3f,%.3f,%.3f,%.2f\n", key, u->on, u->color[0], u->color[1], u->color[2], u->glow);
+    fprintf(f, "hud_tint=%d,%.3f,%.3f,%.3f\n", cfg.hud_tint.on, cfg.hud_tint.color[0], cfg.hud_tint.color[1], cfg.hud_tint.color[2]);
+    for (auto& [part, h] : cfg.hud_parts) fprintf(f, "hud=%s,%d,%.3f,%.3f,%.3f\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
+    for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);
     return true;

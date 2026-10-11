@@ -1001,6 +1001,22 @@ int main(int argc, char** argv) {
         float kept[3] = {0.1f, 0.2f, 0.3f};
         CHECK(!color::from_hex("#12", kept) && !color::from_hex("zzzzzz", kept) && !color::from_hex("#1234567", kept) && kept[0] == 0.1f);
     }
+    {
+        auto kept = config::cfg;
+        config::cfg = config::Config();
+        config::cfg.hud_tint = {true, {0.5f, 0.25f, 1.0f}};
+        config::cfg.hud_parts["stamina"] = {true, {1.0f, 0.0f, 0.0f}};
+        config::cfg.texts["btz_pounce_interrupted"] = "Nope, line\none, a=b \\ done";
+        config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "Zabi\xc5\x82e\xc5\x9b %s";
+        CHECK(config::save(path));
+        config::cfg = config::Config();
+        config::load(path);
+        CHECK(config::cfg.hud_tint.on && config::cfg.hud_tint.color[1] == 0.25f);
+        CHECK(config::cfg.hud_parts.size() == 1 && config::cfg.hud_parts["stamina"].on && config::cfg.hud_parts["stamina"].color[0] == 1.0f);
+        CHECK(config::cfg.texts["btz_pounce_interrupted"] == "Nope, line\none, a=b \\ done");
+        CHECK(config::cfg.texts["HUDMessage_BTZDeath_Killer"] == "Zabi\xc5\x82e\xc5\x9b %s");
+        config::cfg = kept;
+    }
     if (FILE* f = fopen(path.c_str(), "w")) {
         fputs("hidden_config=hunter_rage\nhidden_config=survivor_legit\nhidden_config=hunter_rage\n", f);
         fclose(f);
