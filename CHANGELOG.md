@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4 b1
+
+Refill Update
+
+- New: a key to refill health and stamina. Set it under Actions on the Keybinds page and press it while the menu is closed; a message at the bottom of the screen confirms it.
+
 ## 2.3
 
 Launcher Update
