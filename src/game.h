@@ -341,7 +341,7 @@ const uint32_t NIBBLE = 0xF;
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
     uintptr_t vt_player = 0, vt_tutorial_player = 0, vt_human = 0, vt_health[3] = {};
-    uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_hud = 0;
+    uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0;
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds;
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
@@ -470,6 +470,7 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_prison_sensor = find_vtable(base, "SensorPrisonRush");
     g.vt_rope = find_vtable(base, "RopeLocomotionController");
     g.vt_logical_player = find_vtable(base, "LogicalPlayer");
+    g.vt_logical_level = find_vtable(base, "LogicalLevel");
     g.vt_hud = find_vtable(base, "HUDScreenBase");
     g.player_control = g.vt_player ? base_offset(base, g.vt_player, "IControlObject") : -1;
     g.human_control = g.vt_human ? base_offset(base, g.vt_human, "IControlObject") : -1;

@@ -2078,7 +2078,7 @@ inline bool callouts_card() {
             changed = true;
         }
     }
-    char status[96];
+    char status[256];
     snprintf(status, sizeof status, "%d of %d killfeed and award texts. Short, the same order of names as the game. Your own edits below win.", used, count);
     note(status);
     end_card();

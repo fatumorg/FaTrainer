@@ -1981,7 +1981,14 @@ inline void note_gear(bool watched) {
     logf_hook("gear: %s", now.c_str());
 }
 
+inline uintptr_t logical_level() {
+    uintptr_t profile = game_profile(), level = profile ? rdv<uintptr_t>(profile + PROFILE_PLAYER) : 0;
+    return level && g.vt_logical_level && rdv<uintptr_t>(level) == g.vt_logical_level ? level : 0;
+}
+
 inline uintptr_t own_logical_player(uintptr_t who) {
+    uintptr_t level = logical_level(), from_level = level ? rdv<uintptr_t>(level + LOGICAL_PLAYER) : 0;
+    if (from_level && rdv<uintptr_t>(from_level) == g.vt_logical_player) return from_level;
     uintptr_t from_profile = logical_player(profile_player());
     return from_profile ? from_profile : logical_player(who);
 }
@@ -2004,6 +2011,11 @@ inline void log_layouts(uintptr_t who) {
     const size_t PLAYER_SPAN = 0x1600, PROFILE_SPAN = 0x200;
     if (who) logf_hook("layout: player%s", layout(who, PLAYER_SPAN).c_str());
     if (uintptr_t profile = game_profile()) logf_hook("layout: profile%s", layout(profile, PROFILE_SPAN).c_str());
+    const size_t LEVEL_SPAN = 0x1000;
+    if (uintptr_t level = logical_level()) {
+        uintptr_t lp = rdv<uintptr_t>(level + LOGICAL_PLAYER);
+        logf_hook("layout: logical level +9d8 %s role %d,%s", lp ? game::class_name(lp).c_str() : "none", lp ? rdv<int>(lp + PLAYER_ROLE, -1) : -1, layout(level, LEVEL_SPAN).c_str());
+    }
 }
 
 inline void log_players(uintptr_t who) {

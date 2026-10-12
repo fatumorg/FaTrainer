@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5 b12
+
+Survivor Update
+
+- Fixed: with a game language picked, the voices switched to that language too instead of staying in your Steam language.
+- Fixed: the first start after updating from 2.5 b10 did not pick up the text language you had chosen before.
+- Fixed: the trainer can now tell whether you play a survivor or the Night Hunter: it reads your role from the level, the way the game does.
+- The Be The Zombie callouts line under the preview was cut off.
+
 ## 2.5 b11
 
 Survivor Update

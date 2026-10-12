@@ -679,9 +679,9 @@ inline LPSTR WINAPI command_line_hook() {
 }
 
 inline TtlText* __fastcall force_lang_hook(TtlText* out, TtlText* fallback) {
-    std::string steam = fallback && fallback->text ? std::string(fallback->text, fallback->size) : "";
-    steam_language = language_code(steam);
-    if (!forced_language.empty()) forced_language = styled_like(forced_language, steam);
+    std::string given = fallback && fallback->text ? std::string(fallback->text, fallback->size) : "";
+    if (steam_language.empty()) steam_language = language_code(given);
+    if (!forced_language.empty()) forced_language = styled_like(forced_language, given);
     TtlText* r = force_lang_original(out, fallback);
     started_language = r && r->text ? language_code(std::string(r->text, r->size)) : steam_language;
     return r;

@@ -733,7 +733,9 @@ static void choose_languages() {
     GetModuleFileNameA(nullptr, exe, MAX_PATH);
     std::string ini = exe;
     ini = ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer.ini";
-    visuals::install_language_hooks(config::peek(ini, "game_language"), config::peek(ini, "voice_language"));
+    std::string game = config::peek(ini, "game_language");
+    if (game.empty()) game = config::peek(ini, "text_language");
+    visuals::install_language_hooks(game, config::peek(ini, "voice_language"));
 }
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {

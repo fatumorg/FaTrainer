@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "2.5 b11"
+#define FATRAINER_VERSION "2.5 b12"
 #define FATRAINER_NAME "Survivor Update"
 #define INSTALLER_VERSION "2.3"
 #if FATRAINER_VISUALS
