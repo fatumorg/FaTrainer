@@ -687,6 +687,28 @@ inline TtlText* __fastcall force_lang_hook(TtlText* out, TtlText* fallback) {
     return r;
 }
 
+struct SteamLanguage { const char* steam; const char* code; };
+inline const SteamLanguage STEAM_LANGUAGES[] = {{"english", "En"}, {"polish", "Pl"}, {"german", "De"}, {"french", "Fr"}, {"spanish", "Es"}, {"latam", "Es"},
+                                                {"italian", "It"}, {"brazilian", "Br"}, {"portuguese", "Br"}, {"greek", "El"}, {"dutch", "Nl"}, {"czech", "Cs"},
+                                                {"turkish", "Tr"}, {"russian", "Ru"}, {"japanese", "Jp"}, {"koreana", "Ko"}, {"schinese", "Cn"}, {"tchinese", "Tw"},
+                                                {"thai", "Th"}};
+
+inline std::string language_from_steam() {
+    HMODULE steam = GetModuleHandleA("steam_api64.dll");
+    auto apps = steam ? (uintptr_t(__cdecl*)())GetProcAddress(steam, "SteamAPI_SteamApps_v008") : nullptr;
+    auto current = steam ? (const char*(__cdecl*)(uintptr_t))GetProcAddress(steam, "SteamAPI_ISteamApps_GetCurrentGameLanguage") : nullptr;
+    uintptr_t self = apps && current ? apps() : 0;
+    const char* name = self ? current(self) : nullptr;
+    for (auto& l : STEAM_LANGUAGES)
+        if (name && !_stricmp(name, l.steam)) return l.code;
+    return "";
+}
+
+inline void learn_steam_language() {
+    std::string from_steam = language_from_steam();
+    if (!from_steam.empty()) steam_language = from_steam;
+}
+
 inline std::string wanted_voice(const std::string& setting) {
     if (setting == FOLLOW_GAME) return "";
     if (setting.empty() || setting == config::STEAM_LANGUAGE) return steam_language;
@@ -694,6 +716,7 @@ inline std::string wanted_voice(const std::string& setting) {
 }
 
 inline bool __fastcall speech_hook(uintptr_t game, const char* id, bool force) {
+    learn_steam_language();
     std::string voice = wanted_voice(forced_voice);
     std::string use = voice.size() == 2 && id ? styled_like(voice, id) : id ? id : "";
     started_voice = language_code(use);

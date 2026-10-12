@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b13
+
+Survivor Update
+
+- Fixed: with a game language picked, the voices still followed it. The trainer now asks Steam for your language, so "Your Steam language" means the language Steam starts the game in.
+
 ## 2.5 b12
 
 Survivor Update

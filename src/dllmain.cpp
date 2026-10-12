@@ -639,6 +639,7 @@ static void main_thread() {
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     Sleep(4000);
+    visuals::learn_steam_language();
     logf("language: %s", visuals::language_report().c_str());
     hook_d3d();
     watch_first_frame();
@@ -697,6 +698,7 @@ static void main_thread() {
         }
     }).detach();
     Sleep(4000);
+    visuals::learn_steam_language();
     logf("language: %s", visuals::language_report().c_str());
     hook_d3d();
     watch_first_frame();
