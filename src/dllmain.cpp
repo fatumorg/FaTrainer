@@ -11,8 +11,10 @@
 #include <thread>
 #include "input.h"
 #include "menu.h"
+#if !FATRAINER_VISUALS
 #include "net_win.h"
 #include "../installer/logic.h"
+#endif
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -205,6 +207,7 @@ static void keep_window_hooked() {
     PostMessageW(g_hwnd, WM_FATRAINER, 0, 0);
 }
 
+#if !FATRAINER_VISUALS
 static const BYTE SPIT_GAME_KEYS[config::SPIT_KEYS] = {DIK_1, DIK_2, DIK_3, DIK_4};
 
 static void poll_spit_keys() {
@@ -239,6 +242,8 @@ static void poll_cheat_keys() {
         toast(std::string(cheat->label) + (cheat->on ? " on" : " off"));
     }
 }
+
+#endif
 
 static void begin_passive_frame(IDXGISwapChain* sc) {
     ImGuiIO& io = ImGui::GetIO();
@@ -307,10 +312,21 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         last_tick = GetTickCount();
         on_game_thread([] {
             tick_queued = false;
+#if FATRAINER_VISUALS
+            visuals::install_var_hook(visuals::tools_global, false, nullptr);
+            visuals::apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
+#else
             cheats::tick();
+#endif
             visuals::keep_texts();
         });
     }
+#if FATRAINER_VISUALS
+    const DWORD VISUALS_RESCAN = 15000;
+    bool looks_missing = (visuals::hud_colors_on() && !visuals::hud_found()) || (config::cfg.uv.on && game::g.descs.empty());
+    if (g_ready && looks_missing && GetTickCount() - g_last_scan > VISUALS_RESCAN && !game::g.scanning) request_refresh();
+    bool esp = false;
+#else
     const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000, CHEAT_RESCAN_MAX = 120000;
     static DWORD cheat_rescan = CHEAT_RESCAN;
     DWORD since_scan = GetTickCount() - g_last_scan;
@@ -333,6 +349,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
+#endif
     if (g_ready) visuals::keep_hud(logf);
     float shown = g_ready ? menu::presence(g_open) : 0;
     float notice = g_outdated.empty() ? 0 : update_notice_alpha();
@@ -350,7 +367,9 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             begin_passive_frame(sc);
         }
         ImGui::NewFrame();
+#if !FATRAINER_VISUALS
         if (esp) menu::draw_esp();
+#endif
         if (shown > 0) menu::draw(shown, g_open);
         if (toast_only) menu::draw_toast();
         if (notice > 0) menu::draw_update_notice(g_outdated, notice, g_build == menu::NOTICE_UPDATE ? menu::NOTICE_OLDER : g_build.load());
@@ -493,6 +512,7 @@ static void watch_first_frame() {
     }
 }
 
+#if !FATRAINER_VISUALS
 static std::string g_release_base = RELEASE_DOWNLOADS;
 
 static ReleaseInfo latest_release() {
@@ -542,9 +562,28 @@ static void download_build(ReleaseInfo latest) {
     g_build = ok ? menu::NOTICE_BUILD_READY : menu::NOTICE_BUILD_FAILED;
 }
 
+#endif
+
 static void main_thread() {
-    logf("--- %s %s, %s loaded", TITLE, VERSION, FATRAINER_EDITION);
+    logf("--- %s %s, %s loaded (%s)", TITLE, VERSION, FATRAINER_EDITION, EDITION_TAG);
     log_environment();
+#if FATRAINER_VISUALS
+    HMODULE gamedll = nullptr;
+    while (!(gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll"))) Sleep(200);
+    if (!game::resolve_classes((uintptr_t)gamedll)) logf("ERROR: %s", game::g.status.c_str());
+    menu::startup();
+    HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
+    visuals::locate((uintptr_t)gamedll);
+    logf("hud colors: %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found");
+    visuals::locate_texts((uintptr_t)gamedll, engine);
+    logf("texts: %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found");
+    logf("input blocking: %d directinput vtables", input::install(engine));
+    if (getenv("DLT_OPEN")) g_open = true;
+    Sleep(4000);
+    hook_d3d();
+    watch_first_frame();
+}
+#else
     DeleteFileW((own_path() + L".old").c_str());
     ReleaseInfo release = latest_release();
     const std::string& latest = release.version;
@@ -600,7 +639,9 @@ static void main_thread() {
     hook_d3d();
     watch_first_frame();
 }
+#endif
 
+#if !FATRAINER_VISUALS
 static bool launched_from_launcher() {
     char armed[8] = "";
     if (GetEnvironmentVariableA("FATRAINER_ARMED", armed, sizeof armed) && !strcmp(armed, "1")) return true;
@@ -614,17 +655,20 @@ static bool launched_from_launcher() {
     DeleteFileW(path.c_str());
     return launch_armed(written, (long long)time(nullptr));
 }
+#endif
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(h);
         CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+#if !FATRAINER_VISUALS
             if (!launched_from_launcher()) {
                 logf("launch: not started from FaTrainer, trainer off");
                 return 0;
             }
-            AddVectoredExceptionHandler(1, crash_logger);
             logf("launch: started from FaTrainer");
+#endif
+            AddVectoredExceptionHandler(1, crash_logger);
             main_thread();
             return 0;
         }, nullptr, 0, nullptr));

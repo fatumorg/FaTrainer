@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <fstream>
 #include <list>
 #include "cheats.h"
 #include "color.h"
@@ -1305,6 +1306,18 @@ int main(int argc, char** argv) {
     CHECK(config::delete_profile("selftest profile") && !config::load_profile("selftest profile", back));
     RemoveDirectoryA(config::profile_dir().c_str());
 
+    {
+        auto file = [](const char* path) {
+            std::ifstream in(path, std::ios::binary);
+            return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        };
+        std::string full = file("xinput1_3.dll"), cosmetic = file("xinput1_3-visuals.dll"), lowered = cosmetic;
+        for (char& ch : lowered) ch = (char)tolower((unsigned char)ch);
+        CHECK(full.find("FaTrainer-edition:Fatum") != std::string::npos);
+        CHECK(!cosmetic.empty() && cosmetic.find("FaTrainer-edition:Visuals") != std::string::npos);
+        CHECK(lowered.find("winhttp") == std::string::npos);
+        for (const char* cheat : {"one_hit", "Infinite ammo", "God mode", "Show players", "Dodge spit"}) CHECK(cosmetic.find(cheat) == std::string::npos);
+    }
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
     return fails != 0;
 }

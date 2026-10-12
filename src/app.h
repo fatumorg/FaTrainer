@@ -8,7 +8,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#if !FATRAINER_VISUALS
 #include "cheats.h"
+#endif
 #include "visuals.h"
 #include "config.h"
 #include "game.h"
@@ -35,7 +37,9 @@ inline void logf(const char* fmt, ...) {
     }
 }
 
+#if !FATRAINER_VISUALS
 inline const bool logf_wired = (cheats::logf_hook = logf, true);
+#endif
 
 inline std::atomic<bool> g_open{false};
 inline DWORD g_last_scan = 0;
@@ -82,8 +86,9 @@ inline void request_refresh() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
         game::refresh();
         std::lock_guard<std::mutex> l(game::mx);
-        cheats::player = cheats::find_player();
         logf("refresh: %s", game::g.status.c_str());
+#if !FATRAINER_VISUALS
+        cheats::player = cheats::find_player();
         logf("inventories:%s", game::inventory_report().c_str());
         if (cheats::sections_wanted.exchange(false))
             on_game_thread([] {
@@ -92,6 +97,9 @@ inline void request_refresh() {
             });
         logf("stats: %s", game::stat_report().c_str());
         logf("cheats: %s", cheats::describe().c_str());
+#else
+        logf("hud screens: %zu", game::g.huds.size());
+#endif
     }).detach();
 }
 
@@ -101,8 +109,10 @@ inline std::string route_path() {
 }
 
 inline void save_config() {
+#if !FATRAINER_VISUALS
     auto p = cheats::current_profile();
     config::cfg.cheats_on = p.cheats;
     config::cfg.tweaks = p.tweaks;
+#endif
     config::save(config::default_path());
 }

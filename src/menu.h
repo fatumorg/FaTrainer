@@ -212,6 +212,7 @@ inline bool switch_row(const char* text, const char* hint, bool& value) {
     return clicked;
 }
 
+#if !FATRAINER_VISUALS
 inline void cheat_switch(const char* key, const char* override_label = nullptr) {
     auto* c = cheats::find(key);
     if (!c) return;
@@ -221,6 +222,8 @@ inline void cheat_switch(const char* key, const char* override_label = nullptr) 
         save_config();
     }
 }
+
+#endif
 
 inline bool drag_bar(const char* id, float frac, ImU32 color, float& picked) {
     ImVec2 p = ImGui::GetCursorScreenPos();
@@ -319,6 +322,7 @@ inline void pill(ImDrawList* dl, ImVec2 at, const char* text, ImU32 dot, float p
     dl->AddText(f_small, fs, {at.x + S(22), at.y + (h - fs) / 2}, C(T.soft), text);
 }
 
+#if !FATRAINER_VISUALS
 struct Cat { const char* label; ImU32 color; };
 enum { C_ALL, C_WEAPONS, C_THROWABLE, C_HEALING, C_CRAFTING, C_UPGRADES, C_BLUEPRINTS, C_OTHER, C_COUNT };
 inline const char* CAT_NAMES[C_COUNT] = {"All", "Weapons", "Throwables", "Healing", "Crafting", "Upgrades", "Blueprints", "Other"};
@@ -465,11 +469,14 @@ inline void editor_popup() {
     ImGui::PopStyleVar();
 }
 
+#endif
+
 inline void search_box(const char* id, const char* hint, char* buf, size_t size) {
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint(id, hint, buf, size);
 }
 
+#if !FATRAINER_VISUALS
 inline void delete_item(const game::Inventory& inv, const game::Item& it) {
     uintptr_t obj = inv.obj, item = it.addr;
     game::Kind kind = inv.kind;
@@ -1592,6 +1599,8 @@ inline void draw_esp() {
     }
 }
 
+#endif
+
 inline bool color_field(const char* id, float rgb[3]) {
     bool changed = false;
     ImGui::PushID(id);
@@ -1776,8 +1785,9 @@ inline bool texts_card() {
 }
 
 inline void visuals_page() {
-    auto& e = config::cfg.esp;
     bool changed = false;
+#if !FATRAINER_VISUALS
+    auto& e = config::cfg.esp;
     begin_card("esp", "PLAYER ESP");
     changed |= switch_row("Show players", "Draws every other player in your game through walls: survivors and the Night Hunter.", e.on);
     ImGui::SetNextItemWidth(-1);
@@ -1805,6 +1815,7 @@ inline void visuals_page() {
     changed |= color_field("survivor", e.survivor);
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
+#endif
 
     changed |= tint_card("uv", "UV LIGHT", "Custom UV light color", "Your UV flashlight shines in your own color.", config::cfg.uv,
                          "Glow scales the light's brightness and its visible beam. If the color does not change right away, switch the UV light off and on.");
@@ -1816,6 +1827,7 @@ inline void visuals_page() {
     if (changed) save_config();
 }
 
+#if !FATRAINER_VISUALS
 inline std::string section_name(size_t index) {
     auto& sec = cheats::prison_sections[index];
     char b[64];
@@ -1960,6 +1972,8 @@ inline void prison_page() {
     end_card();
 }
 
+#endif
+
 struct Key { int vk; const char* name; };
 inline const Key KEYS[] = {{VK_INSERT, "Insert"}, {VK_F8, "F8"},   {VK_HOME, "Home"}, {VK_END, "End"},   {VK_DELETE, "Delete"},
                            {VK_PRIOR, "Page Up"}, {VK_NEXT, "Page Down"}, {VK_F1, "F1"}, {VK_F2, "F2"}, {VK_F3, "F3"},
@@ -1983,6 +1997,9 @@ inline bool always() { return true; }
 inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
+#if FATRAINER_VISUALS
+    {"visuals", "Visuals", "UV light, Night Hunter glow, HUD colors and texts", visuals_page, always, "LOOK", {}},
+#else
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS",
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability", "melee_speed"}},
@@ -1999,15 +2016,22 @@ inline const Page PAGES[] = {
     {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, has_tools, "ITEMS", {}},
     {"give", "Give items", "Spawn any item in the game", give_page, always, "ITEMS", {}},
     {"keys", "Keybinds", "Keys that turn cheats on and off", keybinds_page, always, "", {}},
+#endif
+#if FATRAINER_VISUALS
+    {"settings", "Settings", "Look, menu key and version", settings_page, always, "", {}},
+#else
     {"settings", "Settings", "Look, controls, configs and version", settings_page, always, "", {}},
+#endif
 };
 
 inline int active_on(const Page& p) {
     int n = 0;
+#if !FATRAINER_VISUALS
     for (const char* k : p.keys) {
         if (auto* c = cheats::find(k)) n += c->on;
         if (auto* t = cheats::find_tweak(k)) n += t->factor != 1.0f;
     }
+#endif
     return n;
 }
 
@@ -2030,9 +2054,14 @@ inline void setting_label(const char* text) {
 }
 
 inline const char* edition_story() {
+#if FATRAINER_VISUALS
+    return "You have the Visuals Version: it only changes how the game looks to you, with the UV light, Night Hunter glow, HUD colors and texts. It has no cheats and never connects to the internet. "
+           "Install and update it with the FaTrainer launcher, or put xinput1_3.dll next to DyingLightGame.exe yourself.";
+#else
     return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. It runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
            "If a newer one is out, the trainer turns itself off until you press Play in FaTrainer again, unless Use older versions is on. "
            "With Beta builds on it also asks for the beta build. Nothing else is sent anywhere.";
+#endif
 }
 
 inline void about_card() {
@@ -2088,13 +2117,19 @@ inline void menu_key_combo(bool& changed) {
         if (k.vk == c.menu_key) current = k.name;
     if (ImGui::BeginCombo("##key", current)) {
         for (auto& k : KEYS)
-            if (ImGui::Selectable(k.name, k.vk == c.menu_key)) c.menu_key = k.vk, take_key_from_others(k.vk, ""), changed = true;
+            if (ImGui::Selectable(k.name, k.vk == c.menu_key)) {
+                c.menu_key = k.vk, changed = true;
+#if !FATRAINER_VISUALS
+                take_key_from_others(k.vk, "");
+#endif
+            }
         ImGui::EndCombo();
     }
     ImGui::SameLine();
     label("F8 always works too.");
 }
 
+#if !FATRAINER_VISUALS
 inline void keybinds_page() {
     bool changed = false;
     begin_card("menu_key", "MENU");
@@ -2145,6 +2180,8 @@ inline void keybinds_page() {
     if (changed) save_config();
 }
 
+#endif
+
 inline void settings_page() {
     auto& c = config::cfg;
     auto& look = c.look;
@@ -2191,6 +2228,7 @@ inline void settings_page() {
 
     begin_card("controls", "CONTROLS");
     menu_key_combo(changed);
+#if !FATRAINER_VISUALS
     bool remember = c.remember_cheats;
     if (switch_row("Remember cheats", "Turn your cheats back on the next time the game starts.", remember)) c.remember_cheats = remember, changed = true;
     bool older = c.allow_older;
@@ -2198,6 +2236,7 @@ inline void settings_page() {
     bool beta = c.beta;
     if (switch_row("Beta builds", "Optional. Also update to the beta build, the version being worked on right now, when it is newer than the latest release. It may have bugs. Takes effect the next time the game starts.", beta))
         c.beta = beta, changed = true;
+#endif
     end_card();
 
     begin_card("sidebar", "SIDEBAR");
@@ -2228,7 +2267,9 @@ inline void settings_page() {
     }
     end_card();
 
+#if !FATRAINER_VISUALS
     configs_card();
+#endif
 
     begin_card("reset", "SETTINGS FILE");
     note(("Saved automatically to " + config::default_path()).c_str());
@@ -2248,7 +2289,11 @@ inline void settings_page() {
     }
 }
 
+#if FATRAINER_VISUALS
+inline std::string g_page = "visuals";
+#else
 inline std::string g_page = "player";
+#endif
 inline float g_opened_at = -10;
 
 inline void open_page(const char* id) {
@@ -2337,7 +2382,11 @@ inline void sidebar() {
     pill(dl, {pill_at.x + S(2), pill_at.y + S(2)}, FATRAINER_EDITION, T.accent, motion() > 0 ? fmodf(now(), 2.6f) / 2.6f : -1);
     ImGui::Dummy({0, font_size(f_small) + S(18)});
 
+#if FATRAINER_VISUALS
+    int active = 0;
+#else
     int active = cheats::active_count();
+#endif
     float footer = ImGui::GetFrameHeight() * (active ? 2 : 1) + S(active ? 64 : 52);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0, 0, 0, 0});
     ImGui::BeginChild("nav", {0, ImGui::GetContentRegionAvail().y - footer}, ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
@@ -2378,13 +2427,20 @@ inline void sidebar() {
     target_y = found_y;
     ImGui::PopStyleVar();
     ImGui::EndChild();
+#if !FATRAINER_VISUALS
     if (active) {
         ImGui::Dummy({0, S(2)});
         if (ImGui::Button(("Turn all off (" + std::to_string(active) + ")").c_str(), {-1, 0})) cheats::all_off(), save_config();
     }
+#endif
     ImGui::Dummy({0, S(4)});
-    const char* st = game::g.scanning ? "Scanning..." : game::g.vt_money ? (cheats::player ? "Connected" : "Waiting for save") : "Game not ready";
-    ImU32 sc = game::g.scanning ? T.accent : game::g.vt_money ? (cheats::player ? T.ok : T.accent) : T.bad;
+#if FATRAINER_VISUALS
+    bool in_game = visuals::hud_found() || !game::g.descs.empty();
+#else
+    bool in_game = cheats::player != 0;
+#endif
+    const char* st = game::g.scanning ? "Scanning..." : game::g.vt_money ? (in_game ? "Connected" : "Waiting for save") : "Game not ready";
+    ImU32 sc = game::g.scanning ? T.accent : game::g.vt_money ? (in_game ? T.ok : T.accent) : T.bad;
     ImVec2 at = ImGui::GetCursorScreenPos();
     float fs = font_size(f_small);
     ImVec2 dot{at.x + S(10), at.y + fs / 2 + S(1)};
@@ -2470,8 +2526,10 @@ inline void draw(float shown_raw, bool open) {
     if (first) {
         first = false;
         if (const char* p = getenv("DLT_PAGE")) g_page = p;
+#if !FATRAINER_VISUALS
         if (getenv("DLT_SECTIONS"))
             for (int type : {1, 2, 2, 2, 2, 2, 3, 4}) cheats::prison_sections.push_back({0, type, (int)cheats::prison_sections.size(), false, {1, 2, 3}});
+#endif
     }
     static ImVec2 rest{-1, -1};
     if (rest.x < 0) ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});
@@ -2585,10 +2643,12 @@ inline void load_fonts() {
 inline void startup() {
     config::load(config::default_path());
     config::normalize(page_ids());
+#if !FATRAINER_VISUALS
     config::Profile p;
     if (config::cfg.remember_cheats) p.cheats = config::cfg.cheats_on;
     p.tweaks = config::cfg.tweaks;
     cheats::apply_profile(p);
+#endif
     if (getenv("DLT_ESP")) config::cfg.esp.on = config::cfg.esp.health_text = config::cfg.esp.rank = config::cfg.esp.rage = true;
 }
 

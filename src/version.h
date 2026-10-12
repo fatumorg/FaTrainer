@@ -8,8 +8,16 @@
 #define FATRAINER_VERSION "2.5 b5"
 #define FATRAINER_NAME "Survivor Update"
 #define INSTALLER_VERSION "2.2"
+#if FATRAINER_VISUALS
+#define FATRAINER_EDITION "Visuals Version"
+#define FATRAINER_EDITION_CAPS "VISUALS VERSION"
+#define FATRAINER_EDITION_KEY "Visuals"
+#else
 #define FATRAINER_EDITION "Fatum Version"
 #define FATRAINER_EDITION_CAPS "FATUM VERSION"
+#define FATRAINER_EDITION_KEY "Fatum"
+#endif
+inline const char EDITION_TAG[] = "FaTrainer-edition:" FATRAINER_EDITION_KEY;
 inline const char VERSION_TAG[] = "FaTrainer-version:" FATRAINER_VERSION;
 inline const char* VERSION = VERSION_TAG + sizeof "FaTrainer-version:" - 1;
 inline const char* RELEASE_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/";
