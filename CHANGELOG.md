@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5 b8
+
+Survivor Update
+
+- Fixed: Melee speed did nothing. It now speeds up the swing of every melee weapon itself (the weapon's swing speed) instead of a game setting that only feeds the inventory numbers.
+- Fixed: Melee did not reach further. Now called Melee reach, it makes every melee weapon reach further (the weapon's damage range).
+- Fixed: E did not kick when the dropkick or death from above sliders were up. Those sliders widened the kick's targeting everywhere, so a jump kick in story mode locked onto zombies it could not reach. They now only work while a Night Hunter is in the match, and then the kick only aims at him.
+- Fixed: settings the game keeps in its own cache (movement speed, jump height and others) only changed after a respawn or a level load when you moved their slider in game. They now change right away.
+- Fixed: with HUD colors on, the health bar flickered while you lost health and the level bar turned white. The trainer now lets the game's own HUD animations play and colors each piece again once it settles, starting from the game's latest color.
+- The trainer knows you are a survivor as soon as it sees a Night Hunter in the match.
+
 ## 2.5 b7
 
 Survivor Update

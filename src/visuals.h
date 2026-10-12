@@ -133,9 +133,11 @@ const int HUD_MAX_DEPTH = 32, HUD_MAX_ELEMENTS = 20000;
 struct HudNode {
     uintptr_t element, vtable, at;
     int kind, part;
-    float original[3];
+    float original[3], written[3];
     bool wrote, dead;
+    DWORD changed_at;
 };
+const DWORD HUD_SETTLE_MS = 250;
 
 inline std::vector<HudNode> hud_nodes;
 inline uintptr_t hud_root = 0;
@@ -157,7 +159,7 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
         uintptr_t at = 0;
         int kind = ui.kind_of(c, &at);
         if (kind != UI_NONE) {
-            HudNode node{c, ui.vtable_of(c), at, kind, p, {}, false, false};
+            HudNode node{c, ui.vtable_of(c), at, kind, p, {}, {}, false, false, GetTickCount() - HUD_SETTLE_MS};
             (kind == UI_TEXT ? ui.get_text_color : ui.get_color)(at, node.original);
             hud_nodes.push_back(node);
         }
@@ -193,7 +195,7 @@ inline const config::HudColor* part_color(int part) {
     return it != config::cfg.hud_parts.end() && it->second.on ? &it->second : nullptr;
 }
 
-inline void apply_hud() {
+inline void apply_hud(DWORD now_ms = GetTickCount()) {
     const auto& tint = config::cfg.hud_tint;
     for (auto& n : hud_nodes) {
         if (n.dead) continue;
@@ -201,15 +203,20 @@ inline void apply_hud() {
             n.dead = true;
             continue;
         }
+        float now[3];
+        (n.kind == UI_TEXT ? ui.get_text_color : ui.get_color)(n.at, now);
+        if (memcmp(now, n.wrote ? n.written : n.original, sizeof now)) {
+            memcpy(n.original, now, sizeof now);
+            n.wrote = false, n.changed_at = now_ms;
+        }
+        if (now_ms - n.changed_at < HUD_SETTLE_MS) continue;
         float want[3] = {n.original[0], n.original[1], n.original[2]};
         const config::HudColor* own = part_color(n.part);
         if (own || tint.on) visuals::tint(want, own ? own->color : tint.color, 1.0f);
-        bool is_original = !memcmp(want, n.original, sizeof want);
-        if (!n.wrote && is_original) continue;
-        float now[3];
-        (n.kind == UI_TEXT ? ui.get_text_color : ui.get_color)(n.at, now);
-        if (memcmp(want, now, sizeof want)) write_color(n, want);
-        n.wrote = !is_original;
+        if (!memcmp(want, now, sizeof want)) continue;
+        write_color(n, want);
+        memcpy(n.written, want, sizeof want);
+        n.wrote = memcmp(want, n.original, sizeof want) != 0;
     }
 }
 

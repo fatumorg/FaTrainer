@@ -10,7 +10,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 STEAM = os.path.expanduser("~/.local/share/Steam")
 STATS = ["Damage", "Condition", "CriticalProb", "CriticalDamage", "Force", "StaminaUsage", "DamageRange",
-         "UpgradeLevel", "AllowedRepairs", "MaxStackCount", "Price", "Color", "AmmoCount", "ReloadTime", "DepletionTime"]
+         "UpgradeLevel", "AllowedRepairs", "MaxStackCount", "Price", "Color", "AmmoCount", "ReloadTime", "DepletionTime", "SwingSpeed"]
 COLORS = {"Color_White": 0, "Color_Green": 1, "Color_Blue": 2, "Color_Violet": 3, "Color_Orange": 4, "Color_Platinum": 5}
 
 
@@ -57,9 +57,10 @@ def item_stats(z):
         if not (n.startswith("data/scripts/inventory/") and n.endswith(".scr")):
             continue
         for line in z.read(n).decode("latin1").splitlines():
-            m = re.match(r'\s*Item\(\s*"([^"]+)"', line)
+            m = re.match(r'\s*Item\(\s*"([^"]+)"\s*(?:,\s*(\w+))?', line)
             if m:
                 cur = stats.setdefault(m.group(1), {})
+                cur.setdefault("melee", m.group(2) == "CategoryType_Melee")
                 continue
             m = re.match(r"\s*(\w+)\((.*)\);", line)
             if m and cur is not None and m.group(1) in STATS and m.group(1) not in cur:
@@ -224,17 +225,17 @@ def main():
     for i in ids:
         st = stats.get(i, {})
         vals = ", ".join(c_float(st.get(k)) for k in STATS)
-        rows.append(f"  {{{c_str(i)}, {c_str(names.get(i, ''))}, {{{vals}}}}}")
+        rows.append(f"  {{{c_str(i)}, {c_str(names.get(i, ''))}, {{{vals}}}, {'true' if st.get('melee') else 'false'}}}")
     enum = ", ".join(f"ST_{k}" for k in STATS)
     labels = ", ".join(c_str(k) for k in STATS)
     with open(os.path.join(HERE, "src/items.h"), "w") as f:
         f.write("#pragma once\n#include <cmath>\n"
                 f"enum Stat {{ {enum}, ST_COUNT }};\n"
                 f"static const char* STAT_KEYS[ST_COUNT] = {{{labels}}};\n"
-                "struct ItemInfo { const char* id; const char* name; float st[ST_COUNT]; };\n"
+                "struct ItemInfo { const char* id; const char* name; float st[ST_COUNT]; bool melee; };\n"
                 "static const ItemInfo ITEMS[] = {\n" + ",\n".join(rows) + "\n};\n"
                 f"static const int ITEM_COUNT = {len(ids)};\n")
-    have = sum(1 for i in ids if stats.get(i))
+    have = sum(1 for i in ids if any(k in STATS for k in stats.get(i, {})))
     print(f"items.h: {len(ids)} items, {sum(1 for i in ids if names.get(i))} named, {have} with stats")
     write_skills(*skills(dw, read_texts(all_texts, every=True)))
     write_texts(all_texts)

@@ -464,8 +464,10 @@ int main(int argc, char** argv) {
     {
         int id = cheats::param_ids["RopeEnergyRegenTime"] + 1;
         game::wr<float>(cached("RopeEnergyRegenTime") + 0x10, 7.0f);
+        game::wr<uint64_t>(cached("RopeEnergyRegenTime"), 5);
         cheats::cache_get_hook(0x5000, id);
         CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 7.0f && cheats::reads_of("RopeEnergyRegenTime") == 1);
+        CHECK(game::rdv<uint64_t>(cached("RopeEnergyRegenTime")) == ~0ull && cheats::overridden_providers[id].count(0x5000));
         cheats::cache_get_hook(my_provider, id);
         CHECK(game::rdv<float>(cached("RopeEnergyRegenTime") + 0x10) == 0.01f && cheats::reads_of("RopeEnergyRegenTime") == 2);
     }
@@ -525,8 +527,11 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<uintptr_t>(cached("RopeEnergyRegenTime") + 8) == cheats::vt_param_float && cheats::vt_param_float);
     CHECK(game::rdv<uint8_t>(cached("CanUseHook") + 0x10) == 1 && game::rdv<uintptr_t>(cached("CanUseHook") + 8) == cheats::vt_param_bool);
     CHECK(game::rdv<float>(param("AirKickRangeMul")) == 3.0f && game::rdv<float>(cached("AirKickRangeMul") + 0x10) == 3.0f);
-    CHECK(game::rdv<float>(param("RangeMeleeMul")) == 2.0f && game::rdv<float>(param("BestTargetMeleeRange")) == 3.0f);
-    CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 1.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 0.25f);
+    CHECK(game::rdv<float>(param("RangeMeleeMul")) == 1.0f && game::rdv<float>(param("BestTargetMeleeRange")) == 3.0f);
+    CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 0.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 0.25f);
+    CHECK(game::g.stats[ST_SwingSpeed].off == fake::SWING_OFF && game::g.stats[ST_DamageRange].off == fake::MELEE_RANGE_OFF);
+    CHECK(game::rdv<float>(w.desc["Melee_Fists"] + fake::SWING_OFF) == 0.9f * 2.0f && game::rdv<float>(w.desc["Melee_Fists"] + fake::MELEE_RANGE_OFF) == 1.15f * 2.0f);
+    CHECK(game::rdv<float>(w.desc["Throwable_LightDisable_Spit"] + fake::MELEE_RANGE_OFF) == 5.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
     CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
@@ -649,6 +654,7 @@ int main(int argc, char** argv) {
     cheats::cache_get_hook(my_provider, cheats::param_ids["CanUseHook"] + 1);
     CHECK(game::rdv<uint64_t>(cached("CanUseHook")) == 5 && cheats::overridden_providers[cheats::param_ids["CanUseHook"] + 1].empty());
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 8 && game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 10.0f);
+    CHECK(game::rdv<float>(w.desc["Melee_Fists"] + fake::SWING_OFF) == 0.9f && game::rdv<float>(w.desc["Melee_Fists"] + fake::MELEE_RANGE_OFF) == 1.15f);
     CHECK(game::rdv<float>(param("RopeEnergyRegenTime")) == 12.5f && game::rdv<uint8_t>(param("CanUseHook")) == 0 && fake_rules[0] == 0);
     (void)flag;
     uintptr_t blade = 0;
@@ -777,6 +783,27 @@ int main(int argc, char** argv) {
         target_vt[0x6e0 / 8] = (uintptr_t)&fake_no;
         state[0x10] = 0;
         CHECK(filter(0, (uintptr_t)target) && !filter(0, 0));
+        int was_side = cheats::side;
+        cheats::find_tweak("h_dropkick_angle")->factor = 3.0f;
+        cheats::hunter_in_match = true;
+        cheats::side = cheats::SIDE_SURVIVOR;
+        CHECK(!filter(0, (uintptr_t)target));
+        cheats::hunter_in_match = false;
+        CHECK(filter(0, (uintptr_t)target));
+        cheats::find_tweak("h_dropkick_angle")->factor = 1.0f;
+        cheats::side = was_side;
+        static uint8_t hunter[0x1000] = {}, hunter_logical[0x800] = {};
+        *(uintptr_t*)hunter = game::g.vt_player;
+        *(uintptr_t*)hunter_logical = game::g.vt_logical_player;
+        *(uintptr_t*)(hunter + cheats::LOGICAL_PLAYER) = (uintptr_t)hunter_logical;
+        CHECK(!cheats::is_hunter((uintptr_t)hunter));
+        *(int*)(hunter_logical + cheats::PLAYER_ROLE) = cheats::ROLE_HUNTER;
+        CHECK(cheats::is_hunter((uintptr_t)hunter) && !cheats::is_hunter((uintptr_t)target));
+        cheats::hunter_in_match = true;
+        cheats::update_side(w.player, false);
+        CHECK(cheats::side == cheats::SIDE_SURVIVOR);
+        cheats::hunter_in_match = false;
+        cheats::side = was_side;
         cheats::grab_filter_fn = real_filter;
     }
 
@@ -789,7 +816,9 @@ int main(int argc, char** argv) {
     cheats::side = cheats::SIDE_UNKNOWN;
     CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 22);
     cheats::find_tweak("h_dropkick_angle")->factor = 10.0f;
-    CHECK(read_var("f_btz_wrestling_kick_angle_max") == 180);
+    CHECK(read_var("f_btz_wrestling_kick_angle_max") == 22 && !cheats::human_targeting_widened());
+    cheats::hunter_in_match = true;
+    CHECK(read_var("f_btz_wrestling_kick_angle_max") == 180 && cheats::human_targeting_widened());
     cheats::find_tweak("h_dropkick_angle")->factor = 1.0f;
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_zombie_grab_angle_max") == 7);
     CHECK(read_var("f_btz_other") == 7 && read_var("i_other") == 7);
@@ -808,6 +837,8 @@ int main(int argc, char** argv) {
     cheats::side = cheats::SIDE_SURVIVOR;
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_jump_attack_angle_max") == 180);
     cheats::side = side;
+    cheats::hunter_in_match = false;
+    CHECK(read_var("f_btz_jump_attack_angle_max") == 7 && read_var("f_btz_zombie_grab_range") == 25);
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
@@ -1066,14 +1097,14 @@ int main(int argc, char** argv) {
         config::cfg.hud_tint = {true, {0.5f, 0.25f, 1.0f}};
         config::cfg.hud_parts["stamina"] = {true, {1.0f, 0.0f, 0.0f}};
         config::cfg.texts["btz_pounce_interrupted"] = "Nope, line\none, a=b \\ done";
-        config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "Zabi\xc5\x82e\xc5\x9b %s";
+        config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "Zabi\xc5\x82" "e\xc5\x9b %s";
         CHECK(config::save(path));
         config::cfg = config::Config();
         config::load(path);
         CHECK(config::cfg.hud_tint.on && config::cfg.hud_tint.color[1] == 0.25f);
         CHECK(config::cfg.hud_parts.size() == 1 && config::cfg.hud_parts["stamina"].on && config::cfg.hud_parts["stamina"].color[0] == 1.0f);
         CHECK(config::cfg.texts["btz_pounce_interrupted"] == "Nope, line\none, a=b \\ done");
-        CHECK(config::cfg.texts["HUDMessage_BTZDeath_Killer"] == "Zabi\xc5\x82e\xc5\x9b %s");
+        CHECK(config::cfg.texts["HUDMessage_BTZDeath_Killer"] == "Zabi\xc5\x82" "e\xc5\x9b %s");
         config::cfg = kept;
     }
     {
@@ -1098,18 +1129,25 @@ int main(int argc, char** argv) {
         CHECK(health_bar.color[0] == 0.5f && health_bar.color[1] == 1.0f && label.color[0] == 0.5f && label.written_alpha == 0.3f);
         CHECK(stamina_bar.color[0] == 0.0f && stamina_bar.color[1] == 1.0f);
         CHECK(stamina_bg.color[0] == 0.0f && fabsf(stamina_bg.color[1] - 0.15f) < 1e-6f);
-        stamina_bar.color[1] = 0.2f;
-        visuals::apply_hud();
-        CHECK(stamina_bar.color[1] == 1.0f);
+        DWORD t0 = GetTickCount();
+        stamina_bar.color[0] = 0.9f, stamina_bar.color[1] = 0.2f;
+        visuals::apply_hud(t0);
+        CHECK(stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
+        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS - 1);
+        CHECK(stamina_bar.color[0] == 0.9f);
+        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS);
+        CHECK(stamina_bar.color[0] == 0.0f && fabsf(stamina_bar.color[1] - 0.9f) < 1e-6f);
         config::cfg.hud_tint.on = false, config::cfg.hud_parts.clear();
-        visuals::apply_hud();
-        CHECK(health_bar.color[0] == 1.0f && stamina_bar.color[0] == 0.75f);
+        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS);
+        CHECK(health_bar.color[0] == 1.0f && stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
+        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS);
+        CHECK(stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
         health_bar.vt = 2;
         config::cfg.hud_tint.on = true;
-        visuals::apply_hud();
-        CHECK(dead_writes == 0 && stamina_bar.color[0] == 0.5f);
+        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        CHECK(dead_writes == 0 && fabsf(stamina_bar.color[0] - 0.45f) < 1e-6f);
         visuals::forget_hud();
-        CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.75f && dead_writes == 0);
+        CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.9f && dead_writes == 0);
         CHECK(visuals::looks_missing());
         config::cfg.hud_tint.on = false;
         CHECK(!visuals::looks_missing());
@@ -1176,7 +1214,14 @@ int main(int argc, char** argv) {
         auto* height = cheats::find_tweak("h_dfa_height");
         height->factor = height->max;
         cheats::apply_dfa_fall_speed();
-        CHECK(fall == cheats::DFA_FALL_SPEED_AT_MAX && cheats::dfa_fall_original == 12.0f);
+        CHECK(fall == 12.0f && cheats::dfa_fall_original == 12.0f);
+        int was_side = cheats::side;
+        cheats::hunter_in_match = true;
+        cheats::side = cheats::SIDE_SURVIVOR;
+        cheats::apply_dfa_fall_speed();
+        CHECK(fall == cheats::DFA_FALL_SPEED_AT_MAX);
+        cheats::hunter_in_match = false;
+        cheats::side = was_side;
         height->factor = 1.0f;
         cheats::apply_dfa_fall_speed();
         CHECK(fall == 12.0f);

@@ -107,7 +107,6 @@ struct Tweak {
     std::vector<const char*> params;
     std::vector<ScriptVar> vars = {};
     float max = 10.0f;
-    bool adds = false;
     std::atomic<float> factor{1.0f};
 };
 
@@ -144,9 +143,8 @@ inline Tweak TWEAKS[] = {
     {"h_dropkick_height", "Dropkick height", "How far below or above you the hunter can be, like when you jump at him after his tackle missed. Death from above pull widens the same limit; the larger one wins.",
      G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
-    {"h_melee", "Melee", "Reach of melee attacks and how far above or below your aim they still connect.",
-     G_HUMAN, {"RangeMeleeMul", "MaxVerticalAngleForRangeMeleeCorrection"}},
-    {"melee_speed", "Melee speed", "How fast you swing every melee weapon, two-handed ones too.", G_WEAPONS, {"MeeleAttackSpeedMul"}, {}, 3.0f, true},
+    {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
+    {"melee_speed", "Melee speed", "How fast you swing every melee weapon, two-handed ones too.", G_WEAPONS, {}, {}, 3.0f},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -491,13 +489,50 @@ inline void set_desc_stat(uintptr_t desc, int stat, float v, std::set<uintptr_t>
     put_bytes(desc + f.off, f.is_float ? (const void*)&v : (const void*)&n, 4, touched);
 }
 
+inline bool tweak_applies(const Tweak& t) {
+    bool one_side = t.group == G_ZOMBIE || t.group == G_HUNTER || t.group == G_HUMAN;
+    if (one_side && side == SIDE_PENDING) return false;
+    bool hunter_side = t.group == G_ZOMBIE || t.group == G_HUNTER;
+    if (hunter_side) return side != SIDE_SURVIVOR;
+    return t.group != G_HUMAN || side != SIDE_HUNTER;
+}
+
+inline std::atomic<bool> hunter_in_match{false};
+
+inline bool targeting_applies(const Tweak& t) { return tweak_applies(t) && (t.group != G_HUMAN || hunter_in_match); }
+
+inline bool human_targeting_set() {
+    for (auto& t : TWEAKS)
+        if (t.group == G_HUMAN && (!t.vars.empty() || !strcmp(t.key, "h_dfa_height")) && t.factor != 1.0f) return true;
+    return false;
+}
+
+inline bool human_targeting_widened() { return hunter_in_match && side != SIDE_HUNTER && human_targeting_set(); }
+
+inline void scale_desc_stat(uintptr_t desc, int stat, float factor, std::set<uintptr_t>& touched) {
+    auto& f = g.stats[stat];
+    if (factor == 1.0f || f.off < 0 || !f.is_float) return;
+    float base = original_float(desc + f.off);
+    if (base > 0 && base < 1000) set_desc_stat(desc, stat, base * factor, touched);
+}
+
+inline float tweak_factor(const char* key) {
+    Tweak* t = find_tweak(key);
+    return tweak_applies(*t) ? t->factor.load() : 1.0f;
+}
+
 inline void item_overrides(std::set<uintptr_t>& touched) {
     bool uv = is_on("uv"), no_reload = is_on("no_reload");
-    if (!uv && !no_reload) return;
+    float swing = tweak_factor("melee_speed"), reach = tweak_factor("h_melee");
+    if (!uv && !no_reload && swing == 1.0f && reach == 1.0f) return;
     for (int i = 0; i < ITEM_COUNT; i++) {
         const ItemInfo& info = ITEMS[i];
         auto d = g.descs.find(info.id);
         if (d == g.descs.end()) continue;
+        if (info.melee) {
+            scale_desc_stat(d->second, ST_SwingSpeed, swing, touched);
+            scale_desc_stat(d->second, ST_DamageRange, reach, touched);
+        }
         if (uv && info.st[ST_DepletionTime] < 1e6f) set_desc_stat(d->second, ST_DepletionTime, 1e7f, touched);
         if (no_reload && info.st[ST_AmmoCount] > 0) {
             set_desc_stat(d->second, ST_AmmoCount, 999, touched);
@@ -542,7 +577,14 @@ inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     if (mine) c.reads++;
     if (!kind && !c.stale) return param;
     if (kind && !mine) mine = own_provider(provider);
-    if (!kind || !mine) {
+    if (kind && !mine) {
+        *(uint64_t*)(param + CACHED_VERSION) = ~0ull;
+        param = cache_get_original(provider, id);
+        std::lock_guard<std::mutex> l(cached_mx);
+        overridden_providers[id].insert(provider);
+        return param;
+    }
+    if (!kind) {
         {
             std::lock_guard<std::mutex> l(cached_mx);
             auto& providers = overridden_providers[id];
@@ -654,14 +696,6 @@ inline void apply_spit_radius(float factor) {
     }
 }
 
-inline bool tweak_applies(const Tweak& t) {
-    bool one_side = t.group == G_ZOMBIE || t.group == G_HUNTER || t.group == G_HUMAN;
-    if (one_side && side == SIDE_PENDING) return false;
-    bool hunter_side = t.group == G_ZOMBIE || t.group == G_HUNTER;
-    if (hunter_side) return side != SIDE_SURVIVOR;
-    return t.group != G_HUMAN || side != SIDE_HUNTER;
-}
-
 inline bool float_value(uintptr_t at) {
     uintptr_t vt = at ? rdv<uintptr_t>(at - PARAM_VALUE) : 0;
     return vt && (vt == vt_param_float || vt == vt_player_float);
@@ -686,7 +720,7 @@ inline void apply_overrides() {
             float base = original_float(param_value(containers[0], name));
             if (std::isnan(base)) continue;
             auto it = want.find(name);
-            float v = t.adds ? base + factor - 1.0f : base * factor;
+            float v = base * factor;
             if (it == want.end() || v > it->second.first) want[name] = {v, false};
         }
     }
@@ -722,7 +756,7 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     float best = v;
     for (auto& t : TWEAKS)
         for (auto& var : t.vars)
-            if (!strcmp(s, var.name) && t.factor != 1.0f && tweak_applies(t)) {
+            if (!strcmp(s, var.name) && t.factor != 1.0f && targeting_applies(t)) {
                 float strength = std::clamp((t.factor - 1.0f) / (t.max - 1.0f), 0.0f, 1.0f);
                 float moved = v + (var.at_max - v) * strength;
                 if (std::fabs(moved) > std::fabs(best)) best = moved;
@@ -1558,14 +1592,19 @@ inline std::string grab_report(uintptr_t target) {
     return out + rest;
 }
 
+inline bool is_hunter(uintptr_t p) {
+    uintptr_t lp = rdv<uintptr_t>(p) == g.vt_player ? logical_player(p) : 0;
+    return lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER;
+}
+
 inline bool __fastcall grab_filter_hook(uintptr_t self, uintptr_t target) {
     bool passed = grab_filter_original(self, target);
+    if (passed && side == SIDE_SURVIVOR && human_targeting_widened() && !is_hunter(target)) return false;
     static std::string last;
     static DWORD last_at = 0;
     static int lines = 0;
     if (passed || side != SIDE_SURVIVOR || lines >= KICK_LOG_LIMIT || rdv<uintptr_t>(target) != g.vt_player) return passed;
-    uintptr_t lp = logical_player(target);
-    if (!lp || rdv<int>(lp + PLAYER_ROLE) != ROLE_HUNTER || GetTickCount() - last_at < KICK_LOG_GAP) return passed;
+    if (!is_hunter(target) || GetTickCount() - last_at < KICK_LOG_GAP) return passed;
     std::string now = grab_report(target);
     if (now == last) return passed;
     last = now, last_at = GetTickCount(), lines++;
@@ -1863,7 +1902,7 @@ inline void apply_dfa_fall_speed() {
         dfa_fall_original = cur;
     }
     Tweak* t = find_tweak("h_dfa_height");
-    float strength = std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f);
+    float strength = targeting_applies(*t) ? std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f) : 0.0f;
     float want = dfa_fall_original + (DFA_FALL_SPEED_AT_MAX - dfa_fall_original) * strength;
     if (cur != want) wr<float>(dfa_fall_speed, want);
 }
@@ -1935,7 +1974,8 @@ inline void update_side(uintptr_t who, bool new_player) {
     if (!who || new_player) player_since = who ? GetTickCount() : 0;
     uintptr_t lp = who ? own_logical_player(who) : 0;
     int now = lp ? (rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER ? SIDE_HUNTER : SIDE_SURVIVOR)
-                 : player_since && GetTickCount() - player_since >= side_settle_ms ? SIDE_UNKNOWN : SIDE_PENDING;
+              : who && hunter_in_match ? SIDE_SURVIVOR
+              : player_since && GetTickCount() - player_since >= side_settle_ms ? SIDE_UNKNOWN : SIDE_PENDING;
     if (side.exchange(now) != now) logf_hook("side: %s", SIDE_NAMES[now]);
 }
 
@@ -1972,6 +2012,8 @@ inline void tick() {
     static uintptr_t last_player = 0;
     uintptr_t who = alive(player) ? player : 0;
     bool new_player = who != std::exchange(last_player, who) || (provider && before && provider != before);
+    bool hunter_now = who && hunter_is_someone_else();
+    if (hunter_in_match.exchange(hunter_now) != hunter_now) logf_hook("pvp: %s", hunter_now ? "a Night Hunter is in the match" : "no Night Hunter in the match");
     update_side(who, new_player);
     install_var_hook();
     apply_dfa_fall_speed();
