@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 #include "cheats.h"
+#include "visuals.h"
 #include "config.h"
 #include "game.h"
 #include "version.h"

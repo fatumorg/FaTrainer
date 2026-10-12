@@ -316,7 +316,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (!cheats::objects_missing) cheat_rescan = CHEAT_RESCAN;
     if (cheats::respawned) {
         std::lock_guard<std::mutex> l(game::mx);
-        if (!game::g.scanning) cheats::respawned = false, cheat_rescan = CHEAT_RESCAN, request_refresh();
+        if (!game::g.scanning) cheats::respawned = false, cheat_rescan = CHEAT_RESCAN, visuals::forget_hud(), request_refresh();
     }
     if ((g_open && since_scan > MENU_RESCAN) || (cheats::objects_missing && since_scan > cheat_rescan)) {
         std::lock_guard<std::mutex> l(game::mx);
@@ -332,6 +332,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
+    if (g_ready) visuals::keep_hud(logf);
     float shown = g_ready ? menu::presence(g_open) : 0;
     float notice = g_outdated.empty() ? 0 : update_notice_alpha();
     bool toast_only = g_ready && shown <= 0 && toast_showing();
@@ -577,6 +578,8 @@ static void main_thread() {
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     cheats::locate_engine(engine);
+    visuals::locate((uintptr_t)gamedll);
+    logf("hud colors: %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     std::thread([] {

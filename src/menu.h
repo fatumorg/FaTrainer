@@ -1643,6 +1643,44 @@ inline bool tint_card(const char* id, const char* title, const char* label, cons
     return changed;
 }
 
+inline bool hud_colors_card() {
+    auto& c = config::cfg;
+    bool changed = false;
+    begin_card("hud_colors", "HUD COLORS");
+    changed |= switch_row("Tint the whole HUD", "Every bar, icon and text of the HUD takes on this color, keeping its own brightness.", c.hud_tint.on);
+    ImGui::BeginDisabled(!c.hud_tint.on);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Tint");
+    ImGui::SameLine(S(150));
+    changed |= color_field("hud_tint", c.hud_tint.color);
+    ImGui::EndDisabled();
+    ImGui::Dummy({0, S(8)});
+    caps("PARTS");
+    ImGui::Dummy({0, S(2)});
+    for (auto& part : visuals::HUD_PARTS) {
+        ImGui::PushID(part.key);
+        auto it = c.hud_parts.find(part.key);
+        bool on = it != c.hud_parts.end() && it->second.on;
+        if (ImGui::Checkbox(part.label, &on)) {
+            auto& h = c.hud_parts[part.key];
+            if (it == c.hud_parts.end()) memcpy(h.color, c.accent, sizeof h.color);
+            h.on = on, changed = true;
+            it = c.hud_parts.find(part.key);
+        }
+        ImGui::SameLine(S(260));
+        ImGui::BeginDisabled(!on);
+        float shown[3] = {1, 1, 1};
+        if (it != c.hud_parts.end()) memcpy(shown, it->second.color, sizeof shown);
+        if (color_field("color", shown)) memcpy(c.hud_parts[part.key].color, shown, sizeof shown), changed = true;
+        ImGui::EndDisabled();
+        ImGui::PopID();
+    }
+    note(visuals::hud_found() ? "Only you see these colors. A part's own color wins over the whole HUD tint; parts that are off keep the game's colors or the tint."
+                              : "Load into the game to see the colors; the trainer finds the HUD once it is on screen and after a Refresh.");
+    end_card();
+    return changed;
+}
+
 inline void visuals_page() {
     auto& e = config::cfg.esp;
     bool changed = false;
@@ -1679,6 +1717,7 @@ inline void visuals_page() {
     changed |= tint_card("hunter_glow", "NIGHT HUNTER GLOW", "Custom Night Hunter glow color",
                          "The veins that light up when UV hits the Night Hunter glow in your own color.", config::cfg.hunter_glow,
                          "Only you see it: as a survivor on the hunter you hit, as the Night Hunter on your own arms. Glow scales how bright the veins get.");
+    changed |= hud_colors_card();
     if (changed) save_config();
 }
 
@@ -1856,7 +1895,7 @@ inline const Page PAGES[] = {
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee"}},
-    {"visuals", "Visuals", "Player ESP, UV light and Night Hunter glow colors", visuals_page, always, "MODES", {}},
+    {"visuals", "Visuals", "Player ESP, UV light, Night Hunter glow and HUD colors", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},

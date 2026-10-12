@@ -1,6 +1,7 @@
 #include <cstdio>
 #include "cheats.h"
 #include "color.h"
+#include "visuals.h"
 #include "config.h"
 #include "fake.h"
 #include "input.h"
@@ -50,6 +51,26 @@ static int __fastcall fake_remove_stack(uintptr_t inv, uintptr_t item, int, int)
     erase_item(inv, item);
     return count;
 }
+
+struct FakeElement {
+    uintptr_t vt = 1;
+    const char* id;
+    int kind;
+    float color[3] = {1, 1, 1}, original[3] = {1, 1, 1};
+    std::vector<FakeElement*> children;
+};
+static int dead_writes = 0;
+static FakeElement* as_element(uintptr_t e) { return (FakeElement*)e; }
+static int __fastcall fake_children_count(uintptr_t e) { return (int)as_element(e)->children.size(); }
+static uintptr_t __fastcall fake_child(uintptr_t e, int i) { return (uintptr_t)as_element(e)->children[i]; }
+static float* __fastcall fake_get_color(uintptr_t e, float* out) { memcpy(out, as_element(e)->color, 12); return out; }
+static void __fastcall fake_set_color(uintptr_t e, const float* rgb) {
+    if (as_element(e)->vt != 1) dead_writes++;
+    memcpy(as_element(e)->color, rgb, 12);
+}
+static std::string fake_name_of(uintptr_t e) { return as_element(e)->id; }
+static int fake_kind_of(uintptr_t e, uintptr_t* at) { *at = e; return as_element(e)->kind; }
+static uintptr_t fake_vtable_of(uintptr_t e) { return as_element(e)->vt; }
 
 static bool __fastcall fake_yes(uintptr_t) { return true; }
 static bool __fastcall fake_no(uintptr_t) { return false; }
@@ -316,6 +337,13 @@ int main(int argc, char** argv) {
         for (auto* n : c.switches) CHECK(cheats::param_ids.count(n));
     }
     CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
+    {
+        std::string engine_dir = argv[1];
+        engine_dir = engine_dir.substr(0, engine_dir.find_last_of("\\/") + 1) + "engine_x64_rwdi.dll";
+        CHECK(visuals::locate_engine(LoadLibraryExA(engine_dir.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES)));
+    }
+    visuals::locate(game::g.base);
+    CHECK(game::g.vt_hud && visuals::hud_element_offset >= 0);
     CHECK(cheats::vt_throwable[0] && cheats::vt_throwable[1] && cheats::throwable_control[0] > 0 && cheats::throwable_control[1] > 0);
     printf("throwables: control +%x +%x\n", cheats::throwable_control[0], cheats::throwable_control[1]);
     {
@@ -1016,6 +1044,39 @@ int main(int argc, char** argv) {
         CHECK(config::cfg.texts["btz_pounce_interrupted"] == "Nope, line\none, a=b \\ done");
         CHECK(config::cfg.texts["HUDMessage_BTZDeath_Killer"] == "Zabi\xc5\x82e\xc5\x9b %s");
         config::cfg = kept;
+    }
+    {
+        FakeElement health_bar{1, "I_HealthBar", visuals::UI_VIEW}, stamina_bar{1, "I_StaminaBar", visuals::UI_VIEW}, label{1, "T_Level", visuals::UI_TEXT};
+        stamina_bar.color[0] = stamina_bar.original[0] = 0.75f;
+        FakeElement health{1, "health_wrap", visuals::UI_NONE}, stamina{1, "HudStamina", visuals::UI_NONE}, root{1, "HUD_DI", visuals::UI_NONE};
+        health.children = {&health_bar, &label};
+        stamina.children = {&stamina_bar};
+        root.children = {&health, &stamina};
+        auto saved_ui = visuals::ui;
+        auto saved_cfg = config::cfg;
+        visuals::ui = {fake_children_count, fake_child, fake_get_color, fake_set_color, fake_get_color, fake_set_color, fake_name_of, fake_kind_of, fake_vtable_of};
+        CHECK(!visuals::hud_found());
+        visuals::find_hud((uintptr_t)&root);
+        CHECK(visuals::hud_found() && visuals::hud_elements() == 3);
+        config::cfg.hud_tint = {true, {0.5f, 1.0f, 1.0f}};
+        config::cfg.hud_parts["stamina"] = {true, {0.0f, 1.0f, 0.0f}};
+        visuals::apply_hud();
+        CHECK(health_bar.color[0] == 0.5f && health_bar.color[1] == 1.0f && label.color[0] == 0.5f);
+        CHECK(stamina_bar.color[0] == 0.0f && stamina_bar.color[1] == 1.0f);
+        stamina_bar.color[1] = 0.2f;
+        visuals::apply_hud();
+        CHECK(stamina_bar.color[1] == 1.0f);
+        config::cfg.hud_tint.on = false, config::cfg.hud_parts.clear();
+        visuals::apply_hud();
+        CHECK(health_bar.color[0] == 1.0f && stamina_bar.color[0] == 0.75f);
+        health_bar.vt = 2;
+        config::cfg.hud_tint.on = true;
+        visuals::apply_hud();
+        CHECK(dead_writes == 0 && stamina_bar.color[0] == 0.375f);
+        visuals::forget_hud();
+        CHECK(!visuals::hud_found());
+        visuals::ui = saved_ui;
+        config::cfg = saved_cfg;
     }
     if (FILE* f = fopen(path.c_str(), "w")) {
         fputs("hidden_config=hunter_rage\nhidden_config=survivor_legit\nhidden_config=hunter_rage\n", f);

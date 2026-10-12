@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b4
+
+Survivor Update
+
+- New: HUD colors on the Visuals page. Tint the whole HUD in one color, or give health, stamina, crosshair, weapons and ammo, XP, killfeed and messages, radar and objectives, enemy health and the Night Hunter HUD their own color. Only you see them.
+
 ## 2.5 b3
 
 Survivor Update
