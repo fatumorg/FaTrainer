@@ -213,6 +213,9 @@ int main(int argc, char** argv) {
         auto newest = logic::installable_releases(builds);
         CHECK(newest.size() == 2 && newest[0].version == "2.3" && newest[1].version == "2.2" && newest[1].tag == "v2.2");
         CHECK(logic::needs_install("", "2.3", true, false) && logic::needs_install(logic::LEGACY_VERSION, "2.3", true, false) && logic::needs_install("2.2", "2.3", true, false));
+        CHECK(logic::trainer_edition_in(std::string("xx FaTrainer-version:2.5 b6\0FaTrainer-edition:Visuals\0", 54)) == "Visuals");
+        CHECK(logic::trainer_edition_in("FaTrainer-version:2.4 FaTrainer | Dying Light") == "Fatum" && logic::trainer_edition_in("").empty());
+        CHECK(logic::edition_differs("Fatum", true) && logic::edition_differs("Visuals", false) && !logic::edition_differs("Visuals", true) && !logic::edition_differs("", true));
         CHECK(!logic::needs_install("2.3", "2.3", true, false) && !logic::needs_install("2.2", "2.3", false, false) && !logic::needs_install("", "2.3", false, true));
         CHECK(!logic::needs_install("2.4 b1", "2.3", true, true) && logic::needs_install("2.4 b1", "2.3", true, false) && logic::needs_install("2.3", "2.4 b1", true, true));
         std::filesystem::path launch_dir = std::filesystem::temp_directory_path() / "fatrainer-launch-test";

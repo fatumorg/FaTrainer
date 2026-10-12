@@ -1,5 +1,9 @@
 # FaTrainer launcher changelog
 
+## 2.3
+
+- New: Visuals only. Tick it and Play installs the Visuals Version of the trainer instead: only the UV light, Night Hunter glow, HUD colors and texts, no cheats, no internet connection, and it also runs when you start the game from Steam. Untick it to get the full trainer back. The Visuals Version comes with FaTrainer 2.5 and the 2.5 beta builds.
+
 ## 2.2
 
 - Play starts the game through Steam's command line (`steam -applaunch`), so Steam no longer shows its Starting game window.

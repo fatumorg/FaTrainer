@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b6
+
+Survivor Update
+
+- New: the Visuals Version, a second trainer with only the looks: UV light and Night Hunter glow colors, HUD colors and texts. No cheats, no ESP, no internet connection, and it runs whether you start the game with Play or from Steam. Tick Visuals only in the FaTrainer launcher 2.3 to install it.
+
 ## 2.5 b5
 
 Survivor Update

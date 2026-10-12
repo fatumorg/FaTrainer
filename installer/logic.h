@@ -85,6 +85,19 @@ inline std::string trainer_version_in(const std::string& dll) {
     return dll.find("FaTrainer | Dying Light") != std::string::npos ? LEGACY_VERSION : "";
 }
 
+inline std::string trainer_edition_in(const std::string& dll) {
+    const std::string TAG = "FaTrainer-edition:";
+    size_t at = dll.find(TAG);
+    if (at == std::string::npos) return trainer_version_in(dll).empty() ? "" : "Fatum";
+    size_t start = at + TAG.size(), end = start;
+    while (end < dll.size() && isalpha((unsigned char)dll[end])) end++;
+    return dll.substr(start, end - start);
+}
+
+inline bool edition_differs(const std::string& installed_edition, bool visuals_wanted) {
+    return !installed_edition.empty() && (installed_edition == "Visuals") != visuals_wanted;
+}
+
 struct ChangelogEntry { std::string version, name; std::vector<std::string> lines; };
 
 inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {

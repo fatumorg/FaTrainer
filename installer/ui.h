@@ -115,7 +115,8 @@ struct Model {
     std::string picked;
     std::vector<logic::Release> releases;
     logic::Release chosen;
-    bool allow_older = false, beta = false;
+    bool allow_older = false, beta = false, visuals = false;
+    std::string installed_edition;
     logic::Announcement announcement;
 };
 inline Model M;
@@ -142,10 +143,24 @@ inline void dismiss_announcement(const std::string& id) {
     M.announcement = {};
 }
 
+inline const char* VISUALS_DLL = "xinput1_3-visuals.dll";
+inline const char* VISUALS_INFO = "version-visuals.txt";
+
+inline void set_visuals(bool on) {
+    std::error_code ec;
+    fs::create_directories(platform::config_dir(), ec);
+    std::string text = platform::read_file(installer_ini());
+    std::ofstream(installer_ini(), std::ios::binary | std::ios::trunc) << logic::with_ini_value(text, "edition", on ? "visuals" : "fatum");
+    std::lock_guard<std::mutex> l(M.mx);
+    M.visuals = on;
+}
+
 inline void refresh_installed() {
     std::error_code ec;
     fs::path dll = M.game / platform::DLL_NAME;
-    M.installed = !M.game.empty() && fs::exists(dll, ec) ? logic::trainer_version_in(platform::read_file(dll)) : "";
+    std::string bytes = !M.game.empty() && fs::exists(dll, ec) ? platform::read_file(dll) : "";
+    M.installed = logic::trainer_version_in(bytes);
+    M.installed_edition = logic::trainer_edition_in(bytes);
     fs::path ini = M.game / "fatrainer.ini";
     std::string text = !M.game.empty() && fs::exists(ini, ec) ? platform::read_file(ini) : "";
     bool beta = logic::ini_value(text, "beta") == "1";
@@ -228,31 +243,33 @@ inline std::string replace_hint() {
 
 inline void start_play() {
     fs::path game;
-    bool on_beta, install;
+    bool on_beta, install, visuals;
     ReleaseInfo latest;
     std::string installed, newest;
     logic::Release chosen;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
-        game = M.game, latest = M.latest, on_beta = M.on_beta, installed = M.installed, chosen = M.chosen, newest = M.latest.version;
+        game = M.game, latest = M.latest, on_beta = M.on_beta, installed = M.installed, chosen = M.chosen, newest = M.latest.version, visuals = M.visuals;
         install = logic::needs_install(M.installed, M.latest.version, M.fetch == Fetch::ready, M.beta);
         if (!chosen.tag.empty()) install = installed != chosen.version;
+        install = install || logic::edition_differs(M.installed_edition, visuals);
         M.job = Job::working, M.step = install ? "Downloading" : "Starting Dying Light", M.progress = 0, M.message.clear();
     }
-    std::thread([game, latest, on_beta, install, installed, chosen, newest]() mutable {
+    std::thread([game, latest, on_beta, install, installed, chosen, newest, visuals]() mutable {
         std::error_code ec;
         if (install) {
             const unsigned long long LIMIT = 64ull << 20;
             std::string data, error, base = on_beta ? BETA_DOWNLOADS : RELEASE_DOWNLOADS;
-            if (!chosen.tag.empty()) {
-                base = std::string(RELEASE_TAG_DOWNLOADS) + chosen.tag + "/";
-                std::string text;
-                if (!platform::net::get_text(base + "version.txt", text, error)) return finish(Job::failed, "Download failed: " + error + ". Nothing was changed.");
+            if (!chosen.tag.empty()) base = std::string(RELEASE_TAG_DOWNLOADS) + chosen.tag + "/";
+            if (!chosen.tag.empty() || visuals) {
+                std::string text, info = visuals ? VISUALS_INFO : "version.txt", label = chosen.tag.empty() ? latest.version : chosen.version;
+                if (!platform::net::get_text(base + info, text, error))
+                    return finish(Job::failed, visuals ? "FaTrainer " + label + " has no Visuals Version. Nothing was changed." : "Download failed: " + error + ". Nothing was changed.");
                 latest = parse_release_info(text);
-                if (latest.version.empty() || latest.sha256.size() != 64) return finish(Job::failed, "FaTrainer " + chosen.version + " has no valid version.txt. Nothing was changed.");
+                if (latest.version.empty() || latest.sha256.size() != 64) return finish(Job::failed, "FaTrainer " + label + " has no valid " + info + ". Nothing was changed.");
             }
-            bool ok = platform::net::get(base + platform::DLL_NAME, [&](const char* d, size_t n, unsigned long long total) {
+            bool ok = platform::net::get(base + (visuals ? VISUALS_DLL : platform::DLL_NAME), [&](const char* d, size_t n, unsigned long long total) {
                 data.append(d, n);
                 unsigned long long expected = latest.size ? latest.size : total;
                 std::lock_guard<std::mutex> l(M.mx);
@@ -291,7 +308,7 @@ inline void start_play() {
             }
             installed = latest.version;
             std::lock_guard<std::mutex> l(M.mx);
-            if (M.game == game) M.installed = installed;
+            if (M.game == game) M.installed = installed, M.installed_edition = visuals ? "Visuals" : "Fatum";
         }
         if (!chosen.tag.empty() && newer_version(newest, installed)) {
             bool written;
@@ -302,14 +319,15 @@ inline void start_play() {
             if (!written) return finish(Job::failed, "Could not write fatrainer.ini. " + replace_hint());
         }
         fs::path arm = game / LAUNCH_FILE;
-        bool armed = !newer_version(FIRST_ARMED_VERSION, installed);
+        bool armed = !visuals && !newer_version(FIRST_ARMED_VERSION, installed);
         if (armed && !logic::write_launch_file(game, (long long)time(nullptr))) return finish(Job::failed, "Could not write to the game folder. " + replace_hint());
         {
             std::lock_guard<std::mutex> l(M.mx);
             M.step = "Starting Dying Light", M.progress = 0.98f;
         }
         platform::launch_game();
-        std::string running = "Dying Light is starting with FaTrainer " + installed + ". Press Insert or F8 in game. Starting the game from Steam plays it without the trainer.";
+        std::string running = visuals ? "Dying Light is starting with the FaTrainer " + installed + " Visuals Version. Press Insert or F8 in game. It also runs when you start the game from Steam."
+                                      : "Dying Light is starting with FaTrainer " + installed + ". Press Insert or F8 in game. Starting the game from Steam plays it without the trainer.";
         if (!armed) return finish(Job::done, running);
         for (long long waited = 0; waited < LAUNCH_MAX_AGE * 1000; waited += 500) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -434,6 +452,7 @@ inline void init(float dpi_scale) {
     platform::self_path();
     M.changelog = logic::parse_changelog(std::string((const char*)changelog_md, (size_t)(changelog_md_end - changelog_md)));
     M.game = platform::find_game();
+    M.visuals = logic::ini_value(platform::read_file(installer_ini()), "edition") == "visuals";
     refresh_installed();
     fetch_release();
     fetch_announcement();
@@ -680,6 +699,7 @@ inline void detail(float width) {
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
         view.installer_update = M.installer_update;
         view.releases = M.releases, view.chosen = M.chosen, view.beta = M.beta, view.on_beta = M.on_beta;
+        view.visuals = M.visuals, view.installed_edition = M.installed_edition;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -718,7 +738,7 @@ inline void detail(float width) {
         float cell = (width - S(24)) / 3;
         struct Stat { const char* label; std::string value; ImU32 color; };
         Stat stats[3] = {
-            {"INSTALLED", view.installed.empty() ? "Not yet" : view.installed == logic::LEGACY_VERSION ? "Older than 2.0" : view.installed,
+            {"INSTALLED", view.installed.empty() ? "Not yet" : view.installed == logic::LEGACY_VERSION ? "Older than 2.0" : view.installed + (view.installed_edition == "Visuals" ? " Visuals" : ""),
              outdated ? ACCENT : current ? GOOD : SOFT},
             {"LATEST", ready ? view.latest.version : view.fetch == Fetch::loading ? "Checking" : "Unknown", TEXT},
             {"RUNS ON", platform::LINUX ? "Linux, Proton" : "Windows", TEXT}};
@@ -817,10 +837,14 @@ inline void detail(float width) {
         beta_box.y += (S(44) - S(20)) / 2;
         bool beta = view.beta;
         if (check_box(dl, "beta", "Beta builds", beta_box, beta, found)) toggle_ini_flag("beta", !beta);
+        ImVec2 visuals_box{beta_box.x + S(232), beta_box.y};
+        bool visuals = view.visuals;
+        if (check_box(dl, "visuals", "Visuals only", visuals_box, visuals, found)) set_visuals(!visuals);
         ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10)});
         bool older = !view.chosen.tag.empty() && ready && newer_version(view.latest.version, view.chosen.version);
         bool unarmed = !view.chosen.tag.empty() && newer_version(FIRST_ARMED_VERSION, view.chosen.version);
-        std::string note = unarmed ? "Versions before " + std::string(FIRST_ARMED_VERSION) + " also run when you start Dying Light from Steam. Play turns on Use older versions so it keeps working in game."
+        std::string note = view.visuals ? "Visuals only installs the Visuals Version: your UV light, Night Hunter glow, HUD colors and texts, no cheats. It never connects to the internet and also runs when you start Dying Light from Steam."
+                         : unarmed ? "Versions before " + std::string(FIRST_ARMED_VERSION) + " also run when you start Dying Light from Steam. Play turns on Use older versions so it keeps working in game."
                            : older ? "Play turns on Use older versions so this version keeps working in game after newer ones are out."
                            : beta  ? "Play uses the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
                                    : "Play always uses the newest version. Pick an older one here, or tick Beta builds for the version being worked on right now, which may have bugs.";
@@ -835,6 +859,7 @@ inline void detail(float width) {
         bool enabled = false;
         bool celebrate = view.job == Job::done && ImGui::GetTime() - view.finished_at < 2.6;
         bool install = view.chosen.tag.empty() ? logic::needs_install(view.installed, view.latest.version, ready, view.beta) : view.installed != view.chosen.version;
+        install = install || logic::edition_differs(view.installed_edition, view.visuals);
         std::string target = view.chosen.tag.empty() ? view.latest.version : view.chosen.version;
         bool playable = found && (ready || (!view.installed.empty() && view.installed != logic::LEGACY_VERSION));
         if (view.job == Job::working) text = view.step + (view.progress < 0.97f ? "  " + std::to_string((int)(view.progress * 100)) + "%" : ""), progress = view.progress;
