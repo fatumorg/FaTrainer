@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5 b7
+
+Survivor Update
+
+- Fixed: a HUD part color painted every piece of that part in one flat color, so the stamina bar looked full all the time and dark backgrounds turned into bright blocks. Part colors and the whole HUD tint now keep each piece's own brightness.
+- Fixed: with a HUD color on, texts the game fades out or hides could show up fully.
+- Fixed: after a respawn or a level load the HUD tint could grow darker every time, and turning it off did not bring the game's colors back.
+- Fixed: saved HUD colors waited until you opened the menu after loading a save; the trainer now finds the HUD by itself.
+- Texts refuses a replacement that uses a % the game's text does not have, since the killfeed lines are filled in with player names and a stray % could crash the game. Write a percent sign as %%.
+
 ## 2.5 b6
 
 Survivor Update

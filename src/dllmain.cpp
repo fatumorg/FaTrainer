@@ -313,6 +313,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         on_game_thread([] {
             tick_queued = false;
 #if FATRAINER_VISUALS
+            std::lock_guard<std::mutex> l(game::mx);
             visuals::install_var_hook(visuals::tools_global, false, nullptr);
             visuals::apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
 #else
@@ -322,23 +323,25 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         });
     }
 #if FATRAINER_VISUALS
-    const DWORD VISUALS_RESCAN = 15000;
-    bool looks_missing = (visuals::hud_colors_on() && !visuals::hud_found()) || (config::cfg.uv.on && game::g.descs.empty());
-    if (g_ready && looks_missing && GetTickCount() - g_last_scan > VISUALS_RESCAN && !game::g.scanning) request_refresh();
+    const DWORD VISUALS_RESCAN = 15000, VISUALS_RESCAN_MAX = 120000;
+    static DWORD visuals_rescan = VISUALS_RESCAN;
+    if (!g_ready || !visuals::looks_missing()) visuals_rescan = VISUALS_RESCAN;
+    else if (GetTickCount() - g_last_scan > visuals_rescan && !game::g.scanning) visuals_rescan = std::min(visuals_rescan * 2, VISUALS_RESCAN_MAX), request_refresh();
     bool esp = false;
 #else
     const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000, CHEAT_RESCAN_MAX = 120000;
     static DWORD cheat_rescan = CHEAT_RESCAN;
     DWORD since_scan = GetTickCount() - g_last_scan;
-    if (!cheats::objects_missing) cheat_rescan = CHEAT_RESCAN;
+    bool looks_missing = g_ready && visuals::looks_missing();
+    if (!cheats::objects_missing && !looks_missing) cheat_rescan = CHEAT_RESCAN;
     if (cheats::respawned) {
         std::lock_guard<std::mutex> l(game::mx);
         if (!game::g.scanning) cheats::respawned = false, cheat_rescan = CHEAT_RESCAN, visuals::forget_hud(), request_refresh();
     }
-    if ((g_open && since_scan > MENU_RESCAN) || (cheats::objects_missing && since_scan > cheat_rescan)) {
+    if ((g_open && since_scan > MENU_RESCAN) || ((cheats::objects_missing || looks_missing) && since_scan > cheat_rescan)) {
         std::lock_guard<std::mutex> l(game::mx);
         bool menu_needs = game::g.wallets.empty() || game::g.invs.empty() || game::g.descs.empty() || !cheats::player;
-        bool cheats_need = cheats::objects_missing && since_scan > cheat_rescan;
+        bool cheats_need = (cheats::objects_missing || looks_missing) && since_scan > cheat_rescan;
         if (!game::g.scanning && ((g_open && menu_needs) || cheats_need)) {
             if (cheats_need) cheat_rescan = std::min(cheat_rescan * 2, CHEAT_RESCAN_MAX);
             request_refresh();

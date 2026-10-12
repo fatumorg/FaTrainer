@@ -60,6 +60,7 @@ struct FakeElement {
     int kind;
     float color[3] = {1, 1, 1}, original[3] = {1, 1, 1};
     std::vector<FakeElement*> children;
+    float alpha = 1, written_alpha = -1;
 };
 static int dead_writes = 0;
 static FakeElement* as_element(uintptr_t e) { return (FakeElement*)e; }
@@ -70,6 +71,11 @@ static void __fastcall fake_set_color(uintptr_t e, const float* rgb) {
     if (as_element(e)->vt != 1) dead_writes++;
     memcpy(as_element(e)->color, rgb, 12);
 }
+static void __fastcall fake_set_text_color(uintptr_t e, const float* rgba) {
+    fake_set_color(e, rgba);
+    as_element(e)->written_alpha = rgba[3];
+}
+static float fake_text_alpha(uintptr_t e) { return as_element(e)->alpha; }
 static std::string fake_name_of(uintptr_t e) { return as_element(e)->id; }
 static int fake_kind_of(uintptr_t e, uintptr_t* at) { *at = e; return as_element(e)->kind; }
 static uintptr_t fake_vtable_of(uintptr_t e) { return as_element(e)->vt; }
@@ -1073,21 +1079,25 @@ int main(int argc, char** argv) {
     {
         FakeElement health_bar{1, "I_HealthBar", visuals::UI_VIEW}, stamina_bar{1, "I_StaminaBar", visuals::UI_VIEW}, label{1, "T_Level", visuals::UI_TEXT};
         stamina_bar.color[0] = stamina_bar.original[0] = 0.75f;
+        FakeElement stamina_bg{1, "StaminaBarBg", visuals::UI_VIEW};
+        for (int c = 0; c < 3; c++) stamina_bg.color[c] = stamina_bg.original[c] = 0.15f;
+        label.alpha = 0.3f;
         FakeElement health{1, "health_wrap", visuals::UI_NONE}, stamina{1, "HudStamina", visuals::UI_NONE}, root{1, "HUD_DI", visuals::UI_NONE};
         health.children = {&health_bar, &label};
-        stamina.children = {&stamina_bar};
+        stamina.children = {&stamina_bg, &stamina_bar};
         root.children = {&health, &stamina};
         auto saved_ui = visuals::ui;
         auto saved_cfg = config::cfg;
-        visuals::ui = {fake_children_count, fake_child, fake_get_color, fake_set_color, fake_get_color, fake_set_color, fake_name_of, fake_kind_of, fake_vtable_of};
+        visuals::ui = {fake_children_count, fake_child, fake_get_color, fake_set_color, fake_get_color, fake_set_text_color, fake_name_of, fake_kind_of, fake_vtable_of, fake_text_alpha};
         CHECK(!visuals::hud_found());
         visuals::find_hud((uintptr_t)&root);
-        CHECK(visuals::hud_found() && visuals::hud_elements() == 3);
+        CHECK(visuals::hud_found() && visuals::hud_elements() == 4);
         config::cfg.hud_tint = {true, {0.5f, 1.0f, 1.0f}};
         config::cfg.hud_parts["stamina"] = {true, {0.0f, 1.0f, 0.0f}};
         visuals::apply_hud();
-        CHECK(health_bar.color[0] == 0.5f && health_bar.color[1] == 1.0f && label.color[0] == 0.5f);
+        CHECK(health_bar.color[0] == 0.5f && health_bar.color[1] == 1.0f && label.color[0] == 0.5f && label.written_alpha == 0.3f);
         CHECK(stamina_bar.color[0] == 0.0f && stamina_bar.color[1] == 1.0f);
+        CHECK(stamina_bg.color[0] == 0.0f && fabsf(stamina_bg.color[1] - 0.15f) < 1e-6f);
         stamina_bar.color[1] = 0.2f;
         visuals::apply_hud();
         CHECK(stamina_bar.color[1] == 1.0f);
@@ -1097,9 +1107,12 @@ int main(int argc, char** argv) {
         health_bar.vt = 2;
         config::cfg.hud_tint.on = true;
         visuals::apply_hud();
-        CHECK(dead_writes == 0 && stamina_bar.color[0] == 0.375f);
+        CHECK(dead_writes == 0 && stamina_bar.color[0] == 0.5f);
         visuals::forget_hud();
-        CHECK(!visuals::hud_found());
+        CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.75f && dead_writes == 0);
+        CHECK(visuals::looks_missing());
+        config::cfg.hud_tint.on = false;
+        CHECK(!visuals::looks_missing());
         visuals::ui = saved_ui;
         config::cfg = saved_cfg;
     }
@@ -1121,6 +1134,13 @@ int main(int argc, char** argv) {
         visuals::keep_texts();
         CHECK(shown("btz_pounce_interrupted") == L"Pounce interrupted by UV light!");
         CHECK(visuals::game_text("btz_pounce_interrupted") && !strcmp(visuals::game_text("btz_pounce_interrupted")->text, "Pounce interrupted by UV light!"));
+        CHECK(visuals::safe_format("Got you %s", "You killed %s") && visuals::safe_format("100%% sure %s", "You killed %s"));
+        CHECK(!visuals::safe_format("%s got 100% rekt", "You killed %s") && !visuals::safe_format("%s and %s", "You killed %s"));
+        CHECK(!visuals::safe_format("trailing %", "Pounce interrupted by UV light!") && visuals::safe_format("No pounce", "You interrupted %s pouncing %s"));
+        fake_load_text("HUDMessage_BTZDeath_Killer", L"You killed %s");
+        config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "%s got 100% rekt";
+        visuals::keep_texts();
+        CHECK(shown("HUDMessage_BTZDeath_Killer") == L"You killed %s");
         visuals::texts_api = saved_api;
         visuals::tools_global = saved_global;
         config::cfg = saved_cfg;

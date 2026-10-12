@@ -105,10 +105,11 @@ struct Ui {
     float*(__fastcall* get_color)(uintptr_t view, float* out) = nullptr;
     void(__fastcall* set_color)(uintptr_t view, const float* rgb) = nullptr;
     float*(__fastcall* get_text_color)(uintptr_t text, float* out) = nullptr;
-    void(__fastcall* set_text_color)(uintptr_t text, const float* rgb) = nullptr;
+    void(__fastcall* set_text_color)(uintptr_t text, const float* rgba) = nullptr;
     std::string (*name_of)(uintptr_t element) = nullptr;
     int (*kind_of)(uintptr_t element, uintptr_t* at) = nullptr;
     uintptr_t (*vtable_of)(uintptr_t element) = nullptr;
+    float (*text_alpha)(uintptr_t text) = nullptr;
 };
 
 inline Ui ui;
@@ -164,7 +165,17 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
     }
 }
 
-inline void forget_hud() { hud_nodes.clear(), hud_root = 0; }
+inline void write_color(const HudNode& n, const float rgb[3]) {
+    if (n.kind != UI_TEXT) return ui.set_color(n.at, rgb);
+    float rgba[4] = {rgb[0], rgb[1], rgb[2], ui.text_alpha(n.at)};
+    ui.set_text_color(n.at, rgba);
+}
+
+inline void forget_hud() {
+    for (auto& n : hud_nodes)
+        if (n.wrote && !n.dead && ui.vtable_of(n.element) == n.vtable) write_color(n, n.original);
+    hud_nodes.clear(), hud_root = 0;
+}
 
 inline void find_hud(uintptr_t root) {
     forget_hud();
@@ -190,14 +201,14 @@ inline void apply_hud() {
             n.dead = true;
             continue;
         }
-        float want[3];
+        float want[3] = {n.original[0], n.original[1], n.original[2]};
         const config::HudColor* own = part_color(n.part);
-        for (int c = 0; c < 3; c++) want[c] = own ? own->color[c] : tint.on ? n.original[c] * tint.color[c] : n.original[c];
+        if (own || tint.on) visuals::tint(want, own ? own->color : tint.color, 1.0f);
         bool is_original = !memcmp(want, n.original, sizeof want);
         if (!n.wrote && is_original) continue;
         float now[3];
         (n.kind == UI_TEXT ? ui.get_text_color : ui.get_color)(n.at, now);
-        if (memcmp(want, now, sizeof want)) (n.kind == UI_TEXT ? ui.set_text_color : ui.set_color)(n.at, want);
+        if (memcmp(want, now, sizeof want)) write_color(n, want);
         n.wrote = !is_original;
     }
 }
@@ -234,6 +245,9 @@ inline int engine_kind_of(uintptr_t element, uintptr_t* at) {
 
 inline uintptr_t engine_vtable_of(uintptr_t element) { return rdv<uintptr_t>(element); }
 
+const int TEXT_ALPHA = 0x390;
+inline float engine_text_alpha(uintptr_t text) { return rdv<float>(rdv<uintptr_t>(text + UI_ENGINE_OBJECT) + TEXT_ALPHA, 1.0f); }
+
 inline bool locate_engine(HMODULE engine) {
     if (!engine) return false;
     auto get = [&](const char* name) { return (void*)GetProcAddress(engine, name); };
@@ -242,8 +256,8 @@ inline bool locate_engine(HMODULE engine) {
     ui.get_color = (decltype(ui.get_color))get("?GetColor@IUIElementView@@QEBA?AVvec3@@XZ");
     ui.set_color = (decltype(ui.set_color))get("?SetColor@IUIElementView@@QEAAXAEBVvec3@@@Z");
     ui.get_text_color = (decltype(ui.get_text_color))get("?GetTextColor@IUIText@@QEAA?AVvec3@@XZ");
-    ui.set_text_color = (decltype(ui.set_text_color))get("?SetTextColor@IUIText@@QEAAXAEBVvec3@@@Z");
-    ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of;
+    ui.set_text_color = (decltype(ui.set_text_color))get("?SetTextColor@IUIText@@QEAAXAEBVvec4@@@Z");
+    ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
 
@@ -256,6 +270,15 @@ inline bool hud_colors_on() {
     for (auto& [key, h] : config::cfg.hud_parts)
         if (h.on) return true;
     return false;
+}
+
+inline bool looks_missing() {
+    bool descs_missing;
+    {
+        std::lock_guard<std::mutex> l(game::mx);
+        descs_missing = game::g.descs.empty();
+    }
+    return (hud_colors_on() && !hud_found()) || (config::cfg.uv.on && descs_missing);
 }
 
 inline uintptr_t live_hud_root() {
@@ -349,6 +372,34 @@ inline bool texts_ready() {
     return texts_api.find && texts_api.add && texts_api.tools;
 }
 
+inline std::map<char, int> format_specifiers(const std::string& text, bool* broken) {
+    std::map<char, int> out;
+    for (size_t i = 0; i < text.size(); i++) {
+        if (text[i] != '%') continue;
+        if (i + 1 == text.size()) {
+            *broken = true;
+            break;
+        }
+        if (text[++i] != '%') out[text[i]]++;
+    }
+    return out;
+}
+
+inline bool safe_format(const std::string& replacement, const std::string& original) {
+    bool broken = false, ignored = false;
+    auto wanted = format_specifiers(replacement, &broken), allowed = format_specifiers(original, &ignored);
+    if (broken) return false;
+    for (auto& [spec, count] : wanted)
+        if (!allowed.count(spec) || count > allowed[spec]) return false;
+    return true;
+}
+
+inline std::string narrow(const wchar_t* text) {
+    std::string out;
+    for (; text && *text; text++) out += *text < 128 ? (char)*text : '?';
+    return out;
+}
+
 inline void keep_texts() {
     if (!texts_ready()) return;
     for (auto& [key, replacement] : config::cfg.texts) {
@@ -356,6 +407,8 @@ inline void keep_texts() {
         if (!e) continue;
         auto w = text_written.find(key);
         bool ours = w != text_written.end() && w->second.at == e->text;
+        auto kept = text_originals.find(key);
+        if (!safe_format(replacement, kept != text_originals.end() ? narrow(kept->second.c_str()) : narrow(e->text))) continue;
         if (ours && w->second.from == replacement) continue;
         if (!ours) text_originals[key] = e->text;
         put_text(key, wide(replacement));

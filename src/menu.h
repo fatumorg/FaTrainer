@@ -1753,7 +1753,10 @@ inline bool texts_card() {
         ImGui::TextDisabled("%s", t->text);
         ImGui::PopTextWrapPos();
         ImGui::InputTextMultiline("##draft", draft, sizeof draft, {-1, S(70)});
-        if (accent_button("Save", {S(96), 0})) texts[t->key] = draft, changed = true;
+        if (accent_button("Save", {S(96), 0})) {
+            if (visuals::safe_format(draft, t->text)) texts[t->key] = draft, changed = true;
+            else toast("Keep the game's %s and write a percent sign as %%. Nothing was saved.");
+        }
         ImGui::SameLine(0, S(8));
         if (ImGui::Button("Reset", {S(84), 0})) texts.erase(t->key), snprintf(draft, sizeof draft, "%s", t->text), changed = true;
         ImGui::SameLine(0, S(8));
