@@ -375,7 +375,21 @@ int main(int argc, char** argv) {
         CHECK(visuals::locate_engine(engine));
         visuals::locate_texts(game::g.base, engine);
         CHECK(visuals::tools_global == cheats::var_root && visuals::texts_api.find && (uintptr_t)visuals::texts_api.find - (uintptr_t)engine == 0x634e30);
-        CHECK(GAME_TEXT_COUNT > 20000 && visuals::game_text("HUDMessage_BTZDeath_Killer"));
+        auto english = std::make_shared<const visuals::TextLibrary>(visuals::load_language(visuals::game_folder(), "En"));
+        auto polish = visuals::load_language(visuals::game_folder(), "Pl");
+        size_t count = 0;
+        const visuals::GameText* killer = nullptr;
+        for (auto& f : *english)
+            for (auto& t : f.texts) count++, killer = t.key == "HUDMessage_BTZDeath_Killer" ? &t : killer;
+        CHECK(english->size() > 20 && count > 20000 && killer && killer->text == L"You killed %s" && killer->kind == visuals::TEXT_HUD);
+        CHECK(polish.size() == english->size() && visuals::load_language(visuals::game_folder(), "Zz").empty());
+        CHECK(visuals::console_text_file("data/maps/common_texts_xbo.bin") && visuals::console_text_file("data/maps/testmap_shop_texts_all.bin"));
+        CHECK(!visuals::console_text_file("data/maps/slums_texts_all.bin") && !visuals::console_text_file("common_texts_all_DLC1.bin"));
+        visuals::libraries["En"] = english;
+        CHECK(visuals::text_kind("Shopkeeper_GoingOutside_02DLG01") == visuals::TEXT_SPOKEN && visuals::text_kind("Melee_Fists_N") == visuals::TEXT_ITEMS);
+        CHECK(visuals::text_kind("Skill_Agility_1") == visuals::TEXT_SKILLS && visuals::text_kind("Q_Explosives_OBJ_TurnOfAlarm") == visuals::TEXT_QUESTS);
+        CHECK(visuals::text_kind("Tut_CoopInLegend") == visuals::TEXT_TUTORIALS && visuals::text_kind("HUDMessage_BTZDeath_Victim") == visuals::TEXT_HUD);
+        CHECK(visuals::text_kind("MMenuMisisionEnd_Demo_BtnBuyNow") == visuals::TEXT_MENUS && visuals::text_kind("ChatterNeutral_01") == visuals::TEXT_SPOKEN);
     }
     visuals::locate(game::g.base);
     CHECK(game::g.vt_hud && visuals::hud_element_offset >= 0);
@@ -1230,7 +1244,6 @@ int main(int argc, char** argv) {
         config::cfg.texts.clear();
         visuals::keep_texts();
         CHECK(shown("btz_pounce_interrupted") == L"Pounce interrupted by UV light!");
-        CHECK(visuals::game_text("btz_pounce_interrupted") && !strcmp(visuals::game_text("btz_pounce_interrupted")->text, "Pounce interrupted by UV light!"));
         CHECK(visuals::safe_format("Got you %s", "You killed %s") && visuals::safe_format("100%% sure %s", "You killed %s"));
         CHECK(!visuals::safe_format("%s got 100% rekt", "You killed %s") && !visuals::safe_format("%s and %s", "You killed %s"));
         CHECK(!visuals::safe_format("trailing %", "Pounce interrupted by UV light!") && visuals::safe_format("No pounce", "You interrupted %s pouncing %s"));
@@ -1238,6 +1251,36 @@ int main(int argc, char** argv) {
         config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "%s got 100% rekt";
         visuals::keep_texts();
         CHECK(shown("HUDMessage_BTZDeath_Killer") == L"You killed %s");
+        config::cfg.texts.clear();
+        const std::wstring fists_pl = L"Pi\x0119\x015b" L"ci", hello_pl = L"Cze\x015b\x0107";
+        fake_load_text("Melee_Fists_N", fists_pl.c_str());
+        fake_load_text("Shopkeeper_X_DLG01", hello_pl.c_str());
+        visuals::libraries["Xx"] = std::make_shared<const visuals::TextLibrary>(visuals::TextLibrary{
+            {"common", {{"Melee_Fists_N", L"Fists", visuals::TEXT_ITEMS}, {"Shopkeeper_X_DLG01", L"Hello", visuals::TEXT_SPOKEN}}}});
+        config::cfg.text_language = "Xx", config::cfg.text_kept = {"spoken"};
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == L"Fists" && shown("Shopkeeper_X_DLG01") == hello_pl);
+        config::cfg.text_kept.clear();
+        visuals::keep_texts();
+        CHECK(shown("Shopkeeper_X_DLG01") == L"Hello");
+        fake_load_text("Melee_Fists_N", fists_pl.c_str());
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == L"Fists");
+        config::cfg.texts["Melee_Fists_N"] = "Punchers";
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == L"Punchers");
+        config::cfg.texts.erase("Melee_Fists_N");
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == L"Fists");
+        visuals::rows();
+        visuals::keep_text_rows();
+        auto table = visuals::rows();
+        CHECK(table && table->index.count("Melee_Fists_N") && table->rows[table->index.at("Melee_Fists_N")].shown == "Fists");
+        CHECK(table->rows[table->index.at("HUDMessage_BTZDeath_Killer")].english == "You killed %s");
+        config::cfg.text_language.clear();
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == fists_pl && shown("Shopkeeper_X_DLG01") == hello_pl && visuals::text_originals.empty());
+        visuals::libraries.erase("Xx");
         visuals::texts_api = saved_api;
         visuals::tools_global = saved_global;
         config::cfg = saved_cfg;

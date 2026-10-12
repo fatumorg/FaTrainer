@@ -320,6 +320,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             cheats::tick();
 #endif
             visuals::keep_texts();
+            visuals::keep_text_rows();
         });
     }
 #if FATRAINER_VISUALS

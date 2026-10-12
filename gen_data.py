@@ -192,26 +192,6 @@ def write_skills(rows, canvas):
     print(f"skills.h: {len(rows)} skills in {len(canvas)} trees")
 
 
-def write_texts(t):
-    rows, seen, p = [], set(), 8
-    for _ in range(struct.unpack_from("<I", t, 4)[0]):
-        n = struct.unpack_from("<H", t, p)[0]
-        key = t[p + 2:p + 2 + n].decode("latin1")
-        p += 2 + n
-        n = struct.unpack_from("<H", t, p)[0]
-        text = t[p + 2:p + 2 + 2 * n].decode("utf-16-le", "replace")
-        p += 2 + 2 * n
-        if key.lower() not in seen:
-            seen.add(key.lower())
-            rows.append(f"  {{{c_str(key)}, {c_str(text)}}}")
-    with open(os.path.join(HERE, "src/texts.h"), "w") as f:
-        f.write("#pragma once\n"
-                "struct GameText { const char* key; const char* text; };\n"
-                "static const GameText GAME_TEXTS[] = {\n" + ",\n".join(rows) + "\n};\n"
-                f"static const int GAME_TEXT_COUNT = {len(rows)};\n")
-    print(f"texts.h: {len(rows)} texts")
-
-
 def main():
     dw = game_dw()
     with zipfile.ZipFile(os.path.join(dw, "Data0.pak")) as z:
@@ -238,7 +218,6 @@ def main():
     have = sum(1 for i in ids if any(k in STATS for k in stats.get(i, {})))
     print(f"items.h: {len(ids)} items, {sum(1 for i in ids if names.get(i))} named, {have} with stats")
     write_skills(*skills(dw, read_texts(all_texts, every=True)))
-    write_texts(all_texts)
 
 
 if __name__ == "__main__":

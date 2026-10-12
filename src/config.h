@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -91,6 +92,8 @@ struct Config {
     std::map<std::string, float> rainbow;
     Crosshair crosshair;
     std::map<std::string, std::string> texts;
+    std::string text_language;
+    std::set<std::string> text_kept;
     Look look;
 };
 
@@ -268,6 +271,8 @@ inline void load(const std::string& path) {
     cfg.survivor_glow.clear();
     cfg.rainbow.clear();
     cfg.texts.clear();
+    cfg.text_language.clear();
+    cfg.text_kept.clear();
     char line[4096];
     while (fgets(line, sizeof line, f)) {
         std::string s = line;
@@ -315,6 +320,15 @@ inline void load(const std::string& path) {
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
         else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
+        else if (k == "text_language") cfg.text_language = v;
+        else if (k == "text_keep") {
+            for (size_t at = 0; at < v.size();) {
+                size_t comma = v.find(',', at);
+                if (comma == std::string::npos) comma = v.size();
+                if (comma > at) cfg.text_kept.insert(v.substr(at, comma - at));
+                at = comma + 1;
+            }
+        }
         else if (k == "crosshair") {
             auto& x = cfg.crosshair;
             int on = 0, outline = 1;
@@ -377,6 +391,10 @@ inline bool save(const std::string& path) {
     fprintf(f, "crosshair=%d,%d,%.1f,%.1f,%.1f,%.2f,%d,%.3f,%.3f,%.3f\n", x.on, x.style, x.size, x.thickness, x.gap, x.opacity, x.outline, x.color[0], x.color[1],
             x.color[2]);
     for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
+    if (!cfg.text_language.empty()) fprintf(f, "text_language=%s\n", cfg.text_language.c_str());
+    std::string kept;
+    for (auto& kind : cfg.text_kept) kept += (kept.empty() ? "" : ",") + kind;
+    if (!kept.empty()) fprintf(f, "text_keep=%s\n", kept.c_str());
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);
     return true;

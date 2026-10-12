@@ -1,16 +1,21 @@
 #pragma once
 #include <windows.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <set>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 #include "color.h"
 #include "config.h"
 #include "game.h"
-#include "texts.h"
+#include "pak.h"
 
 namespace visuals {
 
@@ -433,10 +438,6 @@ const int SLOT_ADD_TEXT = 69;
 inline const char TEXT_FIND_CODE[] = "48 89 5C 24 08 57 48 83 EC 20 4C 8B 12 48 8B FA BA 01 00 10 00";
 inline const char TOOLS_CODE[] = "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00";
 
-struct WrittenText { const wchar_t* at; std::string from; };
-inline std::map<std::string, std::wstring> text_originals;
-inline std::map<std::string, WrittenText> text_written;
-
 inline std::wstring wide(const std::string& s) {
     if (s.empty()) return L"";
     int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
@@ -445,11 +446,133 @@ inline std::wstring wide(const std::string& s) {
     return out;
 }
 
-inline const GameText* game_text(const std::string& key) {
-    for (int i = 0; i < GAME_TEXT_COUNT; i++)
-        if (!_stricmp(GAME_TEXTS[i].key, key.c_str())) return &GAME_TEXTS[i];
+inline std::string utf8(const wchar_t* text) {
+    if (!text || !*text) return "";
+    int n = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+    std::string out(n > 0 ? n - 1 : 0, '\0');
+    if (n > 1) WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), n, nullptr, nullptr);
+    return out;
+}
+
+enum TextKind { TEXT_SPOKEN, TEXT_ITEMS, TEXT_SKILLS, TEXT_QUESTS, TEXT_TUTORIALS, TEXT_HUD, TEXT_MENUS, TEXT_KINDS };
+struct TextKindInfo { const char* key; const char* label; const char* hint; };
+inline const TextKindInfo TEXT_KIND_INFO[TEXT_KINDS] = {
+    {"spoken", "Spoken lines", "Subtitles, radio calls and what people shout. The voices themselves never change."},
+    {"items", "Weapons and items", "Names and descriptions of everything you can carry, blueprints too."},
+    {"skills", "Skills", "Skill names and descriptions."},
+    {"quests", "Quests and objectives", "Quest names, objectives, bounties and challenges."},
+    {"tutorials", "Tutorials and hints", "Tutorial pop-ups, loading tips and hints."},
+    {"hud", "HUD and messages", "Killfeed, big messages, prompts and notifications."},
+    {"menus", "Menus and the rest", "Menus, settings, achievements and everything else."},
+};
+
+inline bool starts_with(const std::string& s, std::initializer_list<const char*> prefixes) {
+    for (const char* p : prefixes)
+        if (!s.compare(0, strlen(p), p)) return true;
+    return false;
+}
+
+inline int text_kind(const std::string& key) {
+    std::string k = key;
+    for (auto& c : k) c = (char)tolower((unsigned char)c);
+    auto has = [&](const char* part) { return k.find(part) != std::string::npos; };
+    if (has("dlg") || has("_cht") || has("tlk") || starts_with(k, {"chatter", "random_", "player", "cin_", "enc", "dltb_"})) return TEXT_SPOKEN;
+    size_t cut = key.rfind('_');
+    if ((cut != std::string::npos && game::lookup(key.substr(0, cut).c_str())) || starts_with(k, {"craftplan", "craft_", "outfit", "collectable", "blueprint"}))
+        return TEXT_ITEMS;
+    if (starts_with(k, {"skill"})) return TEXT_SKILLS;
+    if (has("_obj_") || starts_with(k, {"q_", "sq_", "rd_", "bounty", "challenge", "mission", "quest", "chapter", "ssa_", "ugc_"})) return TEXT_QUESTS;
+    if (starts_with(k, {"tut", "btz_tut", "hint", "loading", "tip"})) return TEXT_TUTORIALS;
+    if (starts_with(k, {"hud", "hvote", "msg", "btz", "trigger", "action", "notif"})) return TEXT_HUD;
+    return TEXT_MENUS;
+}
+
+struct GameText { std::string key; std::wstring text; int kind; };
+struct TextFile { std::string name; std::vector<GameText> texts; };
+using TextLibrary = std::vector<TextFile>;
+
+inline std::vector<GameText> parse_texts(const std::string& bin) {
+    std::vector<GameText> out;
+    size_t p = 8;
+    for (uint32_t i = 0, n = pak::u32(bin, 4); i < n && p + 2 <= bin.size(); i++) {
+        uint16_t key_size = pak::u16(bin, p);
+        if (p + 4 + key_size > bin.size()) break;
+        std::string key = bin.substr(p + 2, key_size);
+        p += 2 + key_size;
+        uint16_t text_size = pak::u16(bin, p);
+        if (p + 2 + 2 * (size_t)text_size > bin.size()) break;
+        std::wstring text(text_size, L'\0');
+        memcpy(text.data(), bin.data() + p + 2, 2 * (size_t)text_size);
+        p += 2 + 2 * (size_t)text_size;
+        out.push_back({key, text, text_kind(key)});
+    }
+    return out;
+}
+
+struct Language { const char* code; const char* name; };
+inline const Language LANGUAGES[] = {{"En", "English"}, {"Pl", "Polish"}, {"De", "German"}, {"Fr", "French"}, {"Es", "Spanish"},
+                                     {"It", "Italian"}, {"Br", "Portuguese (Brazil)"}, {"Cs", "Czech"}, {"Nl", "Dutch"}, {"Tr", "Turkish"}};
+
+inline bool console_text_file(const std::string& name) {
+    size_t slash = name.find_last_of("/\\");
+    std::string base = slash == std::string::npos ? name : name.substr(slash + 1);
+    for (auto& c : base) c = (char)tolower((unsigned char)c);
+    return base.size() < 4 || base.compare(base.size() - 4, 4, ".bin") || base.find("texts") == std::string::npos || !base.compare(0, 8, "testmap_") ||
+           base.find("_xbo") != std::string::npos || base.find("_ps4") != std::string::npos;
+}
+
+inline std::string game_folder() {
+    char p[MAX_PATH] = "";
+    HMODULE gamedll = GetModuleHandleA("gamedll_x64_rwdi.dll");
+    if (!gamedll || !GetModuleFileNameA(gamedll, p, MAX_PATH)) return "";
+    std::string s = p;
+    return s.substr(0, s.find_last_of("\\/") + 1);
+}
+
+inline TextLibrary load_language(const std::string& folder, const std::string& code) {
+    TextLibrary files;
+    std::string zip, bin;
+    if (pak::read_file(folder + "DW\\Data" + code + ".pak", zip))
+        for (auto& e : pak::entries(zip))
+            if (!console_text_file(e.name) && pak::extract(zip, e, bin)) files.push_back({e.name, parse_texts(bin)});
+    WIN32_FIND_DATAA dlc, file;
+    HANDLE dlcs = FindFirstFileA((folder + "DW_DLC*").c_str(), &dlc);
+    for (bool more = dlcs != INVALID_HANDLE_VALUE; more; more = FindNextFileA(dlcs, &dlc)) {
+        std::string maps = folder + dlc.cFileName + "\\Data" + code + "\\Data\\Maps\\";
+        HANDLE found = FindFirstFileA((maps + "*.bin").c_str(), &file);
+        for (bool next = found != INVALID_HANDLE_VALUE; next; next = FindNextFileA(found, &file))
+            if (!console_text_file(file.cFileName) && pak::read_file(maps + file.cFileName, bin)) files.push_back({file.cFileName, parse_texts(bin)});
+        if (found != INVALID_HANDLE_VALUE) FindClose(found);
+    }
+    if (dlcs != INVALID_HANDLE_VALUE) FindClose(dlcs);
+    return files;
+}
+
+inline std::mutex libraries_mx;
+inline std::map<std::string, std::shared_ptr<const TextLibrary>> libraries;
+inline std::set<std::string> libraries_loading;
+
+inline std::shared_ptr<const TextLibrary> library(const std::string& code) {
+    std::lock_guard<std::mutex> l(libraries_mx);
+    if (auto it = libraries.find(code); it != libraries.end()) return it->second;
+    if (libraries_loading.insert(code).second)
+        std::thread([code] {
+            auto loaded = std::make_shared<const TextLibrary>(load_language(game_folder(), code));
+            std::lock_guard<std::mutex> l(libraries_mx);
+            libraries[code] = loaded, libraries_loading.erase(code);
+        }).detach();
     return nullptr;
 }
+
+struct WrittenText { const wchar_t* at; std::string from; };
+inline std::map<std::string, std::wstring> text_originals;
+inline std::unordered_map<std::string, WrittenText> text_written;
+inline std::set<std::string> user_written;
+inline std::shared_ptr<const TextLibrary> applied_library;
+inline std::string applied_language;
+inline std::set<std::string> applied_kept;
+inline std::vector<const wchar_t*> sentinels;
+inline std::atomic<unsigned> texts_generation{0};
 
 inline TextEntry* find_text(const std::string& key) {
     const char* k = key.c_str();
@@ -505,27 +628,104 @@ inline std::string narrow(const wchar_t* text) {
     return out;
 }
 
+inline bool ensure_text(const std::string& key, const std::wstring& text, const std::string& from) {
+    TextEntry* e = find_text(key);
+    if (!e) return false;
+    auto w = text_written.find(key);
+    bool ours = w != text_written.end() && w->second.at == e->text;
+    if (ours && w->second.from == from) return false;
+    if (!ours) text_originals[key] = e->text;
+    put_text(key, text);
+    e = find_text(key);
+    text_written[key] = {e ? e->text : nullptr, from};
+    texts_generation++;
+    return true;
+}
+
+inline bool language_switches(int kind) {
+    const auto& c = config::cfg;
+    return !c.text_language.empty() && !c.text_kept.count(TEXT_KIND_INFO[kind].key);
+}
+
+inline const wchar_t* shown_text(const std::string& key) {
+    TextEntry* e = find_text(key);
+    return e ? e->text : nullptr;
+}
+
 inline void keep_texts() {
     if (!texts_ready()) return;
-    for (auto& [key, replacement] : config::cfg.texts) {
-        TextEntry* e = find_text(key);
-        if (!e) continue;
-        auto w = text_written.find(key);
-        bool ours = w != text_written.end() && w->second.at == e->text;
+    const auto& c = config::cfg;
+    auto lib = c.text_language.empty() ? nullptr : library(c.text_language);
+    bool full = c.text_language != applied_language || c.text_kept != applied_kept || lib != applied_library;
+    for (size_t i = 0; lib && !full && i < lib->size() && i < sentinels.size(); i++)
+        if (!(*lib)[i].texts.empty() && shown_text((*lib)[i].texts[0].key) != sentinels[i]) full = true;
+    for (auto it = user_written.begin(); it != user_written.end();)
+        if (c.texts.count(*it)) ++it;
+        else it = user_written.erase(it), full = true;
+    for (auto& [key, replacement] : c.texts) {
+        if (!find_text(key)) continue;
         auto kept = text_originals.find(key);
-        if (!safe_format(replacement, kept != text_originals.end() ? narrow(kept->second.c_str()) : narrow(e->text))) continue;
-        if (ours && w->second.from == replacement) continue;
-        if (!ours) text_originals[key] = e->text;
-        put_text(key, wide(replacement));
-        e = find_text(key);
-        text_written[key] = {e ? e->text : nullptr, replacement};
+        if (!safe_format(replacement, kept != text_originals.end() ? narrow(kept->second.c_str()) : narrow(shown_text(key)))) continue;
+        ensure_text(key, wide(replacement), "user " + replacement);
+        user_written.insert(key);
     }
+    if (!full) return;
+    std::set<std::string> wanted;
+    if (lib)
+        for (auto& file : *lib)
+            for (auto& t : file.texts)
+                if (!c.texts.count(t.key) && language_switches(t.kind) && wanted.insert(t.key).second) ensure_text(t.key, t.text, "language " + c.text_language);
     for (auto it = text_originals.begin(); it != text_originals.end();) {
-        if (config::cfg.texts.count(it->first)) { ++it; continue; }
+        if (c.texts.count(it->first) || wanted.count(it->first)) {
+            ++it;
+            continue;
+        }
         if (find_text(it->first)) put_text(it->first, it->second);
         text_written.erase(it->first);
         it = text_originals.erase(it);
+        texts_generation++;
     }
+    sentinels.clear();
+    for (size_t i = 0; lib && i < lib->size(); i++) sentinels.push_back((*lib)[i].texts.empty() ? nullptr : shown_text((*lib)[i].texts[0].key));
+    applied_language = c.text_language, applied_kept = c.text_kept, applied_library = lib;
+}
+
+struct TextRow { std::string key, shown, english, haystack; int kind; };
+struct TextRows { std::vector<TextRow> rows; std::unordered_map<std::string, size_t> index; };
+inline std::mutex rows_mx;
+inline std::shared_ptr<const TextRows> text_rows;
+inline unsigned rows_generation = ~0u;
+inline DWORD rows_at = 0;
+inline std::atomic<DWORD> rows_wanted_at{0};
+const DWORD ROWS_REFRESH_MS = 10000, ROWS_WANTED_MS = 2000;
+
+inline std::string lowered(std::string s) {
+    for (auto& ch : s) ch = (char)tolower((unsigned char)ch);
+    return s;
+}
+
+inline std::shared_ptr<const TextRows> rows() {
+    rows_wanted_at = GetTickCount();
+    std::lock_guard<std::mutex> l(rows_mx);
+    return text_rows;
+}
+
+inline void keep_text_rows() {
+    if (GetTickCount() - rows_wanted_at > ROWS_WANTED_MS) return;
+    auto english = library("En");
+    bool live = texts_ready();
+    if (!english || (rows_generation == texts_generation && GetTickCount() - rows_at < ROWS_REFRESH_MS)) return;
+    auto built = std::make_shared<TextRows>();
+    for (auto& file : *english)
+        for (auto& t : file.texts) {
+            if (!built->index.emplace(t.key, built->rows.size()).second) continue;
+            const wchar_t* shown = live ? shown_text(t.key) : nullptr;
+            std::string english_text = utf8(t.text.c_str()), shown_now = shown ? utf8(shown) : english_text;
+            built->rows.push_back({t.key, shown_now, english_text, lowered(t.key + "\n" + shown_now + "\n" + english_text), t.kind});
+        }
+    std::lock_guard<std::mutex> l(rows_mx);
+    text_rows = built;
+    rows_generation = texts_generation, rows_at = GetTickCount();
 }
 
 }

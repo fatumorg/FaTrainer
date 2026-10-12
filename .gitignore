@@ -4,7 +4,6 @@
 *.bak
 src/items.h
 src/skills.h
-src/texts.h
 __pycache__/
 *.pyc
 graphify-out/

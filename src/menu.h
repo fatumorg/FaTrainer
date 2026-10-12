@@ -122,6 +122,12 @@ inline bool chip(const char* text, bool active) {
     return r;
 }
 
+inline bool flowing_chip(const char* text, bool active, bool first) {
+    float w = ImGui::CalcTextSize(text).x + ImGui::GetStyle().FramePadding.x * 2;
+    if (!first && ImGui::GetItemRectMax().x + S(6) + w <= ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine(0, S(6));
+    return chip(text, active);
+}
+
 inline const char* shown_end(const char* text) {
     const char* hidden = strstr(text, "##");
     return hidden ? hidden : text + strlen(text);
@@ -1815,98 +1821,181 @@ inline bool crosshair_card() {
 inline const char* FEATURED_TEXTS[] = {"btz_pounce_interrupted", "HUDMessage_BTZDeath_Killer", "HUDMessage_BTZDeath_Victim", "HUDMessage_BTZDeath_Observer",
                                         "HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt",
                                         "HUDMessage_BTZZombiePounceInterrupt_Victim_SelfInterrupt", "btz_invasion_satus_human_killed"};
-const size_t TEXT_RESULTS = 100, TEXT_PREVIEW = 90;
+const size_t TEXT_RESULTS = 150;
 
-inline std::string first_line(const char* text) {
-    std::string s = text;
-    s = s.substr(0, s.find('\n'));
-    if (s.size() > TEXT_PREVIEW) {
-        size_t cut = TEXT_PREVIEW;
-        while (cut && ((unsigned char)s[cut] & 0xC0) == 0x80) cut--;
-        s = s.substr(0, cut) + "...";
+inline std::string fit_text(ImFont* font, float size, const std::string& text, float width) {
+    std::string s = text.substr(0, text.find('\n'));
+    if (font->CalcTextSizeA(size, FLT_MAX, 0, s.c_str()).x <= width) return s;
+    size_t cut = s.size();
+    while (cut > 0) {
+        do cut--;
+        while (cut && ((unsigned char)s[cut] & 0xC0) == 0x80);
+        std::string shorter = s.substr(0, cut) + "...";
+        if (font->CalcTextSizeA(size, FLT_MAX, 0, shorter.c_str()).x <= width) return shorter;
     }
-    return s;
+    return "...";
 }
 
-inline bool text_row(const GameText& t, bool selected) {
-    ImGui::PushID(t.key);
+inline bool text_row(const visuals::TextRow& r, bool selected) {
+    auto& texts = config::cfg.texts;
+    ImGui::PushID(r.key.c_str());
+    auto mine = texts.find(r.key);
+    const std::string& shown = mine != texts.end() ? mine->second : r.shown;
+    bool english = !r.english.empty() && r.english != shown;
+    float w = ImGui::GetContentRegionAvail().x, body = ImGui::GetFontSize(), small = font_size(f_small), pad = S(12);
+    float h = pad + body + S(5) + (english ? small + S(4) : 0) + small + pad;
     ImVec2 p = ImGui::GetCursorScreenPos();
-    bool picked = ImGui::Selectable("##row", selected, 0, {0, S(42)});
-    bool changed_text = config::cfg.texts.count(t.key) > 0;
-    ImGui::SetCursorScreenPos({p.x + S(10), p.y + S(3)});
-    ImGui::TextUnformatted(first_line(changed_text ? config::cfg.texts[t.key].c_str() : t.text).c_str());
-    ImGui::SetCursorScreenPos({p.x + S(10), p.y + S(23)});
-    ImGui::PushFont(f_small);
-    if (changed_text) {
-        ImGui::TextColored(V(T.accent), "Changed");
-        ImGui::SameLine();
+    bool picked = ImGui::InvisibleButton("row", {w, h});
+    bool hovered = ImGui::IsItemHovered();
+    if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    auto* dl = ImGui::GetWindowDrawList();
+    if (selected || hovered) dl->AddRectFilled(p, {p.x + w, p.y + h}, selected ? C(T.accent, 0.10f) : C(IM_COL32(255, 255, 255, 255), 0.03f), R(10));
+    float badge = mine != texts.end() ? f_small->CalcTextSizeA(small, FLT_MAX, 0, "Changed").x + S(16) : 0, text_w = w - pad * 2 - badge;
+    float y = p.y + pad;
+    dl->AddText(f_body, body, {p.x + pad, y}, C(T.text), fit_text(f_body, body, shown, text_w).c_str());
+    if (badge > 0) dl->AddText(f_small, small, {p.x + w - pad - badge + S(16), y + (body - small) / 2}, C(T.accent), "Changed");
+    y += body + S(5);
+    if (english) {
+        dl->AddText(f_small, small, {p.x + pad, y}, C(T.soft), fit_text(f_small, small, "English: " + r.english, text_w).c_str());
+        y += small + S(4);
     }
-    ImGui::TextDisabled("%s", t.key);
-    ImGui::PopFont();
-    ImGui::SetCursorScreenPos({p.x, p.y + S(44)});
+    std::string where = r.key + "   " + visuals::TEXT_KIND_INFO[r.kind].label;
+    dl->AddText(f_small, small, {p.x + pad, y}, C(T.muted), fit_text(f_small, small, where, text_w).c_str());
     ImGui::PopID();
     return picked;
+}
+
+inline const char* language_name(const std::string& code) {
+    for (auto& l : visuals::LANGUAGES)
+        if (code == l.code) return l.name;
+    return nullptr;
+}
+
+inline bool language_card() {
+    auto& c = config::cfg;
+    bool changed = false;
+    begin_card("language", "LANGUAGE");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Texts in");
+    ImGui::SameLine(S(150));
+    ImGui::SetNextItemWidth(S(320));
+    const char* current = language_name(c.text_language);
+    if (ImGui::BeginCombo("##language", current ? current : "Your game's language")) {
+        if (ImGui::Selectable("Your game's language", !current)) c.text_language.clear(), changed = true;
+        for (auto& l : visuals::LANGUAGES)
+            if (ImGui::Selectable(l.name, c.text_language == l.code)) {
+                if (c.text_language.empty() && c.text_kept.empty()) c.text_kept.insert(visuals::TEXT_KIND_INFO[visuals::TEXT_SPOKEN].key);
+                c.text_language = l.code, changed = true;
+            }
+        ImGui::EndCombo();
+    }
+    if (current) {
+        bool loading = !visuals::library(c.text_language);
+        ImGui::Dummy({0, S(8)});
+        caps(loading ? "LOADING THE TEXTS" : "SWITCH OR KEEP");
+        ImGui::Dummy({0, S(2)});
+        for (auto& kind : visuals::TEXT_KIND_INFO) {
+            bool switched = !c.text_kept.count(kind.key);
+            if (switch_row(kind.label, kind.hint, switched)) {
+                if (switched) c.text_kept.erase(kind.key);
+                else c.text_kept.insert(kind.key);
+                changed = true;
+            }
+        }
+    }
+    note("Switched groups show in the language you pick, kept groups stay in your game's language. Voices never change. Texts already on screen change the next time the game shows them.");
+    end_card();
+    return changed;
 }
 
 inline bool texts_card() {
     auto& texts = config::cfg.texts;
     static char filter[64] = "";
+    static int kind = -1;
     static std::string searched = "\x01";
-    static std::vector<int> matches;
+    static int searched_kind = -2;
+    static std::shared_ptr<const visuals::TextRows> searched_rows;
+    static std::vector<size_t> matches;
     static std::string editing;
     static char draft[2048] = "";
     bool changed = false;
-    begin_card("texts", "TEXTS");
-    search_box("##texts", "Search every game text, like pounce or killed...", filter, sizeof filter);
-    std::string f = lower(filter);
-    if (f != searched) {
-        searched = f, matches.clear();
-        for (int i = 0; i < GAME_TEXT_COUNT && !f.empty() && matches.size() < TEXT_RESULTS; i++)
-            if (lower(std::string(GAME_TEXTS[i].key) + " " + GAME_TEXTS[i].text).find(f) != std::string::npos) matches.push_back(i);
+    auto all = visuals::rows();
+    begin_card("texts", "YOUR TEXTS");
+    if (!all) {
+        note(visuals::game_folder().empty() ? "The game's text files were not found." : "Reading the game's texts...");
+        end_card();
+        return false;
     }
-    auto pick = [&](const GameText& t) {
-        editing = t.key;
-        snprintf(draft, sizeof draft, "%s", texts.count(t.key) ? texts[t.key].c_str() : t.text);
+    search_box("##texts", "Search what you see in the game, like pounce or killed...", filter, sizeof filter);
+    if (flowing_chip("All", kind < 0, true)) kind = -1;
+    for (int k = 0; k < visuals::TEXT_KINDS; k++)
+        if (flowing_chip(visuals::TEXT_KIND_INFO[k].label, kind == k, false)) kind = kind == k ? -1 : k;
+    std::string f = visuals::lowered(filter);
+    bool browsing = !f.empty() || kind >= 0;
+    if (f != searched || kind != searched_kind || all != searched_rows) {
+        searched = f, searched_kind = kind, searched_rows = all, matches.clear();
+        for (size_t i = 0; browsing && i < all->rows.size() && matches.size() < TEXT_RESULTS; i++) {
+            auto& r = all->rows[i];
+            if ((kind < 0 || r.kind == kind) && (f.empty() || r.haystack.find(f) != std::string::npos)) matches.push_back(i);
+        }
+    }
+    auto row_of = [&](const std::string& key) -> const visuals::TextRow* {
+        auto it = all->index.find(key);
+        return it == all->index.end() ? nullptr : &all->rows[it->second];
     };
-    if (const GameText* t = editing.empty() ? nullptr : visuals::game_text(editing)) {
-        ImGui::Dummy({0, S(4)});
-        caps(t->key);
+    auto pick = [&](const visuals::TextRow& r) {
+        editing = r.key;
+        auto mine = texts.find(r.key);
+        snprintf(draft, sizeof draft, "%s", mine != texts.end() ? mine->second.c_str() : r.shown.c_str());
+    };
+    if (const visuals::TextRow* r = editing.empty() ? nullptr : row_of(editing)) {
+        ImGui::Dummy({0, S(8)});
+        caps("EDITING");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("%s", t->text);
+        ImGui::TextUnformatted(r->shown.c_str());
+        if (r->english != r->shown) ImGui::TextDisabled("English: %s", r->english.c_str());
+        ImGui::PushFont(f_small);
+        ImGui::TextDisabled("%s", r->key.c_str());
+        ImGui::PopFont();
         ImGui::PopTextWrapPos();
-        ImGui::InputTextMultiline("##draft", draft, sizeof draft, {-1, S(70)});
+        ImGui::InputTextMultiline("##draft", draft, sizeof draft, {-1, S(80)});
         if (accent_button("Save", {S(96), 0})) {
-            if (visuals::safe_format(draft, t->text)) texts[t->key] = draft, changed = true;
+            if (visuals::safe_format(draft, r->english)) texts[r->key] = draft, changed = true;
             else toast("Keep the game's %s and write a percent sign as %%. Nothing was saved.");
         }
         ImGui::SameLine(0, S(8));
-        if (ImGui::Button("Reset", {S(84), 0})) texts.erase(t->key), snprintf(draft, sizeof draft, "%s", t->text), changed = true;
+        if (ImGui::Button("Use the game's text", {0, 0})) texts.erase(r->key), snprintf(draft, sizeof draft, "%s", r->shown.c_str()), changed = true;
         ImGui::SameLine(0, S(8));
         if (ImGui::Button("Close", {S(84), 0})) editing.clear();
-        ImGui::Dummy({0, S(8)});
     }
-    caps(f.empty() ? "COMMON IN BE THE ZOMBIE" : matches.empty() ? "NOTHING FOUND" : "RESULTS");
-    if (f.empty()) {
+    ImGui::Dummy({0, S(8)});
+    caps(!browsing ? "COMMON IN BE THE ZOMBIE" : matches.empty() ? "NOTHING FOUND" : matches.size() >= TEXT_RESULTS ? "FIRST RESULTS" : "RESULTS");
+    if (!browsing) {
         for (const char* key : FEATURED_TEXTS)
-            if (const GameText* t = visuals::game_text(key); t && text_row(*t, editing == t->key)) pick(*t);
+            if (const visuals::TextRow* r = row_of(key); r && text_row(*r, editing == r->key)) pick(*r);
     } else {
-        for (int i : matches)
-            if (text_row(GAME_TEXTS[i], editing == GAME_TEXTS[i].key)) pick(GAME_TEXTS[i]);
+        for (size_t i : matches)
+            if (text_row(all->rows[i], editing == all->rows[i].key)) pick(all->rows[i]);
     }
     if (!texts.empty()) {
-        ImGui::Dummy({0, S(6)});
-        caps("YOUR TEXTS");
+        ImGui::Dummy({0, S(8)});
+        caps("CHANGED BY YOU");
         for (auto it = texts.begin(); it != texts.end();) {
-            const GameText* t = visuals::game_text(it->first);
             auto next = std::next(it);
-            if (t && text_row(*t, editing == t->key)) pick(*t);
+            if (const visuals::TextRow* r = row_of(it->first); r && text_row(*r, editing == r->key)) pick(*r);
             it = next;
         }
-        if (ImGui::Button("Reset all texts")) texts.clear(), changed = true;
+        if (ImGui::Button("Use the game's texts again")) texts.clear(), changed = true;
     }
-    note("Keep %s where the game puts a name. Texts already on screen change the next time the game shows them. Only you see your texts.");
+    note("Keep %s where the game puts a name. Only you see your texts; they win over the language above.");
     end_card();
     return changed;
+}
+
+inline void texts_page() {
+    bool changed = language_card();
+    changed |= texts_card();
+    if (changed) save_config();
 }
 
 inline void visuals_page() {
@@ -1950,7 +2039,6 @@ inline void visuals_page() {
     changed |= hud_colors_card();
     changed |= crosshair_card();
     changed |= survivor_glow_card();
-    changed |= texts_card();
     if (changed) save_config();
 }
 
@@ -2125,7 +2213,8 @@ inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
 #if FATRAINER_VISUALS
-    {"visuals", "Visuals", "Colors, HUD, crosshair, glow and texts", visuals_page, always, "LOOK", {}},
+    {"visuals", "Visuals", "Colors, HUD, crosshair and glow", visuals_page, always, "LOOK", {}},
+    {"texts", "Texts", "Game language and your own texts", texts_page, always, "LOOK", {}},
 #else
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS",
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
@@ -2134,7 +2223,8 @@ inline const Page PAGES[] = {
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee"}},
-    {"visuals", "Visuals", "Player ESP, colors, HUD, crosshair, glow and texts", visuals_page, always, "MODES", {}},
+    {"visuals", "Visuals", "Player ESP, colors, HUD, crosshair and glow", visuals_page, always, "MODES", {}},
+    {"texts", "Texts", "Game language and your own texts", texts_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},

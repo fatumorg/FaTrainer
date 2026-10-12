@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5 b10
+
+Survivor Update
+
+- New: Texts has its own page, easier to read: every result shows the text the way you see it in the game, the English text under it when they differ, its key and its group. Filter by group (spoken lines, weapons and items, skills, quests, tutorials, HUD, menus) or search.
+- New: Language on the Texts page shows the game's texts in another language while the voices stay as they are: English, Polish, German, French, Spanish, Italian, Portuguese (Brazil), Czech, Dutch or Turkish. Choose for each group whether it switches or keeps your game's language; spoken lines keep it unless you switch them.
+- Your own texts win over the language you pick.
+
 ## 2.5 b9
 
 Survivor Update
