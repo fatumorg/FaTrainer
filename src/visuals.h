@@ -7,6 +7,7 @@
 #include <vector>
 #include "config.h"
 #include "game.h"
+#include "texts.h"
 
 namespace visuals {
 
@@ -203,6 +204,86 @@ inline void keep_hud(void (*log)(const char*, ...)) {
     }
     apply_hud();
     was_on = on;
+}
+
+struct TextEntry { const char* key; const wchar_t* text; };
+template <class T> struct TtlString { const T* text; uint32_t size; uint32_t capacity; };
+
+struct TextApi {
+    TextEntry*(__fastcall* find)(uintptr_t unused, const char* const* key) = nullptr;
+    bool(__fastcall* add)(uintptr_t tools, const TtlString<char>* key, const TtlString<wchar_t>* text, bool overwrite) = nullptr;
+    uintptr_t tools = 0;
+};
+
+inline TextApi texts_api;
+inline uintptr_t tools_global = 0;
+const int SLOT_ADD_TEXT = 69;
+inline const char TEXT_FIND_CODE[] = "48 89 5C 24 08 57 48 83 EC 20 4C 8B 12 48 8B FA BA 01 00 10 00";
+inline const char TOOLS_CODE[] = "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00";
+
+struct WrittenText { const wchar_t* at; std::string from; };
+inline std::map<std::string, std::wstring> text_originals;
+inline std::map<std::string, WrittenText> text_written;
+
+inline std::wstring wide(const std::string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
+    std::wstring out(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), out.data(), n);
+    return out;
+}
+
+inline const GameText* game_text(const std::string& key) {
+    for (int i = 0; i < GAME_TEXT_COUNT; i++)
+        if (!_stricmp(GAME_TEXTS[i].key, key.c_str())) return &GAME_TEXTS[i];
+    return nullptr;
+}
+
+inline TextEntry* find_text(const std::string& key) {
+    const char* k = key.c_str();
+    TextEntry* e = texts_api.find(0, &k);
+    return e && e->text ? e : nullptr;
+}
+
+inline void put_text(const std::string& key, const std::wstring& text) {
+    TtlString<char> k{key.c_str(), (uint32_t)key.size(), (uint32_t)key.size()};
+    TtlString<wchar_t> t{text.c_str(), (uint32_t)text.size(), (uint32_t)text.size()};
+    texts_api.add(texts_api.tools, &k, &t, true);
+}
+
+inline void locate_texts(uintptr_t gamedll, HMODULE engine) {
+    if (auto hits = game::find_code(gamedll, TOOLS_CODE); !hits.empty()) tools_global = game::rip_target(hits[0], 3, 7);
+    if (auto hits = engine ? game::find_code((uintptr_t)engine, TEXT_FIND_CODE, 2) : std::vector<uintptr_t>{}; hits.size() == 1)
+        texts_api.find = (decltype(texts_api.find))hits[0];
+}
+
+inline bool texts_ready() {
+    if (tools_global) {
+        texts_api.tools = rdv<uintptr_t>(tools_global);
+        texts_api.add = texts_api.tools ? (decltype(texts_api.add))rdv<uintptr_t>(rdv<uintptr_t>(texts_api.tools) + SLOT_ADD_TEXT * 8) : nullptr;
+    }
+    return texts_api.find && texts_api.add && texts_api.tools;
+}
+
+inline void keep_texts() {
+    if (!texts_ready()) return;
+    for (auto& [key, replacement] : config::cfg.texts) {
+        TextEntry* e = find_text(key);
+        if (!e) continue;
+        auto w = text_written.find(key);
+        bool ours = w != text_written.end() && w->second.at == e->text;
+        if (ours && w->second.from == replacement) continue;
+        if (!ours) text_originals[key] = e->text;
+        put_text(key, wide(replacement));
+        e = find_text(key);
+        text_written[key] = {e ? e->text : nullptr, replacement};
+    }
+    for (auto it = text_originals.begin(); it != text_originals.end();) {
+        if (config::cfg.texts.count(it->first)) { ++it; continue; }
+        if (find_text(it->first)) put_text(it->first, it->second);
+        text_written.erase(it->first);
+        it = text_originals.erase(it);
+    }
 }
 
 }

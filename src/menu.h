@@ -1681,6 +1681,100 @@ inline bool hud_colors_card() {
     return changed;
 }
 
+inline const char* FEATURED_TEXTS[] = {"btz_pounce_interrupted", "HUDMessage_BTZDeath_Killer", "HUDMessage_BTZDeath_Victim", "HUDMessage_BTZDeath_Observer",
+                                        "HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt",
+                                        "HUDMessage_BTZZombiePounceInterrupt_Victim_SelfInterrupt", "btz_invasion_satus_human_killed"};
+const size_t TEXT_RESULTS = 100, TEXT_PREVIEW = 90;
+
+inline std::string first_line(const char* text) {
+    std::string s = text;
+    s = s.substr(0, s.find('\n'));
+    if (s.size() > TEXT_PREVIEW) {
+        size_t cut = TEXT_PREVIEW;
+        while (cut && ((unsigned char)s[cut] & 0xC0) == 0x80) cut--;
+        s = s.substr(0, cut) + "...";
+    }
+    return s;
+}
+
+inline bool text_row(const GameText& t, bool selected) {
+    ImGui::PushID(t.key);
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    bool picked = ImGui::Selectable("##row", selected, 0, {0, S(42)});
+    bool changed_text = config::cfg.texts.count(t.key) > 0;
+    ImGui::SetCursorScreenPos({p.x + S(10), p.y + S(3)});
+    ImGui::TextUnformatted(first_line(changed_text ? config::cfg.texts[t.key].c_str() : t.text).c_str());
+    ImGui::SetCursorScreenPos({p.x + S(10), p.y + S(23)});
+    ImGui::PushFont(f_small);
+    if (changed_text) {
+        ImGui::TextColored(V(T.accent), "Changed");
+        ImGui::SameLine();
+    }
+    ImGui::TextDisabled("%s", t.key);
+    ImGui::PopFont();
+    ImGui::SetCursorScreenPos({p.x, p.y + S(44)});
+    ImGui::PopID();
+    return picked;
+}
+
+inline bool texts_card() {
+    auto& texts = config::cfg.texts;
+    static char filter[64] = "";
+    static std::string searched = "\x01";
+    static std::vector<int> matches;
+    static std::string editing;
+    static char draft[2048] = "";
+    bool changed = false;
+    begin_card("texts", "TEXTS");
+    search_box("##texts", "Search every game text, like pounce or killed...", filter, sizeof filter);
+    std::string f = lower(filter);
+    if (f != searched) {
+        searched = f, matches.clear();
+        for (int i = 0; i < GAME_TEXT_COUNT && !f.empty() && matches.size() < TEXT_RESULTS; i++)
+            if (lower(std::string(GAME_TEXTS[i].key) + " " + GAME_TEXTS[i].text).find(f) != std::string::npos) matches.push_back(i);
+    }
+    auto pick = [&](const GameText& t) {
+        editing = t.key;
+        snprintf(draft, sizeof draft, "%s", texts.count(t.key) ? texts[t.key].c_str() : t.text);
+    };
+    if (const GameText* t = editing.empty() ? nullptr : visuals::game_text(editing)) {
+        ImGui::Dummy({0, S(4)});
+        caps(t->key);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", t->text);
+        ImGui::PopTextWrapPos();
+        ImGui::InputTextMultiline("##draft", draft, sizeof draft, {-1, S(70)});
+        if (accent_button("Save", {S(96), 0})) texts[t->key] = draft, changed = true;
+        ImGui::SameLine(0, S(8));
+        if (ImGui::Button("Reset", {S(84), 0})) texts.erase(t->key), snprintf(draft, sizeof draft, "%s", t->text), changed = true;
+        ImGui::SameLine(0, S(8));
+        if (ImGui::Button("Close", {S(84), 0})) editing.clear();
+        ImGui::Dummy({0, S(8)});
+    }
+    caps(f.empty() ? "COMMON IN BE THE ZOMBIE" : matches.empty() ? "NOTHING FOUND" : "RESULTS");
+    if (f.empty()) {
+        for (const char* key : FEATURED_TEXTS)
+            if (const GameText* t = visuals::game_text(key); t && text_row(*t, editing == t->key)) pick(*t);
+    } else {
+        for (int i : matches)
+            if (text_row(GAME_TEXTS[i], editing == GAME_TEXTS[i].key)) pick(GAME_TEXTS[i]);
+    }
+    if (!texts.empty()) {
+        ImGui::Dummy({0, S(6)});
+        caps("YOUR TEXTS");
+        for (auto it = texts.begin(); it != texts.end();) {
+            const GameText* t = visuals::game_text(it->first);
+            auto next = std::next(it);
+            if (t && text_row(*t, editing == t->key)) pick(*t);
+            it = next;
+        }
+        if (ImGui::Button("Reset all texts")) texts.clear(), changed = true;
+    }
+    note("Keep %s where the game puts a name. Texts already on screen change the next time the game shows them. Only you see your texts.");
+    end_card();
+    return changed;
+}
+
 inline void visuals_page() {
     auto& e = config::cfg.esp;
     bool changed = false;
@@ -1718,6 +1812,7 @@ inline void visuals_page() {
                          "The veins that light up when UV hits the Night Hunter glow in your own color.", config::cfg.hunter_glow,
                          "Only you see it: as a survivor on the hunter you hit, as the Night Hunter on your own arms. Glow scales how bright the veins get.");
     changed |= hud_colors_card();
+    changed |= texts_card();
     if (changed) save_config();
 }
 
@@ -1895,7 +1990,7 @@ inline const Page PAGES[] = {
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee"}},
-    {"visuals", "Visuals", "Player ESP, UV light, Night Hunter glow and HUD colors", visuals_page, always, "MODES", {}},
+    {"visuals", "Visuals", "Player ESP, UV light, Night Hunter glow, HUD colors and texts", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},

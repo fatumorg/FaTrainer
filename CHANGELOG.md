@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b5
+
+Survivor Update
+
+- New: Texts on the Visuals page. Search every text the game shows and write your own, for example "Pounce interrupted by UV light!" or the Be The Zombie killfeed lines like "You killed %s". Reset brings back the game's text. Only you see your texts.
+
 ## 2.5 b4
 
 Survivor Update

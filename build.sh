@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-[ -f src/items.h ] && [ -f src/skills.h ] || python3 gen_data.py
+[ -f src/items.h ] && [ -f src/skills.h ] && [ -f src/texts.h ] || python3 gen_data.py
 IM=third_party/imgui
 VER=$(sed -n 's/^#define FATRAINER_VERSION "\(.*\)"/\1/p' src/version.h)
 NUM=${VER%% *}

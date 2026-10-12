@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <list>
 #include "cheats.h"
 #include "color.h"
 #include "visuals.h"
@@ -71,6 +72,22 @@ static void __fastcall fake_set_color(uintptr_t e, const float* rgb) {
 static std::string fake_name_of(uintptr_t e) { return as_element(e)->id; }
 static int fake_kind_of(uintptr_t e, uintptr_t* at) { *at = e; return as_element(e)->kind; }
 static uintptr_t fake_vtable_of(uintptr_t e) { return as_element(e)->vt; }
+
+static std::list<std::wstring> fake_text_storage;
+static std::map<std::string, visuals::TextEntry> fake_text_entries;
+static visuals::TextEntry* __fastcall fake_find_text(uintptr_t, const char* const* key) {
+    auto it = fake_text_entries.find(*key);
+    return it == fake_text_entries.end() ? nullptr : &it->second;
+}
+static bool __fastcall fake_add_text(uintptr_t, const visuals::TtlString<char>* key, const visuals::TtlString<wchar_t>* text, bool) {
+    fake_text_storage.push_back(std::wstring(text->text, text->size));
+    fake_text_entries[key->text].text = fake_text_storage.back().data();
+    return true;
+}
+static void fake_load_text(const char* key, const wchar_t* text) {
+    fake_text_storage.push_back(text);
+    fake_text_entries[key] = {key, fake_text_storage.back().data()};
+}
 
 static bool __fastcall fake_yes(uintptr_t) { return true; }
 static bool __fastcall fake_no(uintptr_t) { return false; }
@@ -340,7 +357,11 @@ int main(int argc, char** argv) {
     {
         std::string engine_dir = argv[1];
         engine_dir = engine_dir.substr(0, engine_dir.find_last_of("\\/") + 1) + "engine_x64_rwdi.dll";
-        CHECK(visuals::locate_engine(LoadLibraryExA(engine_dir.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES)));
+        HMODULE engine = LoadLibraryExA(engine_dir.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES);
+        CHECK(visuals::locate_engine(engine));
+        visuals::locate_texts(game::g.base, engine);
+        CHECK(visuals::tools_global == cheats::var_root && visuals::texts_api.find && (uintptr_t)visuals::texts_api.find - (uintptr_t)engine == 0x634e30);
+        CHECK(GAME_TEXT_COUNT > 20000 && visuals::game_text("HUDMessage_BTZDeath_Killer"));
     }
     visuals::locate(game::g.base);
     CHECK(game::g.vt_hud && visuals::hud_element_offset >= 0);
@@ -1076,6 +1097,28 @@ int main(int argc, char** argv) {
         visuals::forget_hud();
         CHECK(!visuals::hud_found());
         visuals::ui = saved_ui;
+        config::cfg = saved_cfg;
+    }
+    {
+        auto saved_api = visuals::texts_api;
+        auto saved_cfg = config::cfg;
+        uintptr_t saved_global = std::exchange(visuals::tools_global, 0);
+        visuals::texts_api = {fake_find_text, fake_add_text, 0x1000};
+        fake_load_text("btz_pounce_interrupted", L"Pounce interrupted by UV light!");
+        auto shown = [](const char* key) { return std::wstring(fake_text_entries[key].text); };
+        config::cfg.texts["btz_pounce_interrupted"] = "No pounce \xc5\x82\nfor you";
+        config::cfg.texts["missing_key"] = "Nothing";
+        visuals::keep_texts();
+        CHECK(shown("btz_pounce_interrupted") == L"No pounce \x0142\nfor you" && !fake_text_entries.count("missing_key"));
+        fake_load_text("btz_pounce_interrupted", L"Pounce interrupted by UV light!");
+        visuals::keep_texts();
+        CHECK(shown("btz_pounce_interrupted") == L"No pounce \x0142\nfor you");
+        config::cfg.texts.clear();
+        visuals::keep_texts();
+        CHECK(shown("btz_pounce_interrupted") == L"Pounce interrupted by UV light!");
+        CHECK(visuals::game_text("btz_pounce_interrupted") && !strcmp(visuals::game_text("btz_pounce_interrupted")->text, "Pounce interrupted by UV light!"));
+        visuals::texts_api = saved_api;
+        visuals::tools_global = saved_global;
         config::cfg = saved_cfg;
     }
     if (FILE* f = fopen(path.c_str(), "w")) {

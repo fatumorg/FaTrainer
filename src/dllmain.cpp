@@ -308,6 +308,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         on_game_thread([] {
             tick_queued = false;
             cheats::tick();
+            visuals::keep_texts();
         });
     }
     const DWORD MENU_RESCAN = 3000, CHEAT_RESCAN = 15000, CHEAT_RESCAN_MAX = 120000;
@@ -580,6 +581,8 @@ static void main_thread() {
     cheats::locate_engine(engine);
     visuals::locate((uintptr_t)gamedll);
     logf("hud colors: %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found");
+    visuals::locate_texts((uintptr_t)gamedll, engine);
+    logf("texts: %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     std::thread([] {
