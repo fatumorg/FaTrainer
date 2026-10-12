@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5 b9
+
+Survivor Update
+
+- New: Rainbow next to every color. The color cycles through the rainbow and keeps its brightness; pick how many seconds one cycle takes.
+- New: every piece of the HUD has its own color now, 35 in seven groups, so the radar, the quest list and the objective markers no longer share one color. Your old part colors carry over to their pieces.
+- New: Hide next to every HUD piece makes it invisible until you show it again.
+- New: Crosshair draws your own crosshair (cross, dot, circle or cross and dot) with size, thickness, gap, opacity, outline and color, whenever the game shows its own. It can hide the game's crosshair.
+- New: Survivor glow, for Be The Zombie: your own colors for how survivors glow in the Night Hunter's sense (normal, hit by UV Suppressor, marked by Horde Summoner, hit by Sense Suppressor).
+- All of it is in the Visuals Version too.
+
 ## 2.5 b8
 
 Survivor Update

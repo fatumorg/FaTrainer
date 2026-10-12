@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "color.h"
 #include "config.h"
 #include "game.h"
 #include "texts.h"
@@ -31,13 +32,39 @@ inline void tint(float* c, const float color[3], float scale) {
 
 inline bool hunter_glow_var(const char* s) { return !strncmp(s, "v3_btz_zombie_v", 15) && !strstr(s, "not_drained"); }
 
+struct SurvivorGlow { const char* key; const char* label; std::vector<const char*> vars; };
+inline const SurvivorGlow SURVIVOR_GLOWS[] = {
+    {"normal", "Survivors", {"v3_btz_human_glow_color_default"}},
+    {"uv", "Hit by UV Suppressor", {"v3_btz_human_glow_color_ld"}},
+    {"horde", "Marked by Horde Summoner", {"v3_btz_human_glow_color_cth"}},
+    {"sense", "Hit by Sense Suppressor", {"v3_btz_human_glow_color_camo", "v3_btz_human_glow_color_camo_spit"}},
+};
+
+inline const config::HudColor* survivor_glow_for(const char* var) {
+    for (auto& g : SURVIVOR_GLOWS)
+        for (const char* name : g.vars)
+            if (!strcmp(var, name)) {
+                auto it = config::cfg.survivor_glow.find(g.key);
+                return it != config::cfg.survivor_glow.end() && it->second.on ? &it->second : nullptr;
+            }
+    return nullptr;
+}
+
+inline bool survivor_glow_on() {
+    for (auto& [key, g] : config::cfg.survivor_glow)
+        if (g.on) return true;
+    return false;
+}
+
 inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintptr_t scope, uintptr_t extra) {
     float* v = original_var_vec3(self, out, name, scope, extra);
     auto& glow = config::cfg.hunter_glow;
     const char* s = name ? *(const char**)name : nullptr;
-    if (!v || !glow.on || !s || !hunter_glow_var(s)) return v;
+    if (!v || !s) return v;
+    const config::HudColor* survivor = glow.on && hunter_glow_var(s) ? nullptr : survivor_glow_for(s);
+    if (!survivor && !(glow.on && hunter_glow_var(s))) return v;
     float c[3] = {v[0], v[1], v[2]};
-    tint(c, glow.color, glow.glow);
+    tint(c, survivor ? survivor->color : glow.color, survivor ? 1.0f : glow.glow);
     memcpy(out, c, sizeof c);
     return out;
 }
@@ -45,7 +72,7 @@ inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintpt
 inline void install_var_hook(uintptr_t root, bool floats_wanted, VarFloatFn scaled_float) {
     uintptr_t object = rdv<uintptr_t>(root), current = rdv<uintptr_t>(object);
     uintptr_t ours = (uintptr_t)&var_vtable[1];
-    if (!current || current == ours || !(floats_wanted || config::cfg.hunter_glow.on)) return;
+    if (!current || current == ours || !(floats_wanted || config::cfg.hunter_glow.on || survivor_glow_on())) return;
     for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_VEC3 + 1; n /= 2)
         if (rd(current - 8, var_vtable, n * 8)) {
             original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
@@ -110,22 +137,51 @@ struct Ui {
     int (*kind_of)(uintptr_t element, uintptr_t* at) = nullptr;
     uintptr_t (*vtable_of)(uintptr_t element) = nullptr;
     float (*text_alpha)(uintptr_t text) = nullptr;
+    float(__fastcall* get_opacity)(uintptr_t element) = nullptr;
+    void(__fastcall* set_opacity)(uintptr_t element, float opacity) = nullptr;
+    bool(__fastcall* shown)(uintptr_t element) = nullptr;
 };
 
 inline Ui ui;
 
-struct HudPart { const char* key; const char* label; std::vector<const char*> groups; };
+struct HudPart { const char* key; const char* label; const char* cluster; std::vector<const char*> groups; };
 
 inline const HudPart HUD_PARTS[] = {
-    {"health", "Health", {"health_wrap", "HudMedkit"}},
-    {"stamina", "Stamina", {"HudStamina"}},
-    {"crosshair", "Crosshair", {"HudCrosshair", "HudRopeReticle", "HudThrowTargetIndicator"}},
-    {"weapons", "Weapons and ammo", {"HudPrimaryWeaponIndicator", "HudSecondaryWeaponIndicator", "HudGrenadeIndicator", "HudReloadNotify"}},
-    {"xp", "XP", {"HudXpBars", "HudDriverXp", "HudNightReward"}},
-    {"messages", "Killfeed and messages", {"HudMpMessages", "HudBigMessages"}},
-    {"map", "Radar and objectives", {"HudRadar", "StackObjectives", "Hud3dObjective"}},
-    {"enemies", "Enemy health", {"HudEnemyHp", "HudBossHpBar"}},
-    {"hunter", "Night Hunter", {"HudHunterInfo", "HudPlayersIndicator", "HudZombieHiveCounter"}},
+    {"health", "Health bar", "HEALTH AND STAMINA", {"HudHealthIndicator"}},
+    {"level", "Legend level bar", "HEALTH AND STAMINA", {"HudLegendXp"}},
+    {"boosters", "Boosters", "HEALTH AND STAMINA", {"HudBoosters"}},
+    {"medkits", "Medkits", "HEALTH AND STAMINA", {"HudMedkit"}},
+    {"stamina", "Stamina", "HEALTH AND STAMINA", {"HudStamina"}},
+    {"crosshair", "Crosshair", "AIM AND WEAPONS", {"HudCrosshair"}},
+    {"rope", "Grappling hook reticle", "AIM AND WEAPONS", {"HudRopeReticle"}},
+    {"throw", "Throw targets", "AIM AND WEAPONS", {"HudThrowTargetIndicator"}},
+    {"weapon", "Weapon", "AIM AND WEAPONS", {"HudPrimaryWeaponIndicator"}},
+    {"equipment", "Throwable or tool", "AIM AND WEAPONS", {"HudSecondaryWeaponIndicator"}},
+    {"grenade", "Grenade warning", "AIM AND WEAPONS", {"HudGrenadeIndicator"}},
+    {"reload", "Reload hint", "AIM AND WEAPONS", {"HudReloadNotify"}},
+    {"selection", "Weapon wheel", "AIM AND WEAPONS", {"HudWeaponSelection", "HudEquipmentSelection", "HudArrowsSelection", "HudBoltSelection"}},
+    {"xp", "XP bars", "PROGRESS", {"HudXpBars"}},
+    {"driver_xp", "Driver XP", "PROGRESS", {"HudDriverXp"}},
+    {"xp_popups", "XP popups", "PROGRESS", {"HudFloatingConsole"}},
+    {"night_reward", "Night bonus", "PROGRESS", {"HudNightReward"}},
+    {"pickups", "Item pickups", "PROGRESS", {"HudItemPickup"}},
+    {"radar", "Radar", "MAP AND OBJECTIVES", {"HudRadar"}},
+    {"objectives", "Quest and objective list", "MAP AND OBJECTIVES", {"StackObjectives"}},
+    {"marker", "Objective markers", "MAP AND OBJECTIVES", {"Hud3dObjective", "HudChallengeObjectiveIndicator"}},
+    {"coop", "Co-op players", "MAP AND OBJECTIVES", {"HudCoopMarker", "HudPlayersList", "HudPlayerInfo"}},
+    {"killfeed", "Killfeed", "MESSAGES", {"HudMpMessages"}},
+    {"big_messages", "Big messages", "MESSAGES", {"HudBigMessages"}},
+    {"prompts", "Button prompts", "MESSAGES", {"HudTrigger"}},
+    {"tutorial", "Tutorial hints", "MESSAGES", {"HudTutorialDI", "HudInfoPanel"}},
+    {"subtitles", "Subtitles", "MESSAGES", {"HudDialogue"}},
+    {"enemy_hp", "Enemy health", "ENEMIES", {"HudEnemyHp"}},
+    {"boss_hp", "Boss health", "ENEMIES", {"HudBossHpBar"}},
+    {"aggro", "Danger and chase", "ENEMIES", {"HudAggroIndicator", "HudPursuitIndicator"}},
+    {"hunter_info", "Night Hunter info", "BE THE ZOMBIE", {"HudHunterInfo"}},
+    {"players", "Player markers", "BE THE ZOMBIE", {"HudPlayersIndicator"}},
+    {"nests", "Nest counter", "BE THE ZOMBIE", {"HudZombieHiveCounter"}},
+    {"invasion", "Invasion messages", "BE THE ZOMBIE", {"HudZombieInvasionMessaging"}},
+    {"hit_direction", "Hit direction", "BE THE ZOMBIE", {"HudPvPDamageIndicator"}},
 };
 const int HUD_PART_COUNT = (int)(sizeof HUD_PARTS / sizeof HUD_PARTS[0]);
 const int HUD_MAX_DEPTH = 32, HUD_MAX_ELEMENTS = 20000;
@@ -139,14 +195,22 @@ struct HudNode {
 };
 const DWORD HUD_SETTLE_MS = 250;
 
+struct HudRoot {
+    uintptr_t element, vtable;
+    int part;
+    float game_opacity;
+    bool hid;
+};
+
 inline std::vector<HudNode> hud_nodes;
+inline std::vector<HudRoot> hud_roots;
 inline uintptr_t hud_root = 0;
 
-inline int part_of(const std::string& name, int inherited) {
+inline int part_named(const std::string& name) {
     for (int p = 0; p < HUD_PART_COUNT; p++)
         for (const char* g : HUD_PARTS[p].groups)
             if (name == g) return p;
-    return inherited;
+    return -1;
 }
 
 inline void walk_hud(uintptr_t element, int part, int depth) {
@@ -155,7 +219,8 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
     for (int i = 0; i < n && (int)hud_nodes.size() < HUD_MAX_ELEMENTS; i++) {
         uintptr_t c = ui.child(element, i);
         if (!c) continue;
-        int p = part_of(ui.name_of(c), part);
+        int named = part_named(ui.name_of(c)), p = named >= 0 ? named : part;
+        if (named >= 0) hud_roots.push_back({c, ui.vtable_of(c), named, 1.0f, false});
         uintptr_t at = 0;
         int kind = ui.kind_of(c, &at);
         if (kind != UI_NONE) {
@@ -176,7 +241,9 @@ inline void write_color(const HudNode& n, const float rgb[3]) {
 inline void forget_hud() {
     for (auto& n : hud_nodes)
         if (n.wrote && !n.dead && ui.vtable_of(n.element) == n.vtable) write_color(n, n.original);
-    hud_nodes.clear(), hud_root = 0;
+    for (auto& r : hud_roots)
+        if (r.hid && ui.set_opacity && ui.vtable_of(r.element) == r.vtable) ui.set_opacity(r.element, r.game_opacity);
+    hud_nodes.clear(), hud_roots.clear(), hud_root = 0;
 }
 
 inline void find_hud(uintptr_t root) {
@@ -193,6 +260,22 @@ inline const config::HudColor* part_color(int part) {
     if (part < 0) return nullptr;
     auto it = config::cfg.hud_parts.find(HUD_PARTS[part].key);
     return it != config::cfg.hud_parts.end() && it->second.on ? &it->second : nullptr;
+}
+
+inline bool part_hidden(int part) {
+    auto it = config::cfg.hud_parts.find(HUD_PARTS[part].key);
+    return it != config::cfg.hud_parts.end() && it->second.hidden;
+}
+
+inline void hide_parts() {
+    if (!ui.get_opacity || !ui.set_opacity) return;
+    for (auto& r : hud_roots) {
+        if (ui.vtable_of(r.element) != r.vtable) continue;
+        float now = ui.get_opacity(r.element);
+        bool hide = part_hidden(r.part);
+        if (hide && now != 0) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 0);
+        else if (!hide && r.hid) r.hid = false, ui.set_opacity(r.element, r.game_opacity);
+    }
 }
 
 inline void apply_hud(DWORD now_ms = GetTickCount()) {
@@ -218,6 +301,7 @@ inline void apply_hud(DWORD now_ms = GetTickCount()) {
         memcpy(n.written, want, sizeof want);
         n.wrote = memcmp(want, n.original, sizeof want) != 0;
     }
+    hide_parts();
 }
 
 const int UI_ENGINE_OBJECT = 0x18, ENGINE_NAME = 0x8, NAME_LIMIT = 64;
@@ -264,6 +348,9 @@ inline bool locate_engine(HMODULE engine) {
     ui.set_color = (decltype(ui.set_color))get("?SetColor@IUIElementView@@QEAAXAEBVvec3@@@Z");
     ui.get_text_color = (decltype(ui.get_text_color))get("?GetTextColor@IUIText@@QEAA?AVvec3@@XZ");
     ui.set_text_color = (decltype(ui.set_text_color))get("?SetTextColor@IUIText@@QEAAXAEBVvec4@@@Z");
+    ui.get_opacity = (decltype(ui.get_opacity))get("?GetOpacity@IUIElement@@UEBAMXZ");
+    ui.set_opacity = (decltype(ui.set_opacity))get("?SetOpacity@IUIElement@@UEAAXM@Z");
+    ui.shown = (decltype(ui.shown))get("?IsActuallyVisible@IUIElement@@QEBA_NXZ");
     ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
@@ -275,8 +362,19 @@ inline void locate(uintptr_t gamedll) {
 inline bool hud_colors_on() {
     if (config::cfg.hud_tint.on) return true;
     for (auto& [key, h] : config::cfg.hud_parts)
-        if (h.on) return true;
+        if (h.on || h.hidden) return true;
     return false;
+}
+
+inline bool game_crosshair_shown() {
+    for (auto& r : hud_roots)
+        if (!strcmp(HUD_PARTS[r.part].key, "crosshair") && ui.vtable_of(r.element) == r.vtable) return !ui.shown || ui.shown(r.element);
+    return false;
+}
+
+inline void spin_rainbows(double seconds) {
+    for (auto& [key, cycle] : config::cfg.rainbow)
+        if (float* c = config::color_of(key)) color::rainbow(c, seconds / cycle);
 }
 
 inline bool looks_missing() {

@@ -26,6 +26,30 @@ struct Esp {
 struct HudColor {
     bool on = false;
     float color[3] = {1, 1, 1};
+    bool hidden = false;
+};
+
+enum CrosshairStyle { CROSS, DOT, CIRCLE, CROSS_DOT, CROSSHAIR_STYLES };
+
+struct Crosshair {
+    bool on = false, outline = true;
+    int style = CROSS;
+    float size = 8, thickness = 2, gap = 4, opacity = 1;
+    float color[3] = {0.30f, 1.0f, 0.45f};
+};
+
+const float RAINBOW_FASTEST = 0.5f, RAINBOW_SLOWEST = 60.0f, RAINBOW_DEFAULT = 6.0f;
+
+struct LegacyHudPart { const char* key; std::vector<const char*> parts; };
+inline const LegacyHudPart LEGACY_HUD_PARTS[] = {
+    {"health", {"health", "level", "boosters", "medkits"}},
+    {"crosshair", {"crosshair", "rope", "throw"}},
+    {"weapons", {"weapon", "equipment", "grenade", "reload"}},
+    {"xp", {"xp", "driver_xp", "night_reward"}},
+    {"messages", {"killfeed", "big_messages"}},
+    {"map", {"radar", "objectives", "marker"}},
+    {"enemies", {"enemy_hp", "boss_hp"}},
+    {"hunter", {"hunter_info", "players", "nests"}},
 };
 
 struct UvLight {
@@ -63,6 +87,9 @@ struct Config {
     UvLight uv, hunter_glow;
     HudColor hud_tint;
     std::map<std::string, HudColor> hud_parts;
+    std::map<std::string, HudColor> survivor_glow;
+    std::map<std::string, float> rainbow;
+    Crosshair crosshair;
     std::map<std::string, std::string> texts;
     Look look;
 };
@@ -194,11 +221,39 @@ inline std::string unescape_text(const std::string& text) {
     return out;
 }
 
-inline bool read_hud_color(const char* text, HudColor& h) {
-    int on = 0;
-    if (sscanf(text, "%d,%f,%f,%f", &on, &h.color[0], &h.color[1], &h.color[2]) != 4) return false;
-    h.on = on != 0;
-    return true;
+inline int read_hud_color(const char* text, HudColor& h) {
+    int on = 0, hidden = 0;
+    int fields = sscanf(text, "%d,%f,%f,%f,%d", &on, &h.color[0], &h.color[1], &h.color[2], &hidden);
+    if (fields < 4) return 0;
+    h.on = on != 0, h.hidden = hidden != 0;
+    return fields;
+}
+
+inline void read_hud_part(const std::string& key, const HudColor& h, int fields) {
+    for (auto& legacy : LEGACY_HUD_PARTS)
+        if (fields == 4 && key == legacy.key) {
+            for (const char* part : legacy.parts) cfg.hud_parts[part] = h;
+            return;
+        }
+    cfg.hud_parts[key] = h;
+}
+
+inline float* color_of(const std::string& key) {
+    if (key == "accent") return cfg.accent;
+    if (key == "esp_hunter") return cfg.esp.hunter;
+    if (key == "esp_survivor") return cfg.esp.survivor;
+    if (key == "uv_light") return cfg.uv.color;
+    if (key == "hunter_glow") return cfg.hunter_glow.color;
+    if (key == "hud_tint") return cfg.hud_tint.color;
+    if (key == "crosshair") return cfg.crosshair.color;
+    auto in = [&](std::map<std::string, HudColor>& m, const char* prefix) -> float* {
+        size_t n = strlen(prefix);
+        if (key.compare(0, n, prefix)) return nullptr;
+        auto it = m.find(key.substr(n));
+        return it == m.end() ? nullptr : it->second.color;
+    };
+    if (float* c = in(cfg.hud_parts, "hud.")) return c;
+    return in(cfg.survivor_glow, "glow.");
 }
 
 inline void load(const std::string& path) {
@@ -210,6 +265,8 @@ inline void load(const std::string& path) {
     cfg.hidden_configs.clear();
     cfg.cheat_keys.clear();
     cfg.hud_parts.clear();
+    cfg.survivor_glow.clear();
+    cfg.rainbow.clear();
     cfg.texts.clear();
     char line[4096];
     while (fgets(line, sizeof line, f)) {
@@ -258,11 +315,22 @@ inline void load(const std::string& path) {
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
         else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
-        else if (k == "hud" || k == "text") {
+        else if (k == "crosshair") {
+            auto& x = cfg.crosshair;
+            int on = 0, outline = 1;
+            if (sscanf(v.c_str(), "%d,%d,%f,%f,%f,%f,%d,%f,%f,%f", &on, &x.style, &x.size, &x.thickness, &x.gap, &x.opacity, &outline, &x.color[0],
+                       &x.color[1], &x.color[2]) == 10)
+                x.on = on != 0, x.outline = outline != 0, x.style = std::clamp(x.style, 0, CROSSHAIR_STYLES - 1);
+        }
+        else if (k == "hud" || k == "text" || k == "survivor_glow" || k == "rainbow") {
             size_t c = v.find(',');
             if (c == std::string::npos || !c) continue;
-            if (k == "text") cfg.texts[v.substr(0, c)] = unescape_text(v.substr(c + 1));
-            else if (HudColor h; read_hud_color(v.c_str() + c + 1, h)) cfg.hud_parts[v.substr(0, c)] = h;
+            std::string key = v.substr(0, c);
+            HudColor h;
+            if (k == "text") cfg.texts[key] = unescape_text(v.substr(c + 1));
+            else if (k == "rainbow") cfg.rainbow[key] = std::clamp((float)atof(v.c_str() + c + 1), RAINBOW_FASTEST, RAINBOW_SLOWEST);
+            else if (int fields = read_hud_color(v.c_str() + c + 1, h); fields && k == "hud") read_hud_part(key, h, fields);
+            else if (fields) cfg.survivor_glow[key] = h;
         }
         else if (k == "hidden_config") {
             if (std::find(cfg.hidden_configs.begin(), cfg.hidden_configs.end(), v) == cfg.hidden_configs.end()) cfg.hidden_configs.push_back(v);
@@ -302,7 +370,12 @@ inline bool save(const std::string& path) {
     for (auto [key, u] : {std::pair{"uv_light", &cfg.uv}, std::pair{"hunter_glow", &cfg.hunter_glow}})
         fprintf(f, "%s=%d,%.3f,%.3f,%.3f,%.2f\n", key, u->on, u->color[0], u->color[1], u->color[2], u->glow);
     fprintf(f, "hud_tint=%d,%.3f,%.3f,%.3f\n", cfg.hud_tint.on, cfg.hud_tint.color[0], cfg.hud_tint.color[1], cfg.hud_tint.color[2]);
-    for (auto& [part, h] : cfg.hud_parts) fprintf(f, "hud=%s,%d,%.3f,%.3f,%.3f\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
+    for (auto& [part, h] : cfg.hud_parts) fprintf(f, "hud=%s,%d,%.3f,%.3f,%.3f,%d\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2], h.hidden);
+    for (auto& [variant, h] : cfg.survivor_glow) fprintf(f, "survivor_glow=%s,%d,%.3f,%.3f,%.3f\n", variant.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
+    for (auto& [key, seconds] : cfg.rainbow) fprintf(f, "rainbow=%s,%.1f\n", key.c_str(), seconds);
+    const auto& x = cfg.crosshair;
+    fprintf(f, "crosshair=%d,%d,%.1f,%.1f,%.1f,%.2f,%d,%.3f,%.3f,%.3f\n", x.on, x.style, x.size, x.thickness, x.gap, x.opacity, x.outline, x.color[0], x.color[1],
+            x.color[2]);
     for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);

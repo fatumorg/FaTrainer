@@ -23,4 +23,13 @@ inline bool from_hex(const std::string& text, float rgb[3]) {
     return true;
 }
 
+inline void rainbow(float rgb[3], double turns) {
+    float v = std::max({rgb[0], rgb[1], rgb[2]});
+    if (v < 0.05f) v = 1.0f;
+    float h = (float)(turns - std::floor(turns)) * 6.0f, f = h - std::floor(h), up = v * f, down = v * (1 - f);
+    const float table[6][3] = {{v, up, 0}, {down, v, 0}, {0, v, up}, {0, down, v}, {up, 0, v}, {v, 0, down}};
+    const float* c = table[std::clamp((int)h, 0, 5)];
+    rgb[0] = c[0], rgb[1] = c[1], rgb[2] = c[2];
+}
+
 }

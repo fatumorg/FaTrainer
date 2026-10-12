@@ -60,7 +60,8 @@ struct FakeElement {
     int kind;
     float color[3] = {1, 1, 1}, original[3] = {1, 1, 1};
     std::vector<FakeElement*> children;
-    float alpha = 1, written_alpha = -1;
+    float alpha = 1, written_alpha = -1, opacity = 1;
+    bool visible = true;
 };
 static int dead_writes = 0;
 static FakeElement* as_element(uintptr_t e) { return (FakeElement*)e; }
@@ -79,6 +80,9 @@ static float fake_text_alpha(uintptr_t e) { return as_element(e)->alpha; }
 static std::string fake_name_of(uintptr_t e) { return as_element(e)->id; }
 static int fake_kind_of(uintptr_t e, uintptr_t* at) { *at = e; return as_element(e)->kind; }
 static uintptr_t fake_vtable_of(uintptr_t e) { return as_element(e)->vt; }
+static float __fastcall fake_get_opacity(uintptr_t e) { return as_element(e)->opacity; }
+static void __fastcall fake_set_opacity(uintptr_t e, float v) { as_element(e)->opacity = v; }
+static bool __fastcall fake_shown(uintptr_t e) { return as_element(e)->visible; }
 
 static std::list<std::wstring> fake_text_storage;
 static std::map<std::string, visuals::TextEntry> fake_text_entries;
@@ -852,6 +856,15 @@ int main(int argc, char** argv) {
         CHECK(read_vec3("v3_btz_zombie_uv_block_color") == (std::vector<float>{1, 2, 3}));
         glow.on = false;
         CHECK(read_vec3("v3_btz_zombie_veins_draining_color") == (std::vector<float>{255, 50, 0}));
+        auto& horde = config::cfg.survivor_glow["horde"];
+        horde = {true, {0, 1, 0}};
+        CHECK(read_vec3("v3_btz_human_glow_color_cth") == (std::vector<float>{0, 3, 0}));
+        CHECK(read_vec3("v3_btz_human_glow_color_ld") == (std::vector<float>{1, 2, 3}));
+        config::cfg.survivor_glow["sense"] = {true, {0, 0, 1}};
+        CHECK(read_vec3("v3_btz_human_glow_color_camo_spit") == (std::vector<float>{0, 0, 3}));
+        horde.on = false;
+        CHECK(read_vec3("v3_btz_human_glow_color_cth") == (std::vector<float>{1, 2, 3}));
+        config::cfg.survivor_glow.clear();
     }
 
     {
@@ -1090,21 +1103,51 @@ int main(int argc, char** argv) {
         CHECK(color::from_hex("FF0000", parsed) && parsed[0] == 1.0f && parsed[1] == 0.0f);
         float kept[3] = {0.1f, 0.2f, 0.3f};
         CHECK(!color::from_hex("#12", kept) && !color::from_hex("zzzzzz", kept) && !color::from_hex("#1234567", kept) && kept[0] == 0.1f);
+        float spun[3] = {0.5f, 0.2f, 0.1f};
+        color::rainbow(spun, 0.0);
+        CHECK(spun[0] == 0.5f && spun[1] == 0 && spun[2] == 0);
+        color::rainbow(spun, 1.0 / 3);
+        CHECK(spun[0] < 1e-5f && fabsf(spun[1] - 0.5f) < 1e-5f && spun[2] < 1e-5f);
+        color::rainbow(spun, 2.5);
+        CHECK(spun[0] < 1e-5f && fabsf(spun[1] - 0.5f) < 1e-5f && fabsf(spun[2] - 0.5f) < 1e-5f);
+        float black[3] = {0, 0, 0};
+        color::rainbow(black, 0);
+        CHECK(black[0] == 1.0f && black[1] == 0 && black[2] == 0);
     }
     {
         auto kept = config::cfg;
         config::cfg = config::Config();
         config::cfg.hud_tint = {true, {0.5f, 0.25f, 1.0f}};
         config::cfg.hud_parts["stamina"] = {true, {1.0f, 0.0f, 0.0f}};
+        config::cfg.hud_parts["radar"] = {true, {0.0f, 1.0f, 0.0f}, true};
+        config::cfg.rainbow["hud.radar"] = 4.5f;
+        config::cfg.survivor_glow["uv"] = {true, {1.0f, 0.0f, 0.0f}};
+        config::cfg.crosshair = {true, false, config::CIRCLE, 12, 3, 5, 0.8f, {0.1f, 0.2f, 0.3f}};
         config::cfg.texts["btz_pounce_interrupted"] = "Nope, line\none, a=b \\ done";
         config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "Zabi\xc5\x82" "e\xc5\x9b %s";
         CHECK(config::save(path));
         config::cfg = config::Config();
         config::load(path);
         CHECK(config::cfg.hud_tint.on && config::cfg.hud_tint.color[1] == 0.25f);
-        CHECK(config::cfg.hud_parts.size() == 1 && config::cfg.hud_parts["stamina"].on && config::cfg.hud_parts["stamina"].color[0] == 1.0f);
+        CHECK(config::cfg.hud_parts.size() == 2 && config::cfg.hud_parts["stamina"].on && config::cfg.hud_parts["stamina"].color[0] == 1.0f);
+        CHECK(config::cfg.hud_parts["radar"].hidden && !config::cfg.hud_parts["stamina"].hidden && config::cfg.rainbow["hud.radar"] == 4.5f);
+        CHECK(config::cfg.survivor_glow["uv"].on && config::cfg.survivor_glow["uv"].color[0] == 1.0f);
+        const auto& x = config::cfg.crosshair;
+        CHECK(x.on && !x.outline && x.style == config::CIRCLE && x.size == 12 && x.gap == 5 && x.opacity == 0.8f && x.color[2] == 0.3f);
+        CHECK(config::color_of("hud.radar") == config::cfg.hud_parts["radar"].color && config::color_of("glow.uv") == config::cfg.survivor_glow["uv"].color);
+        CHECK(!config::color_of("hud.missing") && !config::color_of("nothing") && config::color_of("accent") == config::cfg.accent);
+        config::cfg.hud_tint.color[0] = 1, config::cfg.hud_tint.color[1] = 0, config::cfg.hud_tint.color[2] = 0;
+        config::cfg.rainbow["hud_tint"] = 4;
+        visuals::spin_rainbows(1.0);
+        CHECK(fabsf(config::cfg.hud_tint.color[0] - 0.5f) < 1e-5f && config::cfg.hud_tint.color[1] == 1.0f && config::cfg.hud_tint.color[2] == 0);
         CHECK(config::cfg.texts["btz_pounce_interrupted"] == "Nope, line\none, a=b \\ done");
         CHECK(config::cfg.texts["HUDMessage_BTZDeath_Killer"] == "Zabi\xc5\x82" "e\xc5\x9b %s");
+        FILE* old = fopen(path.c_str(), "w");
+        fprintf(old, "hud=map,1,0.200,0.400,0.600\nhud=stamina,1,1.000,0.000,0.000\n");
+        fclose(old);
+        config::load(path);
+        auto& parts = config::cfg.hud_parts;
+        CHECK(parts.size() == 4 && parts["radar"].on && parts["objectives"].color[1] == 0.4f && parts["marker"].on && parts["stamina"].on && !parts.count("map"));
         config::cfg = kept;
     }
     {
@@ -1114,15 +1157,18 @@ int main(int argc, char** argv) {
         for (int c = 0; c < 3; c++) stamina_bg.color[c] = stamina_bg.original[c] = 0.15f;
         label.alpha = 0.3f;
         FakeElement health{1, "health_wrap", visuals::UI_NONE}, stamina{1, "HudStamina", visuals::UI_NONE}, root{1, "HUD_DI", visuals::UI_NONE};
+        FakeElement radar{1, "HudRadar", visuals::UI_NONE}, radar_icon{1, "I_Icon", visuals::UI_VIEW};
         health.children = {&health_bar, &label};
         stamina.children = {&stamina_bg, &stamina_bar};
-        root.children = {&health, &stamina};
+        radar.children = {&radar_icon};
+        root.children = {&health, &stamina, &radar};
         auto saved_ui = visuals::ui;
         auto saved_cfg = config::cfg;
-        visuals::ui = {fake_children_count, fake_child, fake_get_color, fake_set_color, fake_get_color, fake_set_text_color, fake_name_of, fake_kind_of, fake_vtable_of, fake_text_alpha};
+        visuals::ui = {fake_children_count, fake_child, fake_get_color, fake_set_color, fake_get_color, fake_set_text_color, fake_name_of, fake_kind_of,
+                       fake_vtable_of, fake_text_alpha, fake_get_opacity, fake_set_opacity, fake_shown};
         CHECK(!visuals::hud_found());
         visuals::find_hud((uintptr_t)&root);
-        CHECK(visuals::hud_found() && visuals::hud_elements() == 4);
+        CHECK(visuals::hud_found() && visuals::hud_elements() == 5 && !visuals::game_crosshair_shown());
         config::cfg.hud_tint = {true, {0.5f, 1.0f, 1.0f}};
         config::cfg.hud_parts["stamina"] = {true, {0.0f, 1.0f, 0.0f}};
         visuals::apply_hud();
@@ -1146,8 +1192,21 @@ int main(int argc, char** argv) {
         config::cfg.hud_tint.on = true;
         visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
         CHECK(dead_writes == 0 && fabsf(stamina_bar.color[0] - 0.45f) < 1e-6f);
+        config::cfg.hud_parts["radar"].hidden = true;
+        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        CHECK(radar.opacity == 0 && radar_icon.opacity == 1);
+        radar.opacity = 0.7f;
+        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        CHECK(radar.opacity == 0);
+        config::cfg.hud_parts["radar"].hidden = false;
+        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        CHECK(radar.opacity == 0.7f);
+        config::cfg.hud_parts["radar"].hidden = true;
+        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        CHECK(radar.opacity == 0);
         visuals::forget_hud();
-        CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.9f && dead_writes == 0);
+        CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.9f && dead_writes == 0 && radar.opacity == 0.7f);
+        config::cfg.hud_parts.erase("radar");
         CHECK(visuals::looks_missing());
         config::cfg.hud_tint.on = false;
         CHECK(!visuals::looks_missing());

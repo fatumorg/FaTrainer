@@ -112,6 +112,16 @@ inline void caps(const char* text, ImU32 color = 0) {
     ImGui::Dummy({0, size});
 }
 
+inline bool chip(const char* text, bool active) {
+    ImGui::PushStyleColor(ImGuiCol_Button, active ? V(T.accent, 0.16f) : ImVec4{1, 1, 1, 0.04f});
+    ImGui::PushStyleColor(ImGuiCol_Text, active ? V(T.accent) : V(T.soft));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(20));
+    bool r = ImGui::Button(text);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    return r;
+}
+
 inline const char* shown_end(const char* text) {
     const char* hidden = strstr(text, "##");
     return hidden ? hidden : text + strlen(text);
@@ -575,16 +585,6 @@ inline void give_item(const ItemInfo* info, int amount, int target) {
                        : "Added " + std::to_string(amount) + " x " + name + " to " + game::KIND_NAMES[into]);
         request_refresh();
     });
-}
-
-inline bool chip(const char* text, bool active) {
-    ImGui::PushStyleColor(ImGuiCol_Button, active ? V(T.accent, 0.16f) : ImVec4{1, 1, 1, 0.04f});
-    ImGui::PushStyleColor(ImGuiCol_Text, active ? V(T.accent) : V(T.soft));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(20));
-    bool r = ImGui::Button(text);
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
-    return r;
 }
 
 inline void give_page() {
@@ -1601,31 +1601,48 @@ inline void draw_esp() {
 
 #endif
 
-inline bool color_field(const char* id, float rgb[3]) {
+const float CHANNELS_WIDTH = 314;
+
+inline bool color_field(const char* key, float rgb[3]) {
     bool changed = false;
-    ImGui::PushID(id);
+    auto& cycles = config::cfg.rainbow;
+    auto cycle = cycles.find(key);
+    ImGui::PushID(key);
     if (ImGui::ColorButton("##swatch", {rgb[0], rgb[1], rgb[2], 1}, ImGuiColorEditFlags_NoTooltip, {S(34), ImGui::GetFrameHeight()})) ImGui::OpenPopup("picker");
     if (ImGui::BeginPopup("picker")) {
         changed |= ImGui::ColorPicker3("##pick", rgb, ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoInputs);
         ImGui::EndPopup();
     }
-    const char* channels[3] = {"R", "G", "B"};
-    for (int i = 0; i < 3; i++) {
+    if (cycle != cycles.end()) {
         ImGui::SameLine(0, S(10));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%s", channels[i]);
-        ImGui::SameLine(0, S(4));
-        int v = color::to_byte(rgb[i]);
-        ImGui::SetNextItemWidth(S(52));
-        ImGui::PushID(i);
-        if (ImGui::InputInt("##c", &v, 0, 0)) rgb[i] = std::clamp(v, 0, 255) / 255.0f, changed = true;
-        ImGui::PopID();
+        ImGui::SetNextItemWidth(S(CHANNELS_WIDTH));
+        changed |= ImGui::SliderFloat("##cycle", &cycle->second, config::RAINBOW_FASTEST, config::RAINBOW_SLOWEST, "One cycle in %.1f s",
+                                      ImGuiSliderFlags_Logarithmic);
+    } else {
+        const char* channels[3] = {"R", "G", "B"};
+        for (int i = 0; i < 3; i++) {
+            ImGui::SameLine(0, S(10));
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%s", channels[i]);
+            ImGui::SameLine(0, S(4));
+            int v = color::to_byte(rgb[i]);
+            ImGui::SetNextItemWidth(S(52));
+            ImGui::PushID(i);
+            if (ImGui::InputInt("##c", &v, 0, 0)) rgb[i] = std::clamp(v, 0, 255) / 255.0f, changed = true;
+            ImGui::PopID();
+        }
+        ImGui::SameLine(0, S(10));
+        char hex[16];
+        snprintf(hex, sizeof hex, "%s", color::to_hex(rgb).c_str());
+        ImGui::SetNextItemWidth(S(86));
+        if (ImGui::InputText("##hex", hex, sizeof hex, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsUppercase)) changed |= color::from_hex(hex, rgb);
     }
     ImGui::SameLine(0, S(10));
-    char hex[16];
-    snprintf(hex, sizeof hex, "%s", color::to_hex(rgb).c_str());
-    ImGui::SetNextItemWidth(S(86));
-    if (ImGui::InputText("##hex", hex, sizeof hex, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsUppercase)) changed |= color::from_hex(hex, rgb);
+    if (chip("Rainbow", cycle != cycles.end())) {
+        if (cycle == cycles.end()) cycles[key] = config::RAINBOW_DEFAULT;
+        else cycles.erase(cycle);
+        changed = true;
+    }
     ImGui::PopID();
     return changed;
 }
@@ -1639,7 +1656,7 @@ inline bool tint_card(const char* id, const char* title, const char* label, cons
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Color");
     ImGui::SameLine(S(150));
-    changed |= color_field("color", u.color);
+    changed |= color_field(id, u.color);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Glow");
     ImGui::SameLine(S(150));
@@ -1649,6 +1666,36 @@ inline bool tint_card(const char* id, const char* title, const char* label, cons
     note(footnote);
     ImGui::PopID();
     end_card();
+    return changed;
+}
+
+inline bool part_row(const char* label, const std::string& key, std::map<std::string, config::HudColor>& colors, bool can_hide) {
+    auto& c = config::cfg;
+    bool changed = false;
+    ImGui::PushID(key.c_str());
+    auto it = colors.find(key);
+    bool on = it != colors.end() && it->second.on;
+    if (ImGui::Checkbox(label, &on)) {
+        auto& h = colors[key];
+        if (it == colors.end()) memcpy(h.color, c.accent, sizeof h.color);
+        h.on = on, changed = true;
+        it = colors.find(key);
+    }
+    ImGui::SameLine(S(250));
+    ImGui::BeginDisabled(!on);
+    float shown[3] = {1, 1, 1};
+    if (it != colors.end()) memcpy(shown, it->second.color, sizeof shown);
+    std::string color_key = (&colors == &c.hud_parts ? "hud." : "glow.") + key;
+    if (color_field(color_key.c_str(), shown)) memcpy(colors[key].color, shown, sizeof shown), changed = true;
+    ImGui::EndDisabled();
+    bool hidden = it != colors.end() && it->second.hidden;
+    if (can_hide) ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - S(84));
+    if (can_hide && chip(hidden ? "Hidden##hide" : "Hide##hide", hidden)) {
+        auto& h = colors[key];
+        if (it == colors.end()) memcpy(h.color, c.accent, sizeof h.color);
+        h.hidden = !hidden, changed = true;
+    }
+    ImGui::PopID();
     return changed;
 }
 
@@ -1663,29 +1710,104 @@ inline bool hud_colors_card() {
     ImGui::SameLine(S(150));
     changed |= color_field("hud_tint", c.hud_tint.color);
     ImGui::EndDisabled();
-    ImGui::Dummy({0, S(8)});
-    caps("PARTS");
-    ImGui::Dummy({0, S(2)});
+    const char* cluster = nullptr;
     for (auto& part : visuals::HUD_PARTS) {
-        ImGui::PushID(part.key);
-        auto it = c.hud_parts.find(part.key);
-        bool on = it != c.hud_parts.end() && it->second.on;
-        if (ImGui::Checkbox(part.label, &on)) {
-            auto& h = c.hud_parts[part.key];
-            if (it == c.hud_parts.end()) memcpy(h.color, c.accent, sizeof h.color);
-            h.on = on, changed = true;
-            it = c.hud_parts.find(part.key);
+        if (!cluster || strcmp(cluster, part.cluster)) {
+            cluster = part.cluster;
+            ImGui::Dummy({0, S(10)});
+            caps(cluster);
+            ImGui::Dummy({0, S(2)});
         }
-        ImGui::SameLine(S(260));
-        ImGui::BeginDisabled(!on);
-        float shown[3] = {1, 1, 1};
-        if (it != c.hud_parts.end()) memcpy(shown, it->second.color, sizeof shown);
-        if (color_field("color", shown)) memcpy(c.hud_parts[part.key].color, shown, sizeof shown), changed = true;
-        ImGui::EndDisabled();
-        ImGui::PopID();
+        changed |= part_row(part.label, part.key, c.hud_parts, true);
     }
-    note(visuals::hud_found() ? "Only you see these colors. A part's own color wins over the whole HUD tint; parts that are off keep the game's colors or the tint."
+    note(visuals::hud_found() ? "Only you see these colors. A piece's own color wins over the whole HUD tint. Hide makes that piece invisible until you show it again; the game's own animations still play on the pieces you color."
                               : "Load into the game to see the colors; the trainer finds the HUD once it is on screen and after a Refresh.");
+    end_card();
+    return changed;
+}
+
+inline bool survivor_glow_card() {
+    bool changed = false;
+    begin_card("survivor_glow", "SURVIVOR GLOW");
+    note("As the Night Hunter you see survivors glow through walls with your sense. Pick your own color for each kind of glow; it keeps the glow's brightness.");
+    ImGui::Dummy({0, S(4)});
+    for (auto& g : visuals::SURVIVOR_GLOWS) changed |= part_row(g.label, g.key, config::cfg.survivor_glow, false);
+    end_card();
+    return changed;
+}
+
+inline void draw_crosshair(ImDrawList* dl, ImVec2 c, const config::Crosshair& x, float alpha) {
+    int a = (int)std::clamp(255 * x.opacity * alpha, 0.0f, 255.0f);
+    ImU32 col = IM_COL32((int)(x.color[0] * 255), (int)(x.color[1] * 255), (int)(x.color[2] * 255), a), edge = IM_COL32(0, 0, 0, a * 3 / 4);
+    float t = x.thickness, half = t / 2, gap = x.gap, len = x.size;
+    auto bar = [&](ImVec2 from, ImVec2 to) {
+        if (x.outline) dl->AddRectFilled({from.x - 1, from.y - 1}, {to.x + 1, to.y + 1}, edge);
+        dl->AddRectFilled(from, to, col);
+    };
+    if (x.style == config::CROSS || x.style == config::CROSS_DOT) {
+        bar({c.x + gap, c.y - half}, {c.x + gap + len, c.y + half});
+        bar({c.x - gap - len, c.y - half}, {c.x - gap, c.y + half});
+        bar({c.x - half, c.y + gap}, {c.x + half, c.y + gap + len});
+        bar({c.x - half, c.y - gap - len}, {c.x + half, c.y - gap});
+    }
+    if (x.style == config::DOT || x.style == config::CROSS_DOT) bar({c.x - half, c.y - half}, {c.x + half, c.y + half});
+    if (x.style == config::CIRCLE) {
+        if (x.outline) dl->AddCircle(c, len, edge, 48, t + 2);
+        dl->AddCircle(c, len, col, 48, t);
+    }
+}
+
+inline void draw_crosshair_overlay() {
+    ImVec2 size = ImGui::GetIO().DisplaySize;
+    draw_crosshair(ImGui::GetBackgroundDrawList(), {std::floor(size.x / 2), std::floor(size.y / 2)}, config::cfg.crosshair, 1.0f);
+}
+
+inline bool crosshair_card() {
+    auto& x = config::cfg.crosshair;
+    bool changed = false;
+    begin_card("crosshair", "CROSSHAIR");
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x, h = S(120);
+    auto* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(p, {p.x + w, p.y + h}, C(T.ground), R(10));
+    draw_crosshair(dl, {std::floor(p.x + w / 2), std::floor(p.y + h / 2)}, x, x.on ? 1.0f : 0.45f);
+    ImGui::Dummy({w, h + S(6)});
+    changed |= switch_row("Custom crosshair", "Draws your own crosshair in the middle of the screen whenever the game shows its crosshair.", x.on);
+    ImGui::BeginDisabled(!x.on);
+    static const char* STYLES[config::CROSSHAIR_STYLES] = {"Cross", "Dot", "Circle", "Cross and dot"};
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Style");
+    ImGui::SameLine(S(150));
+    changed |= segmented("style", STYLES, config::CROSSHAIR_STYLES, x.style, ImGui::GetContentRegionAvail().x);
+    struct Slider { const char* label; float* value; float lo, hi; const char* format; };
+    Slider sliders[] = {{"Size", &x.size, 2, 40, "%.0f px"}, {"Thickness", &x.thickness, 1, 8, "%.0f px"}, {"Gap", &x.gap, 0, 20, "%.0f px"}};
+    for (auto& sl : sliders) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(sl.label);
+        ImGui::SameLine(S(150));
+        ImGui::SetNextItemWidth(-1);
+        changed |= ImGui::SliderFloat((std::string("##") + sl.label).c_str(), sl.value, sl.lo, sl.hi, sl.format);
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Opacity");
+    ImGui::SameLine(S(150));
+    ImGui::SetNextItemWidth(-1);
+    float percent = x.opacity * 100;
+    if (ImGui::SliderFloat("##opacity", &percent, 10, 100, "%.0f%%")) x.opacity = percent / 100, changed = true;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Color");
+    ImGui::SameLine(S(150));
+    changed |= color_field("crosshair", x.color);
+    ImGui::Dummy({0, S(2)});
+    changed |= ImGui::Checkbox("Dark outline", &x.outline);
+    ImGui::EndDisabled();
+    auto game = config::cfg.hud_parts.find("crosshair");
+    bool hide_game = game != config::cfg.hud_parts.end() && game->second.hidden;
+    if (switch_row("Hide the game's crosshair", "Same as Hide next to Crosshair under HUD colors.", hide_game)) {
+        auto& h = config::cfg.hud_parts["crosshair"];
+        if (game == config::cfg.hud_parts.end()) memcpy(h.color, config::cfg.accent, sizeof h.color);
+        h.hidden = hide_game, changed = true;
+    }
     end_card();
     return changed;
 }
@@ -1811,21 +1933,23 @@ inline void visuals_page() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Night Hunter");
     ImGui::SameLine(S(150));
-    changed |= color_field("hunter", e.hunter);
+    changed |= color_field("esp_hunter", e.hunter);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Survivors");
     ImGui::SameLine(S(150));
-    changed |= color_field("survivor", e.survivor);
+    changed |= color_field("esp_survivor", e.survivor);
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
 #endif
 
-    changed |= tint_card("uv", "UV LIGHT", "Custom UV light color", "Your UV flashlight shines in your own color.", config::cfg.uv,
+    changed |= tint_card("uv_light", "UV LIGHT", "Custom UV light color", "Your UV flashlight shines in your own color.", config::cfg.uv,
                          "Glow scales the light's brightness and its visible beam. If the color does not change right away, switch the UV light off and on.");
     changed |= tint_card("hunter_glow", "NIGHT HUNTER GLOW", "Custom Night Hunter glow color",
                          "The veins that light up when UV hits the Night Hunter glow in your own color.", config::cfg.hunter_glow,
                          "Only you see it: as a survivor on the hunter you hit, as the Night Hunter on your own arms. Glow scales how bright the veins get.");
     changed |= hud_colors_card();
+    changed |= crosshair_card();
+    changed |= survivor_glow_card();
     changed |= texts_card();
     if (changed) save_config();
 }
@@ -2001,7 +2125,7 @@ inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 inline const Page PAGES[] = {
 #if FATRAINER_VISUALS
-    {"visuals", "Visuals", "UV light, Night Hunter glow, HUD colors and texts", visuals_page, always, "LOOK", {}},
+    {"visuals", "Visuals", "Colors, HUD, crosshair, glow and texts", visuals_page, always, "LOOK", {}},
 #else
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS",
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
@@ -2010,7 +2134,7 @@ inline const Page PAGES[] = {
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
      {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee"}},
-    {"visuals", "Visuals", "Player ESP, UV light, Night Hunter glow, HUD colors and texts", visuals_page, always, "MODES", {}},
+    {"visuals", "Visuals", "Player ESP, colors, HUD, crosshair, glow and texts", visuals_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
@@ -2058,7 +2182,7 @@ inline void setting_label(const char* text) {
 
 inline const char* edition_story() {
 #if FATRAINER_VISUALS
-    return "You have the Visuals Version: it only changes how the game looks to you, with the UV light, Night Hunter glow, HUD colors and texts. It has no cheats and never connects to the internet. "
+    return "You have the Visuals Version: it only changes how the game looks to you, with the UV light, Night Hunter and survivor glow, HUD colors, a custom crosshair and texts. It has no cheats and never connects to the internet. "
            "Install and update it with the FaTrainer launcher, or put xinput1_3.dll next to DyingLightGame.exe yourself.";
 #else
     return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. It runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
@@ -2108,7 +2232,7 @@ inline void accent_swatches(bool& changed) {
         ImGui::PopID();
     }
     ImGui::NewLine();
-    if (color_field("custom", c.accent)) changed = true;
+    if (color_field("accent", c.accent)) changed = true;
 }
 
 inline void menu_key_combo(bool& changed) {
@@ -2520,6 +2644,7 @@ inline float presence(bool open) {
 
 inline void draw(float shown_raw, bool open) {
     ImGuiIO& io = ImGui::GetIO();
+    if (config::cfg.rainbow.count("accent")) apply_style();
     static float last = 0;
     if (last == 0 && shown_raw > 0) g_opened_at = now(), g_page_at = now();
     last = shown_raw;

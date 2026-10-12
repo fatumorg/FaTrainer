@@ -353,11 +353,13 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
 #endif
+    if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);
     float shown = g_ready ? menu::presence(g_open) : 0;
     float notice = g_outdated.empty() ? 0 : update_notice_alpha();
     bool toast_only = g_ready && shown <= 0 && toast_showing();
-    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only)) {
+    bool crosshair = g_ready && config::cfg.crosshair.on && visuals::game_crosshair_shown();
+    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only || crosshair)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -370,6 +372,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             begin_passive_frame(sc);
         }
         ImGui::NewFrame();
+        if (crosshair) menu::draw_crosshair_overlay();
 #if !FATRAINER_VISUALS
         if (esp) menu::draw_esp();
 #endif
