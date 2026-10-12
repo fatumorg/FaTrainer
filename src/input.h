@@ -7,8 +7,11 @@
 #include <map>
 #include <mutex>
 #include <vector>
+#include "game.h"
 
 namespace input {
+
+using game::hook_import;
 
 inline std::atomic<bool> blocked{false};
 inline std::atomic<long> wheel{0};
@@ -132,30 +135,6 @@ inline void patch_vtable(void* device) {
     vt[9] = (void*)blocked_state;
     vt[10] = (void*)blocked_data;
     VirtualProtect(&vt[9], 2 * sizeof(void*), old, &old);
-}
-
-inline void* hook_import(HMODULE module, const char* dll, const char* name, void* replacement) {
-    if (!module) return nullptr;
-    auto base = (BYTE*)module;
-    auto nt = (IMAGE_NT_HEADERS*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
-    auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (!dir.VirtualAddress) return nullptr;
-    for (auto imp = (IMAGE_IMPORT_DESCRIPTOR*)(base + dir.VirtualAddress); imp->Name; imp++) {
-        if (_stricmp((char*)(base + imp->Name), dll)) continue;
-        auto names = (IMAGE_THUNK_DATA*)(base + imp->OriginalFirstThunk);
-        auto slots = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
-        for (; names->u1.AddressOfData; names++, slots++) {
-            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
-            if (strcmp((char*)((IMAGE_IMPORT_BY_NAME*)(base + names->u1.AddressOfData))->Name, name)) continue;
-            void* original = (void*)slots->u1.Function;
-            DWORD old;
-            VirtualProtect(&slots->u1.Function, sizeof(void*), PAGE_READWRITE, &old);
-            slots->u1.Function = (ULONG_PTR)replacement;
-            VirtualProtect(&slots->u1.Function, sizeof(void*), old, &old);
-            return original;
-        }
-    }
-    return nullptr;
 }
 
 inline int install(HMODULE engine) {

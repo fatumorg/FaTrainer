@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5 b11
+
+Survivor Update
+
+- Fixed: Melee speed and Melee reach switched themselves off again a few seconds after a load. The trainer lost track of the weapon stats it had just changed; it now keeps them.
+- Fixed: no dropkick or death from above setting did anything. The trainer never recognized the Night Hunter, so the sliders stayed off. They now always work, and they never reach zombies further than a normal kick would, so E keeps kicking in story mode.
+- Fixed: some HUD colors stayed green (radar, objective distance) until you rejoined, and colors kept flickering back to the game's. The trainer now colors the HUD at the moment the game sets a color, including its own animations, and picks up HUD pieces the game creates later.
+- New: Game language, Voices and Subtitles are three separate settings on the Texts page. The game language is the game's own language switch, so menus, the Night Hunter info and everything else change natively; voices and subtitles can stay in your language. The game language and voices change at the next start.
+- New: Be The Zombie callouts: short killfeed lines in one click (Pounced:, Failed Pounce:, Tackled:, Failed Tackle: and more), with optional colored labels.
+- New: click a text to edit it right where it is. Color all of it or just its label, and preview it.
+- New: Show next to every HUD piece hides the menu for a few seconds and shows that piece, so you can see your colors in the game.
+- New: Field of view on the Visuals page, live. Sprinting and aiming still zoom like before.
+- New: if the game crashes, the trainer opens a window with its log and a Copy log button. If the game closed too fast for that, the window opens at the next start.
+- Fixed: a crash while the game loaded its texts with a language picked: texts are now only changed once the game has finished loading them.
+- All visual changes are in the Visuals Version too.
+
 ## 2.5 b10
 
 Survivor Update

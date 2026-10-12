@@ -4,6 +4,7 @@
 #include "cheats.h"
 #include "color.h"
 #include "visuals.h"
+#include "crash.h"
 #include "config.h"
 #include "fake.h"
 #include "input.h"
@@ -803,12 +804,13 @@ int main(int argc, char** argv) {
         CHECK(filter(0, (uintptr_t)target) && !filter(0, 0));
         int was_side = cheats::side;
         cheats::find_tweak("h_dropkick_angle")->factor = 3.0f;
-        cheats::hunter_in_match = true;
         cheats::side = cheats::SIDE_SURVIVOR;
         CHECK(!filter(0, (uintptr_t)target));
-        cheats::hunter_in_match = false;
+        cheats::side = cheats::SIDE_HUNTER;
         CHECK(filter(0, (uintptr_t)target));
+        cheats::side = cheats::SIDE_SURVIVOR;
         cheats::find_tweak("h_dropkick_angle")->factor = 1.0f;
+        CHECK(filter(0, (uintptr_t)target));
         cheats::side = was_side;
         static uint8_t hunter[0x1000] = {}, hunter_logical[0x800] = {};
         *(uintptr_t*)hunter = game::g.vt_player;
@@ -834,8 +836,6 @@ int main(int argc, char** argv) {
     cheats::side = cheats::SIDE_UNKNOWN;
     CHECK(read_var("f_btz_zombie_grab_range") == 25 && read_var("f_btz_wrestling_kick_angle_max") == 22);
     cheats::find_tweak("h_dropkick_angle")->factor = 10.0f;
-    CHECK(read_var("f_btz_wrestling_kick_angle_max") == 22 && !cheats::human_targeting_widened());
-    cheats::hunter_in_match = true;
     CHECK(read_var("f_btz_wrestling_kick_angle_max") == 180 && cheats::human_targeting_widened());
     cheats::find_tweak("h_dropkick_angle")->factor = 1.0f;
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_zombie_grab_angle_max") == 7);
@@ -855,8 +855,7 @@ int main(int argc, char** argv) {
     cheats::side = cheats::SIDE_SURVIVOR;
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_jump_attack_angle_max") == 180);
     cheats::side = side;
-    cheats::hunter_in_match = false;
-    CHECK(read_var("f_btz_jump_attack_angle_max") == 7 && read_var("f_btz_zombie_grab_range") == 25);
+    CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_zombie_grab_range") == 25);
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
@@ -1189,34 +1188,77 @@ int main(int argc, char** argv) {
         CHECK(health_bar.color[0] == 0.5f && health_bar.color[1] == 1.0f && label.color[0] == 0.5f && label.written_alpha == 0.3f);
         CHECK(stamina_bar.color[0] == 0.0f && stamina_bar.color[1] == 1.0f);
         CHECK(stamina_bg.color[0] == 0.0f && fabsf(stamina_bg.color[1] - 0.15f) < 1e-6f);
-        DWORD t0 = GetTickCount();
         stamina_bar.color[0] = 0.9f, stamina_bar.color[1] = 0.2f;
-        visuals::apply_hud(t0);
-        CHECK(stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
-        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS - 1);
-        CHECK(stamina_bar.color[0] == 0.9f);
-        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(stamina_bar.color[0] == 0.0f && fabsf(stamina_bar.color[1] - 0.9f) < 1e-6f);
+        {
+            static uint64_t view_engine[0x100] = {0x77}, text_engine[0x100] = {0x78};
+            static float seen[4];
+            size_t bar = visuals::hud_known[(uintptr_t)&stamina_bar], text = visuals::hud_known[(uintptr_t)&label];
+            visuals::hud_nodes[bar].engine = (uintptr_t)view_engine, visuals::hud_nodes[bar].engine_vtable = 0x77;
+            visuals::hud_nodes[text].engine = (uintptr_t)text_engine, visuals::hud_nodes[text].engine_vtable = 0x78;
+            visuals::hud_engines[(uintptr_t)view_engine] = bar, visuals::hud_engines[(uintptr_t)text_engine] = text;
+            auto saved_view = visuals::view_color_original;
+            auto saved_text = visuals::text_color_original;
+            visuals::view_color_original = [](uintptr_t, float r, float g, float b) { seen[0] = r, seen[1] = g, seen[2] = b; };
+            visuals::text_color_original = [](uintptr_t, const float* c) { memcpy(seen, c, sizeof seen); };
+            visuals::view_color_hook((uintptr_t)view_engine, 0.8f, 0.2f, 0.0f);
+            CHECK(seen[0] == 0.0f && fabsf(seen[1] - 0.8f) < 1e-6f && visuals::hud_nodes[bar].original[0] == 0.8f);
+            visuals::trainer_writing = true;
+            visuals::view_color_hook((uintptr_t)view_engine, 0.3f, 0.0f, 0.0f);
+            visuals::trainer_writing = false;
+            CHECK(seen[0] == 0.3f && visuals::hud_nodes[bar].original[0] == 0.8f);
+            visuals::view_color_hook((uintptr_t)view_engine + 8, 0.3f, 0.0f, 0.0f);
+            CHECK(seen[0] == 0.3f);
+            float* own = (float*)((uint8_t*)text_engine + visuals::TEXT_COLOR);
+            own[0] = 0.6f, own[1] = 0.0f, own[2] = 0.0f, own[3] = 0.5f;
+            visuals::text_color_hook((uintptr_t)text_engine, own);
+            CHECK(fabsf(seen[0] - 0.3f) < 1e-6f && fabsf(seen[1] - 0.6f) < 1e-6f && seen[3] == 0.5f && fabsf(own[1] - 0.6f) < 1e-6f);
+            CHECK(visuals::hud_nodes[text].original[0] == 0.6f);
+            const float other[4] = {0.0f, 0.0f, 0.9f, 1.0f};
+            visuals::text_color_hook((uintptr_t)text_engine, other);
+            CHECK(seen[2] == 0.9f && seen[0] == 0.0f && visuals::hud_nodes[text].original[0] == 0.6f);
+            visuals::view_color_original = saved_view, visuals::text_color_original = saved_text;
+            visuals::hud_nodes[bar].engine = visuals::hud_nodes[text].engine = 0;
+            visuals::hud_nodes[bar].engine_vtable = visuals::hud_nodes[text].engine_vtable = 0;
+            visuals::hud_engines.clear();
+            stamina_bar.color[0] = 0.9f, stamina_bar.color[1] = 0.2f, stamina_bar.color[2] = 0.0f;
+            visuals::apply_hud();
+        }
         config::cfg.hud_tint.on = false, config::cfg.hud_parts.clear();
-        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(health_bar.color[0] == 1.0f && stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
-        visuals::apply_hud(t0 + visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
+        FakeElement late_icon{1, "I_Late", visuals::UI_VIEW};
+        radar.children.push_back(&late_icon);
+        visuals::walk_hud((uintptr_t)&root, -1, 0);
+        CHECK(visuals::hud_elements() == 6);
+        visuals::walk_hud((uintptr_t)&root, -1, 0);
+        CHECK(visuals::hud_elements() == 6);
+        config::cfg.hud_parts["radar"] = {true, {0.0f, 0.0f, 1.0f}};
+        visuals::apply_hud();
+        CHECK(late_icon.color[2] == 1.0f && late_icon.color[0] == 0.0f);
+        config::cfg.hud_parts.clear();
+        visuals::apply_hud();
+        CHECK(late_icon.color[0] == 1.0f);
+        radar.children.pop_back();
+        late_icon.vt = 2;
         health_bar.vt = 2;
         config::cfg.hud_tint.on = true;
-        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(dead_writes == 0 && fabsf(stamina_bar.color[0] - 0.45f) < 1e-6f);
         config::cfg.hud_parts["radar"].hidden = true;
-        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(radar.opacity == 0 && radar_icon.opacity == 1);
         radar.opacity = 0.7f;
-        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(radar.opacity == 0);
         config::cfg.hud_parts["radar"].hidden = false;
-        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(radar.opacity == 0.7f);
         config::cfg.hud_parts["radar"].hidden = true;
-        visuals::apply_hud(t0 + 2 * visuals::HUD_SETTLE_MS);
+        visuals::apply_hud();
         CHECK(radar.opacity == 0);
         visuals::forget_hud();
         CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.9f && dead_writes == 0 && radar.opacity == 0.7f);
@@ -1257,29 +1299,53 @@ int main(int argc, char** argv) {
         fake_load_text("Shopkeeper_X_DLG01", hello_pl.c_str());
         visuals::libraries["Xx"] = std::make_shared<const visuals::TextLibrary>(visuals::TextLibrary{
             {"common", {{"Melee_Fists_N", L"Fists", visuals::TEXT_ITEMS}, {"Shopkeeper_X_DLG01", L"Hello", visuals::TEXT_SPOKEN}}}});
-        config::cfg.text_language = "Xx", config::cfg.text_kept = {"spoken"};
+        std::string saved_started = std::exchange(visuals::started_language, "Pl"), saved_steam = std::exchange(visuals::steam_language, "Pl");
+        config::cfg.subtitle_language = "Xx";
         visuals::keep_texts();
-        CHECK(shown("Melee_Fists_N") == L"Fists" && shown("Shopkeeper_X_DLG01") == hello_pl);
-        config::cfg.text_kept.clear();
+        CHECK(shown("Melee_Fists_N") == fists_pl && shown("Shopkeeper_X_DLG01") == L"Hello");
+        fake_load_text("Melee_Fists_N", fists_pl.c_str());
+        fake_load_text("Shopkeeper_X_DLG01", hello_pl.c_str());
         visuals::keep_texts();
         CHECK(shown("Shopkeeper_X_DLG01") == L"Hello");
-        fake_load_text("Melee_Fists_N", fists_pl.c_str());
+        config::cfg.texts["Shopkeeper_X_DLG01"] = "Yo";
         visuals::keep_texts();
-        CHECK(shown("Melee_Fists_N") == L"Fists");
-        config::cfg.texts["Melee_Fists_N"] = "Punchers";
+        CHECK(shown("Shopkeeper_X_DLG01") == L"Yo");
+        config::cfg.texts.erase("Shopkeeper_X_DLG01");
         visuals::keep_texts();
-        CHECK(shown("Melee_Fists_N") == L"Punchers");
-        config::cfg.texts.erase("Melee_Fists_N");
-        visuals::keep_texts();
-        CHECK(shown("Melee_Fists_N") == L"Fists");
+        CHECK(shown("Shopkeeper_X_DLG01") == L"Hello");
         visuals::rows();
         visuals::keep_text_rows();
         auto table = visuals::rows();
-        CHECK(table && table->index.count("Melee_Fists_N") && table->rows[table->index.at("Melee_Fists_N")].shown == "Fists");
+        CHECK(table && table->index.count("Melee_Fists_N") && table->rows[table->index.at("Melee_Fists_N")].shown == visuals::utf8(fists_pl.c_str()));
         CHECK(table->rows[table->index.at("HUDMessage_BTZDeath_Killer")].english == "You killed %s");
-        config::cfg.text_language.clear();
+        config::cfg.subtitle_language.clear();
         visuals::keep_texts();
         CHECK(shown("Melee_Fists_N") == fists_pl && shown("Shopkeeper_X_DLG01") == hello_pl && visuals::text_originals.empty());
+        visuals::steam_language = "Xx";
+        config::cfg.subtitle_language = config::STEAM_LANGUAGE;
+        visuals::keep_texts();
+        CHECK(shown("Shopkeeper_X_DLG01") == L"Hello");
+        visuals::started_language = "Xx";
+        visuals::keep_texts();
+        CHECK(shown("Shopkeeper_X_DLG01") == hello_pl && visuals::subtitle_code().empty());
+        config::cfg.subtitle_language.clear();
+        visuals::started_language = saved_started, visuals::steam_language = saved_steam;
+        {
+            static uint64_t buckets[visuals::TEXT_BUCKETS * 3] = {};
+            uintptr_t saved_table = std::exchange(visuals::texts_api.table, (uintptr_t)buckets);
+            DWORD t = GetTickCount();
+            visuals::texts_settled(t);
+            CHECK(visuals::texts_settled(t + visuals::TEXTS_SETTLE_MS * 2));
+            buckets[7] = 0x1234;
+            DWORD later = t + visuals::TEXTS_SETTLE_MS * 2 + 1;
+            CHECK(!visuals::texts_settled(later) && !visuals::texts_settled(later + visuals::TEXTS_SETTLE_MS - 1));
+            CHECK(visuals::texts_settled(later + visuals::TEXTS_SETTLE_MS));
+            buckets[7] = 0x5678;
+            visuals::texts_written();
+            CHECK(visuals::texts_settled(later + visuals::TEXTS_SETTLE_MS));
+            visuals::texts_api.table = saved_table;
+            visuals::texts_since = 0;
+        }
         visuals::libraries.erase("Xx");
         visuals::texts_api = saved_api;
         visuals::tools_global = saved_global;
@@ -1291,6 +1357,29 @@ int main(int argc, char** argv) {
     }
     config::load(path);
     CHECK(config::cfg.hidden_configs.size() == 2 && config::cfg.hidden_configs[1] == "survivor_legit");
+    if (FILE* f = fopen(path.c_str(), "w")) {
+        fputs("text_language=En\ntext_keep=items,spoken\nfov=9\n", f);
+        fclose(f);
+    }
+    config::load(path);
+    CHECK(config::cfg.game_language == "En" && config::cfg.subtitle_language == config::STEAM_LANGUAGE && config::cfg.voice_language.empty());
+    CHECK(config::cfg.fov == config::FOV_MAX && config::peek(path, "text_keep") == "items,spoken" && config::peek(path, "missing").empty());
+    config::cfg.voice_language = "game", config::cfg.fov = 1.25f;
+    config::save(path);
+    config::load(path);
+    CHECK(config::cfg.game_language == "En" && config::cfg.voice_language == "game" && config::cfg.subtitle_language == "steam" && config::cfg.fov == 1.25f);
+    CHECK(config::peek(path, "game_language") == "En" && config::peek(path, "text_language").empty());
+    {
+        std::string log = "--- FaTrainer | Dying Light 2.5 b10, Fatum Version loaded (x)\nold\n--- FaTrainer | Dying Light 2.5 b11, Fatum Version loaded (x) at 1000\nplayed\n"
+                          "--- FaTrainer | Dying Light 2.5 b11, Fatum Version loaded (x) at 2000\nnow\n";
+        std::string last = crash::previous_session(log);
+        CHECK(last.find("played") != std::string::npos && last.find("now") == std::string::npos && crash::session_time(last) == 1000);
+        CHECK(crash::crashed_after(last, 1500) && !crash::crashed_after(last, 900) && !crash::crashed_after(last + crash::SHOWN_MARK, 1500));
+        CHECK(!crash::crashed_after(crash::previous_session("--- FaTrainer old\nx\n--- FaTrainer new at 5\n"), 9) && crash::previous_session("--- FaTrainer one\n").empty());
+        CHECK(crash::tail("aaa\nbbb\nccc", 5) == "ccc" && crash::widen("a\nb") == L"a\r\nb");
+    }
+    CHECK(visuals::language_code("pl") == "Pl" && visuals::styled_like("en", "pl") == "en" && visuals::styled_like("en", "PL") == "EN" && visuals::styled_like("pl", "En") == "Pl");
+    config::cfg = config::Config{};
     DeleteFileA(path.c_str());
 
     static int position_calls = 0;
@@ -1361,6 +1450,10 @@ int main(int argc, char** argv) {
         auto editor = cheats::float_field_editor;
         cheats::locate_engine(engine);
         CHECK(engine && cheats::active_level && cheats::view_camera && cheats::get_position);
+        uintptr_t view_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, "?SetColor@IUIElementView@@QEAAXAEBVvec3@@@Z"), visuals::EXPORT_SPAN);
+        uintptr_t text_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, "?SetTextColor@IUIText@@QEAAXAEBVvec4@@@Z"), visuals::EXPORT_SPAN);
+        CHECK(view_internal && !memcmp((const void*)view_internal, visuals::VIEW_COLOR_PROLOGUE, sizeof visuals::VIEW_COLOR_PROLOGUE));
+        CHECK(text_internal && !memcmp((const void*)text_internal, visuals::TEXT_COLOR_PROLOGUE, sizeof visuals::TEXT_COLOR_PROLOGUE));
         cheats::active_level = real_level, cheats::view_camera = real_camera, cheats::get_position = get, cheats::set_position = set;
         cheats::field_int = fint, cheats::field_enum = fenum, cheats::field_bool = fbool, cheats::request_ownership = owner;
         cheats::float_field_editor = editor;

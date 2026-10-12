@@ -33,6 +33,60 @@ template <class T> inline bool wr(uintptr_t a, T v) {
     return true;
 }
 
+inline void* hook_import(HMODULE module, const char* dll, const char* name, void* replacement) {
+    if (!module) return nullptr;
+    auto base = (BYTE*)module;
+    auto nt = (IMAGE_NT_HEADERS*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
+    auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return nullptr;
+    for (auto imp = (IMAGE_IMPORT_DESCRIPTOR*)(base + dir.VirtualAddress); imp->Name; imp++) {
+        if (_stricmp((char*)(base + imp->Name), dll)) continue;
+        auto names = (IMAGE_THUNK_DATA*)(base + imp->OriginalFirstThunk);
+        auto slots = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
+        for (; names->u1.AddressOfData; names++, slots++) {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            if (strcmp((char*)((IMAGE_IMPORT_BY_NAME*)(base + names->u1.AddressOfData))->Name, name)) continue;
+            void* original = (void*)slots->u1.Function;
+            DWORD old;
+            VirtualProtect(&slots->u1.Function, sizeof(void*), PAGE_READWRITE, &old);
+            slots->u1.Function = (ULONG_PTR)replacement;
+            VirtualProtect(&slots->u1.Function, sizeof(void*), old, &old);
+            return original;
+        }
+    }
+    return nullptr;
+}
+
+inline void write_jump(uint8_t* at, uintptr_t target) {
+    const uint8_t jmp[6] = {0xFF, 0x25, 0, 0, 0, 0};
+    memcpy(at, jmp, 6);
+    memcpy(at + 6, &target, 8);
+}
+
+inline uintptr_t detour(uintptr_t fn, const uint8_t* expected, size_t prologue, const void* hook) {
+    const size_t JUMP = 14;
+    if (!fn || prologue < JUMP || prologue > 32 || memcmp((const void*)fn, expected, prologue)) return 0;
+    auto* trampoline = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!trampoline) return 0;
+    memcpy(trampoline, (const void*)fn, prologue);
+    write_jump(trampoline + prologue, fn + prologue);
+    uint8_t patch[32];
+    memset(patch, 0x90, prologue);
+    write_jump(patch, (uintptr_t)hook);
+    DWORD old;
+    VirtualProtect((void*)fn, prologue, PAGE_EXECUTE_READWRITE, &old);
+    memcpy((void*)fn, patch, prologue);
+    VirtualProtect((void*)fn, prologue, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)fn, prologue);
+    return (uintptr_t)trampoline;
+}
+
+inline uintptr_t tail_jump(uintptr_t fn, size_t within) {
+    for (size_t i = 0; fn && i + 5 <= within; i++)
+        if (rdv<uint8_t>(fn + i) == 0xE9) return fn + i + 5 + rdv<int32_t>(fn + i + 1);
+    return 0;
+}
+
 struct Section { uintptr_t start, end; std::string name; };
 
 inline std::vector<Section> sections(uintptr_t base) {
@@ -505,10 +559,13 @@ inline void refresh() {
     }
     StatField stats[ST_COUNT];
     calibrate_stats(desc_list, stats);
-    int calibrated = 0;
-    for (auto& s : stats) calibrated += s.off >= 0;
 
     std::lock_guard<std::mutex> l(mx);
+    int calibrated = 0;
+    for (int s = 0; s < ST_COUNT; s++) {
+        if (stats[s].off < 0 && g.stats[s].off >= 0) stats[s] = g.stats[s];
+        calibrated += stats[s].off >= 0;
+    }
     g.players = found[2 + N_INV_CLASSES];
     g.equipment = found[3 + N_INV_CLASSES];
     g.prison_data = found[4 + N_INV_CLASSES];

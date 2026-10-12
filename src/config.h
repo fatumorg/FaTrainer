@@ -40,6 +40,8 @@ struct Crosshair {
 };
 
 const float RAINBOW_FASTEST = 0.5f, RAINBOW_SLOWEST = 60.0f, RAINBOW_DEFAULT = 6.0f;
+const float FOV_MIN = 0.6f, FOV_MAX = 2.0f;
+inline const char STEAM_LANGUAGE[] = "steam";
 
 struct LegacyHudPart { const char* key; std::vector<const char*> parts; };
 inline const LegacyHudPart LEGACY_HUD_PARTS[] = {
@@ -92,8 +94,8 @@ struct Config {
     std::map<std::string, float> rainbow;
     Crosshair crosshair;
     std::map<std::string, std::string> texts;
-    std::string text_language;
-    std::set<std::string> text_kept;
+    std::string game_language, voice_language, subtitle_language;
+    float fov = 1.0f;
     Look look;
 };
 
@@ -271,8 +273,10 @@ inline void load(const std::string& path) {
     cfg.survivor_glow.clear();
     cfg.rainbow.clear();
     cfg.texts.clear();
-    cfg.text_language.clear();
-    cfg.text_kept.clear();
+    cfg.game_language.clear(), cfg.voice_language.clear(), cfg.subtitle_language.clear();
+    cfg.fov = 1.0f;
+    std::string old_language;
+    bool old_spoken_kept = false;
     char line[4096];
     while (fgets(line, sizeof line, f)) {
         std::string s = line;
@@ -320,15 +324,12 @@ inline void load(const std::string& path) {
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
         else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
-        else if (k == "text_language") cfg.text_language = v;
-        else if (k == "text_keep") {
-            for (size_t at = 0; at < v.size();) {
-                size_t comma = v.find(',', at);
-                if (comma == std::string::npos) comma = v.size();
-                if (comma > at) cfg.text_kept.insert(v.substr(at, comma - at));
-                at = comma + 1;
-            }
-        }
+        else if (k == "text_language") old_language = v;
+        else if (k == "text_keep") old_spoken_kept = ("," + v + ",").find(",spoken,") != std::string::npos;
+        else if (k == "game_language") cfg.game_language = v;
+        else if (k == "voice_language") cfg.voice_language = v;
+        else if (k == "subtitle_language") cfg.subtitle_language = v;
+        else if (k == "fov") cfg.fov = std::clamp((float)atof(v.c_str()), FOV_MIN, FOV_MAX);
         else if (k == "crosshair") {
             auto& x = cfg.crosshair;
             int on = 0, outline = 1;
@@ -359,6 +360,24 @@ inline void load(const std::string& path) {
         }
     }
     fclose(f);
+    if (!old_language.empty() && cfg.game_language.empty()) {
+        cfg.game_language = old_language;
+        if (old_spoken_kept) cfg.subtitle_language = STEAM_LANGUAGE;
+    }
+}
+
+inline std::string peek(const std::string& path, const std::string& key) {
+    FILE* f = fopen(path.c_str(), "r");
+    if (!f) return "";
+    char line[512];
+    std::string found;
+    while (fgets(line, sizeof line, f)) {
+        std::string s = line;
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+        if (s.size() > key.size() && !s.compare(0, key.size(), key) && s[key.size()] == '=') found = s.substr(key.size() + 1);
+    }
+    fclose(f);
+    return found;
 }
 
 inline bool save(const std::string& path) {
@@ -391,10 +410,10 @@ inline bool save(const std::string& path) {
     fprintf(f, "crosshair=%d,%d,%.1f,%.1f,%.1f,%.2f,%d,%.3f,%.3f,%.3f\n", x.on, x.style, x.size, x.thickness, x.gap, x.opacity, x.outline, x.color[0], x.color[1],
             x.color[2]);
     for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
-    if (!cfg.text_language.empty()) fprintf(f, "text_language=%s\n", cfg.text_language.c_str());
-    std::string kept;
-    for (auto& kind : cfg.text_kept) kept += (kept.empty() ? "" : ",") + kind;
-    if (!kept.empty()) fprintf(f, "text_keep=%s\n", kept.c_str());
+    if (!cfg.game_language.empty()) fprintf(f, "game_language=%s\n", cfg.game_language.c_str());
+    if (!cfg.voice_language.empty()) fprintf(f, "voice_language=%s\n", cfg.voice_language.c_str());
+    if (!cfg.subtitle_language.empty()) fprintf(f, "subtitle_language=%s\n", cfg.subtitle_language.c_str());
+    if (cfg.fov != 1.0f) fprintf(f, "fov=%.2f\n", cfg.fov);
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);
     return true;

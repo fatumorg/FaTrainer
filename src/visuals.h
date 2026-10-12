@@ -192,13 +192,11 @@ const int HUD_PART_COUNT = (int)(sizeof HUD_PARTS / sizeof HUD_PARTS[0]);
 const int HUD_MAX_DEPTH = 32, HUD_MAX_ELEMENTS = 20000;
 
 struct HudNode {
-    uintptr_t element, vtable, at;
+    uintptr_t element, vtable, at, engine, engine_vtable;
     int kind, part;
     float original[3], written[3];
     bool wrote, dead;
-    DWORD changed_at;
 };
-const DWORD HUD_SETTLE_MS = 250;
 
 struct HudRoot {
     uintptr_t element, vtable;
@@ -207,9 +205,15 @@ struct HudRoot {
     bool hid;
 };
 
+const int UI_ENGINE_OBJECT = 0x18, ENGINE_NAME = 0x8, NAME_LIMIT = 64, TEXT_COLOR = 0x384;
+const DWORD HUD_REWALK_MS = 2000;
 inline std::vector<HudNode> hud_nodes;
 inline std::vector<HudRoot> hud_roots;
+inline std::unordered_map<uintptr_t, size_t> hud_known, hud_engines;
+inline std::unordered_map<uintptr_t, size_t> hud_known_roots;
 inline uintptr_t hud_root = 0;
+inline std::mutex hud_mx;
+inline thread_local bool trainer_writing = false;
 
 inline int part_named(const std::string& name) {
     for (int p = 0; p < HUD_PART_COUNT; p++)
@@ -218,6 +222,8 @@ inline int part_named(const std::string& name) {
     return -1;
 }
 
+inline bool node_alive(const HudNode& n) { return !n.dead && ui.vtable_of(n.element) == n.vtable && (!n.engine || rdv<uintptr_t>(n.engine) == n.engine_vtable); }
+
 inline void walk_hud(uintptr_t element, int part, int depth) {
     if (depth > HUD_MAX_DEPTH || !ui.children_count) return;
     int n = ui.children_count(element);
@@ -225,35 +231,54 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
         uintptr_t c = ui.child(element, i);
         if (!c) continue;
         int named = part_named(ui.name_of(c)), p = named >= 0 ? named : part;
-        if (named >= 0) hud_roots.push_back({c, ui.vtable_of(c), named, 1.0f, false});
-        uintptr_t at = 0;
-        int kind = ui.kind_of(c, &at);
-        if (kind != UI_NONE) {
-            HudNode node{c, ui.vtable_of(c), at, kind, p, {}, {}, false, false, GetTickCount() - HUD_SETTLE_MS};
-            (kind == UI_TEXT ? ui.get_text_color : ui.get_color)(at, node.original);
-            hud_nodes.push_back(node);
+        if (named >= 0) {
+            auto r = hud_known_roots.find(c);
+            if (r == hud_known_roots.end() || hud_roots[r->second].vtable != ui.vtable_of(c)) {
+                hud_known_roots[c] = hud_roots.size();
+                hud_roots.push_back({c, ui.vtable_of(c), named, 1.0f, false});
+            }
+        }
+        auto known = hud_known.find(c);
+        if (known == hud_known.end() || !node_alive(hud_nodes[known->second])) {
+            uintptr_t at = 0;
+            int kind = ui.kind_of(c, &at);
+            if (kind != UI_NONE) {
+                uintptr_t engine = rdv<uintptr_t>(at + UI_ENGINE_OBJECT);
+                HudNode node{c, ui.vtable_of(c), at, engine, engine ? rdv<uintptr_t>(engine) : 0, kind, p, {}, {}, false, false};
+                (kind == UI_TEXT ? ui.get_text_color : ui.get_color)(at, node.original);
+                if (known != hud_known.end()) hud_nodes[known->second].dead = true;
+                hud_known[c] = hud_nodes.size();
+                if (engine) hud_engines[engine] = hud_nodes.size();
+                hud_nodes.push_back(node);
+            }
         }
         walk_hud(c, p, depth + 1);
     }
 }
 
 inline void write_color(const HudNode& n, const float rgb[3]) {
-    if (n.kind != UI_TEXT) return ui.set_color(n.at, rgb);
-    float rgba[4] = {rgb[0], rgb[1], rgb[2], ui.text_alpha(n.at)};
-    ui.set_text_color(n.at, rgba);
+    trainer_writing = true;
+    if (n.kind != UI_TEXT) ui.set_color(n.at, rgb);
+    else {
+        float rgba[4] = {rgb[0], rgb[1], rgb[2], ui.text_alpha(n.at)};
+        ui.set_text_color(n.at, rgba);
+    }
+    trainer_writing = false;
 }
 
 inline void forget_hud() {
+    std::lock_guard<std::mutex> l(hud_mx);
     for (auto& n : hud_nodes)
-        if (n.wrote && !n.dead && ui.vtable_of(n.element) == n.vtable) write_color(n, n.original);
+        if (n.wrote && node_alive(n)) write_color(n, n.original);
     for (auto& r : hud_roots)
         if (r.hid && ui.set_opacity && ui.vtable_of(r.element) == r.vtable) ui.set_opacity(r.element, r.game_opacity);
-    hud_nodes.clear(), hud_roots.clear(), hud_root = 0;
+    hud_nodes.clear(), hud_roots.clear(), hud_known.clear(), hud_engines.clear(), hud_known_roots.clear(), hud_root = 0;
 }
 
 inline void find_hud(uintptr_t root) {
     forget_hud();
     if (!root) return;
+    std::lock_guard<std::mutex> l(hud_mx);
     hud_root = root;
     walk_hud(root, -1, 0);
 }
@@ -272,35 +297,155 @@ inline bool part_hidden(int part) {
     return it != config::cfg.hud_parts.end() && it->second.hidden;
 }
 
+inline int preview_part = -1;
+inline DWORD preview_until = 0;
+
 inline void hide_parts() {
     if (!ui.get_opacity || !ui.set_opacity) return;
+    bool previewing = GetTickCount() < preview_until;
     for (auto& r : hud_roots) {
         if (ui.vtable_of(r.element) != r.vtable) continue;
         float now = ui.get_opacity(r.element);
-        bool hide = part_hidden(r.part);
-        if (hide && now != 0) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 0);
-        else if (!hide && r.hid) r.hid = false, ui.set_opacity(r.element, r.game_opacity);
+        bool show = previewing && r.part == preview_part, hide = !show && part_hidden(r.part);
+        if (show && now < 1) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 1);
+        else if (hide && now != 0) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 0); else if (!hide && !show && r.hid) r.hid = false, ui.set_opacity(r.element, r.game_opacity);
     }
 }
 
-inline void apply_hud(DWORD now_ms = GetTickCount()) {
+inline void wanted_color(const HudNode& n, const float from[3], float out[3]) {
+    memcpy(out, from, 3 * sizeof(float));
+    const config::HudColor* own = part_color(n.part);
     const auto& tint = config::cfg.hud_tint;
+    if (own || tint.on) visuals::tint(out, own ? own->color : tint.color, 1.0f);
+}
+
+inline bool adopt_game_color(uintptr_t engine, float rgb[3]) {
+    if (trainer_writing || !engine) return false;
+    std::lock_guard<std::mutex> l(hud_mx);
+    auto it = hud_engines.find(engine);
+    if (it == hud_engines.end()) return false;
+    HudNode& n = hud_nodes[it->second];
+    if (n.engine != engine || !node_alive(n)) return false;
+    memcpy(n.original, rgb, sizeof n.original);
+    wanted_color(n, n.original, n.written);
+    n.wrote = memcmp(n.written, n.original, sizeof n.written) != 0;
+    memcpy(rgb, n.written, sizeof n.written);
+    return n.wrote;
+}
+
+using ViewColorFn = void(__fastcall*)(uintptr_t engine, float r, float g, float b);
+using ViewColor4Fn = void(__fastcall*)(uintptr_t view, const float* rgba);
+using TextColorFn = void(__fastcall*)(uintptr_t engine, const float* rgba);
+using TextColor3Fn = void(__fastcall*)(uintptr_t text, const float* rgb);
+using TextColorPartsFn = void(__fastcall*)(uintptr_t text, float r, float g, float b, float a);
+inline ViewColorFn view_color_original = nullptr;
+inline ViewColor4Fn view_color4_original = nullptr;
+inline TextColorFn text_color_original = nullptr;
+inline TextColor3Fn text_color3_original = nullptr;
+inline TextColorPartsFn text_color_parts_original = nullptr;
+
+inline void __fastcall view_color_hook(uintptr_t engine, float r, float g, float b) {
+    float c[3] = {r, g, b};
+    adopt_game_color(engine, c);
+    view_color_original(engine, c[0], c[1], c[2]);
+}
+
+inline void __fastcall view_color4_hook(uintptr_t view, const float* rgba) {
+    float c[4] = {rgba[0], rgba[1], rgba[2], rgba[3]};
+    view_color4_original(view, adopt_game_color(*(uintptr_t*)(view + UI_ENGINE_OBJECT), c) ? c : rgba);
+}
+
+inline void __fastcall text_color_hook(uintptr_t engine, const float* rgba) {
+    float c[4] = {rgba[0], rgba[1], rgba[2], rgba[3]};
+    if (!trainer_writing && !memcmp((const void*)(engine + TEXT_COLOR), c, sizeof c) && adopt_game_color(engine, c)) {
+        memcpy((void*)(engine + TEXT_COLOR), c, 3 * sizeof(float));
+        return text_color_original(engine, c);
+    }
+    text_color_original(engine, rgba);
+}
+
+inline void __fastcall text_color3_hook(uintptr_t text, const float* rgb) {
+    float c[3] = {rgb[0], rgb[1], rgb[2]};
+    text_color3_original(text, adopt_game_color(*(uintptr_t*)(text + UI_ENGINE_OBJECT), c) ? c : rgb);
+}
+
+inline void __fastcall text_color_parts_hook(uintptr_t text, float r, float g, float b, float a) {
+    float c[3] = {r, g, b};
+    adopt_game_color(*(uintptr_t*)(text + UI_ENGINE_OBJECT), c);
+    text_color_parts_original(text, c[0], c[1], c[2], a);
+}
+
+inline const uint8_t VIEW_COLOR_PROLOGUE[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x50, 0x0F, 0x29, 0x74, 0x24, 0x40, 0x48, 0x8D, 0x99, 0x50, 0x02, 0x00, 0x00};
+inline const uint8_t TEXT_COLOR_PROLOGUE[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0x99, 0x78, 0x03, 0x00, 0x00};
+const size_t EXPORT_SPAN = 0x40;
+
+inline int install_color_hooks(HMODULE engine, HMODULE gamedll) {
+    if (!engine || view_color_original) return 0;
+    const char ENGINE_DLL[] = "engine_x64_rwdi.dll";
+    const char VIEW3[] = "?SetColor@IUIElementView@@QEAAXAEBVvec3@@@Z", VIEW4[] = "?SetColor@IUIElementView@@QEAAXAEBVvec4@@@Z";
+    const char TEXT4[] = "?SetTextColor@IUIText@@QEAAXAEBVvec4@@@Z", TEXT3[] = "?SetTextColor@IUIText@@QEAAXAEBVvec3@@@Z", TEXT_PARTS[] = "?SetTextColor@IUIText@@QEAAXMMMM@Z";
+    int installed = 0;
+    uintptr_t view_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, VIEW3), EXPORT_SPAN);
+    uintptr_t text_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, TEXT4), EXPORT_SPAN);
+    if (uintptr_t t = game::detour(view_internal, VIEW_COLOR_PROLOGUE, sizeof VIEW_COLOR_PROLOGUE, (void*)view_color_hook)) view_color_original = (ViewColorFn)t, installed++;
+    if (uintptr_t t = game::detour(text_internal, TEXT_COLOR_PROLOGUE, sizeof TEXT_COLOR_PROLOGUE, (void*)text_color_hook)) text_color_original = (TextColorFn)t, installed++;
+    if (auto f = game::hook_import(gamedll, ENGINE_DLL, VIEW4, (void*)view_color4_hook)) view_color4_original = (ViewColor4Fn)f, installed++;
+    if (auto f = game::hook_import(gamedll, ENGINE_DLL, TEXT3, (void*)text_color3_hook)) text_color3_original = (TextColor3Fn)f, installed++;
+    if (auto f = game::hook_import(gamedll, ENGINE_DLL, TEXT_PARTS, (void*)text_color_parts_hook)) text_color_parts_original = (TextColorPartsFn)f, installed++;
+    return installed;
+}
+
+using SetFovFn = void(__fastcall*)(uintptr_t camera, float fov);
+using GetFovFn = float(__fastcall*)(uintptr_t camera);
+struct CameraFov { float game, written; };
+inline SetFovFn set_fov_original = nullptr;
+inline GetFovFn get_fov_original = nullptr;
+inline std::mutex fov_mx;
+inline std::unordered_map<uintptr_t, CameraFov> camera_fovs;
+inline std::atomic<float> game_fov{NAN}, shown_fov{NAN};
+const float FOV_LIMIT = 170.0f;
+
+inline void __fastcall set_fov_hook(uintptr_t camera, float fov) {
+    float factor = config::cfg.fov;
+    float written = factor == 1.0f ? fov : std::clamp(fov * factor, 1.0f, FOV_LIMIT);
+    {
+        std::lock_guard<std::mutex> l(fov_mx);
+        if (factor == 1.0f) camera_fovs.erase(camera);
+        else camera_fovs[camera] = {fov, written};
+    }
+    game_fov = fov, shown_fov = written;
+    set_fov_original(camera, written);
+}
+
+inline float __fastcall get_fov_hook(uintptr_t camera) {
+    float now = get_fov_original(camera);
+    std::lock_guard<std::mutex> l(fov_mx);
+    auto it = camera_fovs.find(camera);
+    return it != camera_fovs.end() && it->second.written == now ? it->second.game : now;
+}
+
+inline bool install_fov_hooks(HMODULE gamedll) {
+    if (set_fov_original) return true;
+    const char ENGINE_DLL[] = "engine_x64_rwdi.dll";
+    auto get = game::hook_import(gamedll, ENGINE_DLL, "?GetFOV@IBaseCamera@@QEAAMXZ", (void*)get_fov_hook);
+    if (get) get_fov_original = (GetFovFn)get;
+    auto set = get ? game::hook_import(gamedll, ENGINE_DLL, "?SetFOV@IBaseCamera@@QEAAXM@Z", (void*)set_fov_hook) : nullptr;
+    if (set) set_fov_original = (SetFovFn)set;
+    return set != nullptr;
+}
+
+inline void apply_hud() {
     for (auto& n : hud_nodes) {
         if (n.dead) continue;
-        if (ui.vtable_of(n.element) != n.vtable) {
+        if (!node_alive(n)) {
             n.dead = true;
             continue;
         }
         float now[3];
         (n.kind == UI_TEXT ? ui.get_text_color : ui.get_color)(n.at, now);
-        if (memcmp(now, n.wrote ? n.written : n.original, sizeof now)) {
-            memcpy(n.original, now, sizeof now);
-            n.wrote = false, n.changed_at = now_ms;
-        }
-        if (now_ms - n.changed_at < HUD_SETTLE_MS) continue;
-        float want[3] = {n.original[0], n.original[1], n.original[2]};
-        const config::HudColor* own = part_color(n.part);
-        if (own || tint.on) visuals::tint(want, own ? own->color : tint.color, 1.0f);
+        if (memcmp(now, n.wrote ? n.written : n.original, sizeof now)) memcpy(n.original, now, sizeof now), n.wrote = false;
+        float want[3];
+        wanted_color(n, n.original, want);
         if (!memcmp(want, now, sizeof want)) continue;
         write_color(n, want);
         memcpy(n.written, want, sizeof want);
@@ -309,7 +454,6 @@ inline void apply_hud(DWORD now_ms = GetTickCount()) {
     hide_parts();
 }
 
-const int UI_ENGINE_OBJECT = 0x18, ENGINE_NAME = 0x8, NAME_LIMIT = 64;
 inline int hud_element_offset = -1;
 inline uintptr_t hud_root_vtable = 0;
 inline std::map<uintptr_t, std::pair<int, int>> kind_cache;
@@ -409,16 +553,20 @@ inline uintptr_t live_hud_root() {
 
 inline void keep_hud(void (*log)(const char*, ...)) {
     static bool was_on = false;
+    static DWORD walked_at = 0;
     bool on = hud_colors_on();
     if ((!on && !was_on) || !ui.children_count) return;
     if (!hud_root || rdv<uintptr_t>(hud_root) != hud_root_vtable) {
         uintptr_t root = live_hud_root();
         if (root != hud_root || !hud_found()) {
             find_hud(root);
+            walked_at = GetTickCount();
             hud_root_vtable = root ? rdv<uintptr_t>(root) : 0;
             if (root) log("hud: found %zu elements", hud_elements());
         }
     }
+    std::lock_guard<std::mutex> l(hud_mx);
+    if (hud_root && GetTickCount() - walked_at > HUD_REWALK_MS) walked_at = GetTickCount(), walk_hud(hud_root, -1, 0);
     apply_hud();
     was_on = on;
 }
@@ -429,10 +577,12 @@ template <class T> struct TtlString { const T* text; uint32_t size; uint32_t cap
 struct TextApi {
     TextEntry*(__fastcall* find)(uintptr_t unused, const char* const* key) = nullptr;
     bool(__fastcall* add)(uintptr_t tools, const TtlString<char>* key, const TtlString<wchar_t>* text, bool overwrite) = nullptr;
-    uintptr_t tools = 0;
+    uintptr_t tools = 0, table = 0;
 };
 
 inline TextApi texts_api;
+const int TEXT_BUCKETS = 256, TEXT_BUCKET_SIZE = 0x18, FIND_TABLE_AT = 0x51;
+const DWORD TEXTS_SETTLE_MS = 3000;
 inline uintptr_t tools_global = 0;
 const int SLOT_ADD_TEXT = 69;
 inline const char TEXT_FIND_CODE[] = "48 89 5C 24 08 57 48 83 EC 20 4C 8B 12 48 8B FA BA 01 00 10 00";
@@ -485,6 +635,89 @@ inline int text_kind(const std::string& key) {
     if (starts_with(k, {"tut", "btz_tut", "hint", "loading", "tip"})) return TEXT_TUTORIALS;
     if (starts_with(k, {"hud", "hvote", "msg", "btz", "trigger", "action", "notif"})) return TEXT_HUD;
     return TEXT_MENUS;
+}
+
+struct TtlText { char* text; uint32_t size, capacity; };
+struct GameLanguage { const char* code; const char* name; bool voice; };
+inline const GameLanguage GAME_LANGUAGES[] = {
+    {"En", "English", true}, {"Pl", "Polish", true}, {"De", "German", true}, {"Fr", "French", true}, {"Es", "Spanish", true},
+    {"It", "Italian", true}, {"Br", "Portuguese (Brazil)", true}, {"El", "Greek", true}, {"Nl", "Dutch", false}, {"Cs", "Czech", false},
+    {"Tr", "Turkish", false}, {"Ru", "Russian", false}, {"Jp", "Japanese", false}, {"Ko", "Korean", false}, {"Cn", "Chinese (Simplified)", false},
+    {"Tw", "Chinese (Traditional)", false}, {"Th", "Thai", false}};
+inline const char FOLLOW_GAME[] = "game";
+
+inline std::string language_code(std::string code) {
+    if (code.size() == 2) code[0] = (char)toupper((unsigned char)code[0]), code[1] = (char)tolower((unsigned char)code[1]);
+    return code;
+}
+
+inline const char* game_language_name(const std::string& code) {
+    for (auto& l : GAME_LANGUAGES)
+        if (language_code(code) == l.code) return l.name;
+    return nullptr;
+}
+
+inline std::string forced_language, forced_voice, steam_language, started_language, started_voice, startup_game_setting, startup_voice_setting;
+inline std::string command_line;
+using ForceLangFn = TtlText*(__fastcall*)(TtlText* out, TtlText* fallback);
+using SpeechFn = bool(__fastcall*)(uintptr_t game, const char* id, bool force);
+using CommandLineFn = LPSTR(WINAPI*)();
+inline ForceLangFn force_lang_original = nullptr;
+inline SpeechFn speech_original = nullptr;
+inline CommandLineFn command_line_original = nullptr;
+
+inline std::string styled_like(const std::string& code, const std::string& example) {
+    std::string out = language_code(code);
+    for (size_t i = 0; i < out.size() && i < example.size(); i++)
+        out[i] = isupper((unsigned char)example[i]) ? (char)toupper((unsigned char)out[i]) : (char)tolower((unsigned char)out[i]);
+    return out;
+}
+
+inline LPSTR WINAPI command_line_hook() {
+    command_line = std::string(command_line_original()) + " forcelang=" + forced_language;
+    return (LPSTR)command_line.c_str();
+}
+
+inline TtlText* __fastcall force_lang_hook(TtlText* out, TtlText* fallback) {
+    std::string steam = fallback && fallback->text ? std::string(fallback->text, fallback->size) : "";
+    steam_language = language_code(steam);
+    if (!forced_language.empty()) forced_language = styled_like(forced_language, steam);
+    TtlText* r = force_lang_original(out, fallback);
+    started_language = r && r->text ? language_code(std::string(r->text, r->size)) : steam_language;
+    return r;
+}
+
+inline std::string wanted_voice(const std::string& setting) {
+    if (setting == FOLLOW_GAME) return "";
+    if (setting.empty() || setting == config::STEAM_LANGUAGE) return steam_language;
+    return setting;
+}
+
+inline bool __fastcall speech_hook(uintptr_t game, const char* id, bool force) {
+    std::string voice = wanted_voice(forced_voice);
+    std::string use = voice.size() == 2 && id ? styled_like(voice, id) : id ? id : "";
+    started_voice = language_code(use);
+    return speech_original(game, use.c_str(), force);
+}
+
+inline void install_language_hooks(const std::string& game_language, const std::string& voice_language) {
+    startup_game_setting = game_language, startup_voice_setting = voice_language;
+    HMODULE exe = GetModuleHandleA(nullptr), engine = GetModuleHandleA("engine_x64_rwdi.dll");
+    if (!engine || force_lang_original) return;
+    const char ENGINE_DLL[] = "engine_x64_rwdi.dll";
+    forced_language = game_language.size() == 2 ? language_code(game_language) : "";
+    forced_voice = voice_language;
+    force_lang_original = (ForceLangFn)game::hook_import(exe, ENGINE_DLL, "?CheckForceLangParameter@IGame@@SA?AV?$string_base@D@ttl@@AEAV23@@Z", (void*)force_lang_hook);
+    if (!force_lang_original) return;
+    if (!forced_language.empty()) command_line_original = (CommandLineFn)game::hook_import(engine, "KERNEL32.dll", "GetCommandLineA", (void*)command_line_hook);
+    if (!forced_language.empty() || (!voice_language.empty() && voice_language != config::STEAM_LANGUAGE))
+        speech_original = (SpeechFn)game::hook_import(exe, ENGINE_DLL, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z", (void*)speech_hook);
+}
+
+inline std::string language_report() {
+    return "steam " + (steam_language.empty() ? std::string("unknown") : steam_language) + ", game " + (started_language.empty() ? "unknown" : started_language) +
+           (forced_language.empty() ? "" : " (forced " + forced_language + (command_line_original ? "" : ", command line not hooked") + ")") + ", voices " +
+           (started_voice.empty() ? (speech_original ? "not set yet" : "game default") : started_voice);
 }
 
 struct GameText { std::string key; std::wstring text; int kind; };
@@ -570,7 +803,6 @@ inline std::unordered_map<std::string, WrittenText> text_written;
 inline std::set<std::string> user_written;
 inline std::shared_ptr<const TextLibrary> applied_library;
 inline std::string applied_language;
-inline std::set<std::string> applied_kept;
 inline std::vector<const wchar_t*> sentinels;
 inline std::atomic<unsigned> texts_generation{0};
 
@@ -588,8 +820,11 @@ inline void put_text(const std::string& key, const std::wstring& text) {
 
 inline void locate_texts(uintptr_t gamedll, HMODULE engine) {
     if (auto hits = game::find_code(gamedll, TOOLS_CODE); !hits.empty()) tools_global = game::rip_target(hits[0], 3, 7);
-    if (auto hits = engine ? game::find_code((uintptr_t)engine, TEXT_FIND_CODE, 2) : std::vector<uintptr_t>{}; hits.size() == 1)
+    if (auto hits = engine ? game::find_code((uintptr_t)engine, TEXT_FIND_CODE, 2) : std::vector<uintptr_t>{}; hits.size() == 1) {
         texts_api.find = (decltype(texts_api.find))hits[0];
+        uintptr_t lea = hits[0] + FIND_TABLE_AT;
+        if (rdv<uint8_t>(lea) == 0x48 && rdv<uint8_t>(lea + 1) == 0x8D && rdv<uint8_t>(lea + 2) == 0x05) texts_api.table = game::rip_target(lea, 3, 7);
+    }
 }
 
 inline bool texts_ready() {
@@ -642,10 +877,29 @@ inline bool ensure_text(const std::string& key, const std::wstring& text, const 
     return true;
 }
 
-inline bool language_switches(int kind) {
-    const auto& c = config::cfg;
-    return !c.text_language.empty() && !c.text_kept.count(TEXT_KIND_INFO[kind].key);
+inline std::string subtitle_code() {
+    const std::string& setting = config::cfg.subtitle_language;
+    std::string code = setting == config::STEAM_LANGUAGE ? steam_language : setting;
+    return code.size() == 2 && language_code(code) != started_language ? language_code(code) : "";
 }
+
+inline uint64_t texts_fingerprint() {
+    uint64_t h = 0;
+    for (int i = 0; texts_api.table && i < TEXT_BUCKETS; i++)
+        for (int part = 0; part < 3; part++) h = h * 1000003 + rdv<uint64_t>(texts_api.table + i * TEXT_BUCKET_SIZE + part * 8);
+    return h;
+}
+
+inline uint64_t texts_seen = 0;
+inline DWORD texts_since = 0;
+
+inline bool texts_settled(DWORD now_ms = GetTickCount()) {
+    uint64_t now = texts_fingerprint();
+    if (now != texts_seen) texts_seen = now, texts_since = now_ms;
+    return now_ms - texts_since >= TEXTS_SETTLE_MS;
+}
+
+inline void texts_written() { texts_seen = texts_fingerprint(); }
 
 inline const wchar_t* shown_text(const std::string& key) {
     TextEntry* e = find_text(key);
@@ -653,12 +907,14 @@ inline const wchar_t* shown_text(const std::string& key) {
 }
 
 inline void keep_texts() {
-    if (!texts_ready()) return;
+    if (!texts_ready() || !texts_settled()) return;
     const auto& c = config::cfg;
-    auto lib = c.text_language.empty() ? nullptr : library(c.text_language);
-    bool full = c.text_language != applied_language || c.text_kept != applied_kept || lib != applied_library;
+    std::string code = subtitle_code();
+    auto lib = code.empty() ? nullptr : library(code);
+    bool full = code != applied_language || lib != applied_library;
     for (size_t i = 0; lib && !full && i < lib->size() && i < sentinels.size(); i++)
         if (!(*lib)[i].texts.empty() && shown_text((*lib)[i].texts[0].key) != sentinels[i]) full = true;
+    bool wrote = false;
     for (auto it = user_written.begin(); it != user_written.end();)
         if (c.texts.count(*it)) ++it;
         else it = user_written.erase(it), full = true;
@@ -666,28 +922,91 @@ inline void keep_texts() {
         if (!find_text(key)) continue;
         auto kept = text_originals.find(key);
         if (!safe_format(replacement, kept != text_originals.end() ? narrow(kept->second.c_str()) : narrow(shown_text(key)))) continue;
-        ensure_text(key, wide(replacement), "user " + replacement);
+        wrote |= ensure_text(key, wide(replacement), "user " + replacement);
         user_written.insert(key);
     }
-    if (!full) return;
-    std::set<std::string> wanted;
-    if (lib)
-        for (auto& file : *lib)
-            for (auto& t : file.texts)
-                if (!c.texts.count(t.key) && language_switches(t.kind) && wanted.insert(t.key).second) ensure_text(t.key, t.text, "language " + c.text_language);
-    for (auto it = text_originals.begin(); it != text_originals.end();) {
-        if (c.texts.count(it->first) || wanted.count(it->first)) {
-            ++it;
-            continue;
+    if (full) {
+        std::set<std::string> wanted;
+        if (lib)
+            for (auto& file : *lib)
+                for (auto& t : file.texts)
+                    if (!c.texts.count(t.key) && t.kind == TEXT_SPOKEN && wanted.insert(t.key).second) wrote |= ensure_text(t.key, t.text, "language " + code);
+        for (auto it = text_originals.begin(); it != text_originals.end();) {
+            if (c.texts.count(it->first) || wanted.count(it->first)) {
+                ++it;
+                continue;
+            }
+            if (find_text(it->first)) put_text(it->first, it->second), wrote = true;
+            text_written.erase(it->first);
+            it = text_originals.erase(it);
+            texts_generation++;
         }
-        if (find_text(it->first)) put_text(it->first, it->second);
-        text_written.erase(it->first);
-        it = text_originals.erase(it);
-        texts_generation++;
+        sentinels.clear();
+        for (size_t i = 0; lib && i < lib->size(); i++) sentinels.push_back((*lib)[i].texts.empty() ? nullptr : shown_text((*lib)[i].texts[0].key));
+        applied_language = code, applied_library = lib;
     }
-    sentinels.clear();
-    for (size_t i = 0; lib && i < lib->size(); i++) sentinels.push_back((*lib)[i].texts.empty() ? nullptr : shown_text((*lib)[i].texts[0].key));
-    applied_language = c.text_language, applied_kept = c.text_kept, applied_library = lib;
+    if (wrote) texts_written();
+}
+
+struct Callout { const char* key; const char* before; const char* label; const char* after; const char* tone; };
+inline const char POUNCE_TONE[] = "#FF4D6D", FAILED_POUNCE_TONE[] = "#38E1A0", TACKLE_TONE[] = "#FFB000", FAILED_TACKLE_TONE[] = "#5AC8FA", KILL_TONE[] = "#F2EDE4";
+inline const Callout CALLOUTS[] = {
+    {"HUDMessage_BTZDeath_Killer_Hunter_Highrage", "", "Pounced:", " %s", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Hunter_Highrage", "%s ", "Pounced:", " %s", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Hunter_Highrage", "%s ", "Pounced:", " You", POUNCE_TONE},
+    {"BtzZombie_PounceHighRageKill_AwardReason", "", "Pounced", "", POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Attacker_SelfInterrupt", "", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Attacker_AdditionalInterrupt", "%s ", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt", "%s ", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Observer_AdditionalInterrupt", "%s | %s ", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Observer_SelfInterrupt", "%s | %s ", "Failed Pounce", "", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Vicitm_AdditionalInterrupt", "%s | %s ", "Failed Pounce:", " You", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Victim_SelfInterrupt", "%s ", "Failed Pounce:", " You", FAILED_POUNCE_TONE},
+    {"btz_pounce_interrupted", "", "Failed Pounce", "", FAILED_POUNCE_TONE},
+    {"BtzHuman_PounceInterrupted_AwardReason", "", "Failed Pounce", "", FAILED_POUNCE_TONE},
+    {"BtzZombie_PounceHighRageInterrupt_AwardReason", "", "Failed Pounce", "", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Hunter_Charge", "", "Tackled:", " %s", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Hunter_Charge", "%s ", "Tackled:", " %s", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Hunter_Charge", "%s ", "Tackled:", " You", TACKLE_TONE},
+    {"BtzZombie_Charge_AwardReason", "", "Tackled", "", TACKLE_TONE},
+    {"HUDMessage_BTZZombieChargeEvade_Attacker", "", "Failed Tackle:", " %s", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZZombieChargeEvade_Observer", "%s | %s ", "Failed Tackle", "", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZZombieChargeEvade_Victim", "%s ", "Failed Tackle:", " You", FAILED_TACKLE_TONE},
+    {"BtzZombie_ChargeEvade_AwardReason", "", "Failed Tackle", "", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Hunter_Groundpound", "", "Ground Pound:", " %s", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Hunter_Groundpound", "%s ", "Ground Pound:", " %s", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Hunter_Groundpound", "%s ", "Ground Pound:", " You", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Kick", "", "Kicked:", " %s", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Kick", "%s ", "Kicked:", " %s", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Kick", "%s ", "Kicked:", " You", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Pvp_Human_Jump_Attack", "", "Dropped:", " %s", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Pvp_Human_Jump_Attack", "%s ", "Dropped:", " %s", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Pvp_Human_Jump_Attack", "%s ", "Dropped:", " You", FAILED_TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Killer", "", "Killed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer", "%s ", "Killed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim", "%s ", "Killed:", " You", KILL_TONE},
+};
+
+inline std::string colored(const std::string& text, const char* tone) { return std::string("<font color=\"") + tone + "\">" + text + "</font>"; }
+
+inline std::string callout_text(const Callout& c, bool tinted) { return std::string(c.before) + (tinted ? colored(c.label, c.tone) : std::string(c.label)) + c.after; }
+
+inline std::string without_colors(std::string text) {
+    for (size_t at; (at = text.find("<font")) != std::string::npos;) {
+        size_t end = text.find('>', at);
+        text.erase(at, end == std::string::npos ? std::string::npos : end - at + 1);
+    }
+    for (size_t at; (at = text.find("</font>")) != std::string::npos;) text.erase(at, 7);
+    return text;
+}
+
+inline int callouts_used(const std::map<std::string, std::string>& texts) {
+    int n = 0;
+    for (auto& c : CALLOUTS) {
+        auto it = texts.find(c.key);
+        n += it != texts.end() && (it->second == callout_text(c, false) || it->second == callout_text(c, true));
+    }
+    return n;
 }
 
 struct TextRow { std::string key, shown, english, haystack; int kind; };

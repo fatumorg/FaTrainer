@@ -11,6 +11,10 @@
 #include <thread>
 #include "input.h"
 #include "menu.h"
+#include "crash.h"
+#if FATRAINER_DEV
+#include "probe.h"
+#endif
 #if !FATRAINER_VISUALS
 #include "net_win.h"
 #include "../installer/logic.h"
@@ -296,6 +300,8 @@ static HRESULT present_update_notice(IDXGISwapChain* sc, UINT sync, UINT flags) 
     return oPresent(sc, sync, flags);
 }
 
+static void keep_crash_filter();
+
 static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_frames++ == 0) logf("first frame (thread %lu)", (unsigned long)GetCurrentThreadId());
     if (trainer_off()) return present_update_notice(sc, sync, flags);
@@ -310,6 +316,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     static std::atomic<bool> tick_queued{false};
     if (g_ready && GetTickCount() - last_tick > 100 && !tick_queued.exchange(true)) {
         last_tick = GetTickCount();
+        keep_crash_filter();
         on_game_thread([] {
             tick_queued = false;
 #if FATRAINER_VISUALS
@@ -318,6 +325,9 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             visuals::apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
 #else
             cheats::tick();
+#endif
+#if FATRAINER_DEV
+            probe::poll();
 #endif
             visuals::keep_texts();
             visuals::keep_text_rows();
@@ -356,11 +366,12 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
 #endif
     if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);
-    float shown = g_ready ? menu::presence(g_open) : 0;
+    bool previewing = g_ready && menu::previewing();
+    float shown = g_ready ? menu::presence(g_open && !previewing) : 0;
     float notice = g_outdated.empty() ? 0 : update_notice_alpha();
     bool toast_only = g_ready && shown <= 0 && toast_showing();
     bool crosshair = g_ready && config::cfg.crosshair.on && visuals::game_crosshair_shown();
-    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only || crosshair)) {
+    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only || crosshair || previewing)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -377,7 +388,8 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
 #if !FATRAINER_VISUALS
         if (esp) menu::draw_esp();
 #endif
-        if (shown > 0) menu::draw(shown, g_open);
+        if (shown > 0) menu::draw(shown, g_open && !previewing);
+        if (previewing) menu::draw_preview();
         if (toast_only) menu::draw_toast();
         if (notice > 0) menu::draw_update_notice(g_outdated, notice, g_build == menu::NOTICE_UPDATE ? menu::NOTICE_OLDER : g_build.load());
         render_overlay(sc);
@@ -459,6 +471,43 @@ static std::string call_stack(const CONTEXT* fault) {
         }
     }
     return out;
+}
+
+static std::string game_folder_path() {
+    char exe[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    std::string s = exe;
+    return s.substr(0, s.find_last_of("\\/") + 1);
+}
+
+static const char CRASH_INTRO[] =
+    "Dying Light crashed. Press Copy log and post the log in the FaTrainer forum (fatrainer.fatum.cc) or send it to contact@fatum.cc, so the crash can be fixed.";
+static LPTOP_LEVEL_EXCEPTION_FILTER g_game_filter = nullptr;
+static std::atomic<bool> g_crash_shown{false};
+
+static LONG WINAPI crash_filter(EXCEPTION_POINTERS* e) {
+    if (!g_crash_shown.exchange(true)) {
+        char head[2048];
+        snprintf(head, sizeof head, "exception %08lx in %s\nstack: %s\n\n", (unsigned long)e->ExceptionRecord->ExceptionCode,
+                 code_place((uintptr_t)e->ExceptionRecord->ExceptionAddress).c_str(), call_stack(e->ContextRecord).c_str());
+        logf("%s while the game crashed", crash::SHOWN_MARK);
+        std::string log = crash::read_text(game_folder_path() + "fatrainer.log");
+        size_t start = log.rfind(crash::SESSION_MARK);
+        crash::show(std::string(TITLE) + ": the game crashed", CRASH_INTRO, head + crash::tail(start == std::string::npos ? log : log.substr(start), crash::REPORT_TAIL), true);
+    }
+    return g_game_filter ? g_game_filter(e) : EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void keep_crash_filter() {
+    LPTOP_LEVEL_EXCEPTION_FILTER previous = SetUnhandledExceptionFilter(crash_filter);
+    if (previous && previous != crash_filter) g_game_filter = previous;
+}
+
+static void check_last_crash() {
+    std::string folder = game_folder_path(), session = crash::previous_session(crash::read_text(folder + "fatrainer.log"));
+    if (!crash::crashed_after(session, crash::newest_dump(folder))) return;
+    logf("%s at the next start", crash::SHOWN_MARK);
+    crash::show(std::string(TITLE) + ": the game crashed last time", CRASH_INTRO, crash::tail(session, crash::REPORT_TAIL), false);
 }
 
 static LONG CALLBACK crash_logger(EXCEPTION_POINTERS* e) {
@@ -572,7 +621,9 @@ static void download_build(ReleaseInfo latest) {
 #endif
 
 static void main_thread() {
-    logf("--- %s %s, %s loaded (%s)", TITLE, VERSION, FATRAINER_EDITION, EDITION_TAG);
+    logf("--- %s %s, %s loaded (%s)%s%lld", TITLE, VERSION, FATRAINER_EDITION, EDITION_TAG, crash::SESSION_TIME, (long long)time(nullptr));
+    check_last_crash();
+    keep_crash_filter();
     log_environment();
 #if FATRAINER_VISUALS
     HMODULE gamedll = nullptr;
@@ -581,12 +632,14 @@ static void main_thread() {
     menu::startup();
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     visuals::locate((uintptr_t)gamedll);
-    logf("hud colors: %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found");
+    logf("hud colors: %s, color hooks %d/5", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll));
+    logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
     visuals::locate_texts((uintptr_t)gamedll, engine);
     logf("texts: %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     Sleep(4000);
+    logf("language: %s", visuals::language_report().c_str());
     hook_d3d();
     watch_first_frame();
 }
@@ -626,7 +679,8 @@ static void main_thread() {
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     cheats::locate_engine(engine);
     visuals::locate((uintptr_t)gamedll);
-    logf("hud colors: %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found");
+    logf("hud colors: %s, color hooks %d/5", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll));
+    logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
     visuals::locate_texts((uintptr_t)gamedll, engine);
     logf("texts: %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
@@ -643,30 +697,49 @@ static void main_thread() {
         }
     }).detach();
     Sleep(4000);
+    logf("language: %s", visuals::language_report().c_str());
     hook_d3d();
     watch_first_frame();
 }
 #endif
 
 #if !FATRAINER_VISUALS
-static bool launched_from_launcher() {
-    char armed[8] = "";
-    if (GetEnvironmentVariableA("FATRAINER_ARMED", armed, sizeof armed) && !strcmp(armed, "1")) return true;
+static std::wstring launch_file() {
     std::wstring path = own_path();
-    path = path.substr(0, path.find_last_of(L"\\/") + 1) + std::wstring(LAUNCH_FILE, LAUNCH_FILE + strlen(LAUNCH_FILE));
+    return path.substr(0, path.find_last_of(L"\\/") + 1) + std::wstring(LAUNCH_FILE, LAUNCH_FILE + strlen(LAUNCH_FILE));
+}
+
+static bool armed(bool consume) {
+    char flag[8] = "";
+    if (GetEnvironmentVariableA("FATRAINER_ARMED", flag, sizeof flag) && !strcmp(flag, "1")) return true;
+    std::wstring path = launch_file();
     FILE* f = _wfopen(path.c_str(), L"rb");
     if (!f) return false;
     long long written = 0;
     if (fscanf(f, "%lld", &written) != 1) written = 0;
     fclose(f);
-    DeleteFileW(path.c_str());
+    if (consume) DeleteFileW(path.c_str());
     return launch_armed(written, (long long)time(nullptr));
 }
+
+static bool launched_from_launcher() { return armed(true); }
 #endif
+
+static void choose_languages() {
+#if !FATRAINER_VISUALS
+    if (!armed(false)) return;
+#endif
+    char exe[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    std::string ini = exe;
+    ini = ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer.ini";
+    visuals::install_language_hooks(config::peek(ini, "game_language"), config::peek(ini, "voice_language"));
+}
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(h);
+        choose_languages();
         CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
 #if !FATRAINER_VISUALS
             if (!launched_from_launcher()) {

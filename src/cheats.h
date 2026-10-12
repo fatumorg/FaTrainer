@@ -499,7 +499,6 @@ inline bool tweak_applies(const Tweak& t) {
 
 inline std::atomic<bool> hunter_in_match{false};
 
-inline bool targeting_applies(const Tweak& t) { return tweak_applies(t) && (t.group != G_HUMAN || hunter_in_match); }
 
 inline bool human_targeting_set() {
     for (auto& t : TWEAKS)
@@ -507,7 +506,7 @@ inline bool human_targeting_set() {
     return false;
 }
 
-inline bool human_targeting_widened() { return hunter_in_match && side != SIDE_HUNTER && human_targeting_set(); }
+inline bool human_targeting_widened() { return side != SIDE_HUNTER && human_targeting_set(); }
 
 inline void scale_desc_stat(uintptr_t desc, int stat, float factor, std::set<uintptr_t>& touched) {
     auto& f = g.stats[stat];
@@ -756,7 +755,7 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     float best = v;
     for (auto& t : TWEAKS)
         for (auto& var : t.vars)
-            if (!strcmp(s, var.name) && t.factor != 1.0f && targeting_applies(t)) {
+            if (!strcmp(s, var.name) && t.factor != 1.0f && tweak_applies(t)) {
                 float strength = std::clamp((t.factor - 1.0f) / (t.max - 1.0f), 0.0f, 1.0f);
                 float moved = v + (var.at_max - v) * strength;
                 if (std::fabs(moved) > std::fabs(best)) best = moved;
@@ -1597,9 +1596,27 @@ inline bool is_hunter(uintptr_t p) {
     return lp && rdv<int>(lp + PLAYER_ROLE) == ROLE_HUNTER;
 }
 
+inline bool view_matrix(float m[16], Vec3* eye);
+
+const float AI_KICK_RANGE = 3.5f, AI_KICK_ANGLE = 30.0f, DEGREES = 57.29578f;
+const int OBJECT_CONTROL = 0x18;
+
+inline bool kick_reaches_ai(uintptr_t target) {
+    float m[16];
+    Vec3 eye, me, at;
+    if (!alive(player) || g.player_control < 0 || !position_of(player + g.player_control, &me) || !position_of(target + OBJECT_CONTROL, &at) || !view_matrix(m, &eye))
+        return false;
+    float dx = at.x - me.x, dy = at.y - me.y, dz = at.z - me.z;
+    if (dx * dx + dy * dy + dz * dz > AI_KICK_RANGE * AI_KICK_RANGE) return false;
+    float fx = m[12], fz = m[14], flat = std::sqrt(fx * fx + fz * fz), reach = std::sqrt(dx * dx + dz * dz);
+    if (flat < 1e-4f || reach < 0.3f) return true;
+    float cosine = std::clamp((fx * dx + fz * dz) / (flat * reach), -1.0f, 1.0f);
+    return std::acos(cosine) * DEGREES <= AI_KICK_ANGLE;
+}
+
 inline bool __fastcall grab_filter_hook(uintptr_t self, uintptr_t target) {
     bool passed = grab_filter_original(self, target);
-    if (passed && side == SIDE_SURVIVOR && human_targeting_widened() && !is_hunter(target)) return false;
+    if (passed && rdv<uintptr_t>(target) != g.vt_player && human_targeting_widened() && !kick_reaches_ai(target)) return false;
     static std::string last;
     static DWORD last_at = 0;
     static int lines = 0;
@@ -1902,7 +1919,7 @@ inline void apply_dfa_fall_speed() {
         dfa_fall_original = cur;
     }
     Tweak* t = find_tweak("h_dfa_height");
-    float strength = targeting_applies(*t) ? std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f) : 0.0f;
+    float strength = tweak_applies(*t) ? std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f) : 0.0f;
     float want = dfa_fall_original + (DFA_FALL_SPEED_AT_MAX - dfa_fall_original) * strength;
     if (cur != want) wr<float>(dfa_fall_speed, want);
 }
@@ -1969,6 +1986,44 @@ inline uintptr_t own_logical_player(uintptr_t who) {
     return from_profile ? from_profile : logical_player(who);
 }
 
+inline std::string layout(uintptr_t obj, size_t span) {
+    std::string out;
+    for (size_t off = 0; off < span; off += 8) {
+        uintptr_t v = rdv<uintptr_t>(obj + off);
+        if (v < 0x10000) continue;
+        std::string name = game::class_name(v);
+        if (name == "?") continue;
+        char part[128];
+        snprintf(part, sizeof part, " +%zx %s", off, name.c_str());
+        out += part;
+    }
+    return out;
+}
+
+inline void log_layouts(uintptr_t who) {
+    const size_t PLAYER_SPAN = 0x1600, PROFILE_SPAN = 0x200;
+    if (who) logf_hook("layout: player%s", layout(who, PLAYER_SPAN).c_str());
+    if (uintptr_t profile = game_profile()) logf_hook("layout: profile%s", layout(profile, PROFILE_SPAN).c_str());
+}
+
+inline void log_players(uintptr_t who) {
+    std::vector<uintptr_t> players;
+    {
+        std::lock_guard<std::mutex> l(esp_mx);
+        players = esp_players;
+    }
+    static size_t logged = ~(size_t)0;
+    if (players.size() == std::exchange(logged, players.size())) return;
+    std::string out;
+    for (uintptr_t p : players) {
+        uintptr_t lp = rdv<uintptr_t>(p + LOGICAL_PLAYER);
+        char part[160];
+        snprintf(part, sizeof part, " [%s %s, +9d8 %s, role %d]", p == who ? "you" : "other", game::class_name(p).c_str(), lp ? game::class_name(lp).c_str() : "none", lp ? rdv<int>(lp + PLAYER_ROLE, -1) : -1);
+        out += part;
+    }
+    logf_hook("players: %zu%s", players.size(), out.c_str());
+}
+
 inline void update_side(uintptr_t who, bool new_player) {
     static DWORD player_since = 0;
     if (!who || new_player) player_since = who ? GetTickCount() : 0;
@@ -2015,6 +2070,11 @@ inline void tick() {
     bool hunter_now = who && hunter_is_someone_else();
     if (hunter_in_match.exchange(hunter_now) != hunter_now) logf_hook("pvp: %s", hunter_now ? "a Night Hunter is in the match" : "no Night Hunter in the match");
     update_side(who, new_player);
+    static DWORD layout_at = 0;
+    const DWORD LAYOUT_DELAY = 8000;
+    if (new_player) layout_at = who ? GetTickCount() : 0;
+    if (layout_at && GetTickCount() - layout_at > LAYOUT_DELAY) layout_at = 0, log_layouts(who);
+    log_players(who);
     install_var_hook();
     apply_dfa_fall_speed();
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
