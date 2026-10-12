@@ -1,5 +1,7 @@
 #pragma once
 #include <windows.h>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -12,6 +14,88 @@
 namespace visuals {
 
 using game::rdv;
+
+using game::rd;
+
+const int SLOT_VAR_FLOAT = 114, SLOT_VAR_VEC3 = 116, VAR_SLOTS = 1024;
+using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
+inline VarFloatFn original_var_float = nullptr;
+inline VarVec3Fn original_var_vec3 = nullptr;
+inline uintptr_t var_vtable[VAR_SLOTS + 1];
+
+inline void tint(float* c, const float color[3], float scale) {
+    float peak = std::max({color[0], color[1], color[2], 0.001f}), bright = std::max({c[0], c[1], c[2]}) * scale;
+    for (int k = 0; k < 3; k++) c[k] = color[k] / peak * bright;
+}
+
+inline bool hunter_glow_var(const char* s) { return !strncmp(s, "v3_btz_zombie_v", 15) && !strstr(s, "not_drained"); }
+
+inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintptr_t scope, uintptr_t extra) {
+    float* v = original_var_vec3(self, out, name, scope, extra);
+    auto& glow = config::cfg.hunter_glow;
+    const char* s = name ? *(const char**)name : nullptr;
+    if (!v || !glow.on || !s || !hunter_glow_var(s)) return v;
+    float c[3] = {v[0], v[1], v[2]};
+    tint(c, glow.color, glow.glow);
+    memcpy(out, c, sizeof c);
+    return out;
+}
+
+inline void install_var_hook(uintptr_t root, bool floats_wanted, VarFloatFn scaled_float) {
+    uintptr_t object = rdv<uintptr_t>(root), current = rdv<uintptr_t>(object);
+    uintptr_t ours = (uintptr_t)&var_vtable[1];
+    if (!current || current == ours || !(floats_wanted || config::cfg.hunter_glow.on)) return;
+    for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_VEC3 + 1; n /= 2)
+        if (rd(current - 8, var_vtable, n * 8)) {
+            original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
+            original_var_vec3 = (VarVec3Fn)var_vtable[1 + SLOT_VAR_VEC3];
+            if (scaled_float) var_vtable[1 + SLOT_VAR_FLOAT] = (uintptr_t)scaled_float;
+            var_vtable[1 + SLOT_VAR_VEC3] = (uintptr_t)&tinted_var_vec3;
+            game::wr<uintptr_t>(object, ours);
+            return;
+        }
+}
+
+const int FLASH_COLORS[] = {0x180, 0x18c, 0x198, 0x1a4, 0x1b0}, FLASH_BEAMS[] = {0x198, 0x1b0};
+const int FLASH_INTENSITIES[] = {0x1bc, 0x1c0};
+const int FLASH_PART_BYTES = 0x1c4 - 0x180;
+struct UvOriginal { uint8_t bytes[FLASH_PART_BYTES]; };
+inline std::map<uintptr_t, UvOriginal> uv_originals;
+inline bool uv_applied = false;
+
+inline bool uv_desc(uintptr_t desc) {
+    float c[3];
+    return rd(desc + FLASH_COLORS[0], c, sizeof c) && c[2] >= 200 && c[2] <= 260 && c[1] < 50 && c[0] < 120;
+}
+
+inline void apply_uv_light(bool on, const float color[3], float glow) {
+    if (!on) {
+        if (uv_applied)
+            for (auto& [desc, o] : uv_originals) game::wr_bytes(desc + FLASH_COLORS[0], o.bytes, sizeof o.bytes);
+        uv_applied = false;
+        return;
+    }
+    for (int i = 0; i < ITEM_COUNT; i++) {
+        if (std::isnan(ITEMS[i].st[ST_DepletionTime])) continue;
+        auto d = game::g.descs.find(ITEMS[i].id);
+        if (d == game::g.descs.end() || uv_originals.count(d->second) || !uv_desc(d->second)) continue;
+        UvOriginal o;
+        if (rd(d->second + FLASH_COLORS[0], o.bytes, sizeof o.bytes)) uv_originals[d->second] = o;
+    }
+    for (auto& [desc, o] : uv_originals) {
+        uint8_t now[FLASH_PART_BYTES];
+        memcpy(now, o.bytes, sizeof now);
+        for (int at : FLASH_COLORS) tint((float*)(now + at - FLASH_COLORS[0]), color, 1.0f);
+        for (int at : FLASH_BEAMS)
+            for (int k = 0; k < 3; k++) ((float*)(now + at - FLASH_COLORS[0]))[k] *= glow;
+        for (int at : FLASH_INTENSITIES) *(float*)(now + at - FLASH_COLORS[0]) *= glow;
+        uint8_t current[FLASH_PART_BYTES];
+        if (rd(desc + FLASH_COLORS[0], current, sizeof current) && memcmp(current, now, sizeof now))
+            game::wr_bytes(desc + FLASH_COLORS[0], now, sizeof now);
+    }
+    uv_applied = true;
+}
 
 enum UiKind { UI_NONE, UI_VIEW, UI_TEXT };
 

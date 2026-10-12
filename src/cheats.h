@@ -9,8 +9,18 @@
 #include "game.h"
 #include "input.h"
 #include "skills.h"
+#include "visuals.h"
 
 namespace cheats {
+
+using visuals::VarFloatFn;
+using visuals::VarVec3Fn;
+using visuals::SLOT_VAR_FLOAT;
+using visuals::SLOT_VAR_VEC3;
+using visuals::var_vtable;
+using visuals::original_var_float;
+using visuals::apply_uv_light;
+using visuals::uv_originals;
 
 using game::g;
 using game::rd;
@@ -31,7 +41,7 @@ const int GAME_PROFILE = 0x540, PROFILE_PLAYER = 0x48, PROFILE_RANK_HUMAN = 0x2d
 const int PRISON_START_TIME = 0x44, PRISON_END_TIME = 0x48, PRISON_REWARD_TIER = 0x4c, PRISON_STATE = 0x54;
 const int SLOT_FLOAT_FIELD_EDITOR = 34, SLOT_PHYSICS_POSITION = 52, SLOT_KILL = 295;
 const float KILL_RADIUS = 80.0f;
-const int COPIED_SLOTS = 64, SLOT_VAR_FLOAT = 114, SLOT_VAR_VEC3 = 116, VAR_SLOTS = 1024;
+const int COPIED_SLOTS = 64;
 const float ONE_HIT_HEALTH = 1.0f;
 inline const char GRAB_FILTER_CODE[] =
     "48 89 5C 24 08 57 48 83 EC 20 48 8B DA 48 85 D2 0F 84 ? ? ? ? 48 8B 02 48 8B CA FF 90 78 08 00 00 84 C0 75 10 48 8B 03 48 8B CB FF 90 20 01 00 00 84 C0 75 72";
@@ -169,11 +179,6 @@ const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
 inline uintptr_t skill_manager = 0, add_skill_fn = 0, remove_skill_fn = 0;
-using VarFloatFn = float (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
-using VarVec3Fn = float* (*)(uintptr_t, float*, uintptr_t, uintptr_t, uintptr_t);
-inline VarFloatFn original_var_float = nullptr;
-inline VarVec3Fn original_var_vec3 = nullptr;
-inline uintptr_t var_vtable[VAR_SLOTS + 1];
 inline std::map<std::string, int> param_ids;
 inline uintptr_t immortal_vtable[COPIED_SLOTS + 1];
 inline uintptr_t original_vtable = 0;
@@ -725,45 +730,13 @@ inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, u
     return best;
 }
 
-inline void tint(float* c, const float color[3], float scale) {
-    float peak = std::max({color[0], color[1], color[2], 0.001f}), bright = std::max({c[0], c[1], c[2]}) * scale;
-    for (int k = 0; k < 3; k++) c[k] = color[k] / peak * bright;
-}
-
-inline bool hunter_glow_var(const char* s) { return !strncmp(s, "v3_btz_zombie_v", 15) && !strstr(s, "not_drained"); }
-
-inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintptr_t scope, uintptr_t extra) {
-    float* v = original_var_vec3(self, out, name, scope, extra);
-    auto& glow = config::cfg.hunter_glow;
-    const char* s = name ? *(const char**)name : nullptr;
-    if (!v || !glow.on || !s || !hunter_glow_var(s)) return v;
-    float c[3] = {v[0], v[1], v[2]};
-    tint(c, glow.color, glow.glow);
-    memcpy(out, c, sizeof c);
-    return out;
-}
-
-inline bool var_hook_needed() {
-    if (config::cfg.hunter_glow.on) return true;
+inline bool tweak_vars_used() {
     for (auto& t : TWEAKS)
         if (!t.vars.empty() && t.factor != 1.0f) return true;
     return false;
 }
 
-inline void install_var_hook() {
-    uintptr_t object = rdv<uintptr_t>(var_root), current = rdv<uintptr_t>(object);
-    uintptr_t ours = (uintptr_t)&var_vtable[1];
-    if (!current || current == ours || !var_hook_needed()) return;
-    for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_VEC3 + 1; n /= 2)
-        if (rd(current - 8, var_vtable, n * 8)) {
-            original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
-            original_var_vec3 = (VarVec3Fn)var_vtable[1 + SLOT_VAR_VEC3];
-            var_vtable[1 + SLOT_VAR_FLOAT] = (uintptr_t)&scaled_var_float;
-            var_vtable[1 + SLOT_VAR_VEC3] = (uintptr_t)&tinted_var_vec3;
-            wr<uintptr_t>(object, ours);
-            return;
-        }
-}
+inline void install_var_hook() { visuals::install_var_hook(var_root, tweak_vars_used(), &scaled_var_float); }
 
 inline void all_off() {
     for (auto& c : CHEATS) c.on = false;
@@ -1881,46 +1854,6 @@ inline bool esp_snapshot(float m[16], std::vector<EspTarget>& out, float max_dis
     for (auto& t : seen_players)
         if (t.distance <= max_distance) out.push_back(t);
     return true;
-}
-
-const int FLASH_COLORS[] = {0x180, 0x18c, 0x198, 0x1a4, 0x1b0}, FLASH_BEAMS[] = {0x198, 0x1b0};
-const int FLASH_INTENSITIES[] = {0x1bc, 0x1c0};
-const int FLASH_PART_BYTES = 0x1c4 - 0x180;
-struct UvOriginal { uint8_t bytes[FLASH_PART_BYTES]; };
-inline std::map<uintptr_t, UvOriginal> uv_originals;
-inline bool uv_applied = false;
-
-inline bool uv_desc(uintptr_t desc) {
-    float c[3];
-    return rd(desc + FLASH_COLORS[0], c, sizeof c) && c[2] >= 200 && c[2] <= 260 && c[1] < 50 && c[0] < 120;
-}
-
-inline void apply_uv_light(bool on, const float color[3], float glow) {
-    if (!on) {
-        if (uv_applied)
-            for (auto& [desc, o] : uv_originals) game::wr_bytes(desc + FLASH_COLORS[0], o.bytes, sizeof o.bytes);
-        uv_applied = false;
-        return;
-    }
-    for (int i = 0; i < ITEM_COUNT; i++) {
-        if (std::isnan(ITEMS[i].st[ST_DepletionTime])) continue;
-        auto d = g.descs.find(ITEMS[i].id);
-        if (d == g.descs.end() || uv_originals.count(d->second) || !uv_desc(d->second)) continue;
-        UvOriginal o;
-        if (rd(d->second + FLASH_COLORS[0], o.bytes, sizeof o.bytes)) uv_originals[d->second] = o;
-    }
-    for (auto& [desc, o] : uv_originals) {
-        uint8_t now[FLASH_PART_BYTES];
-        memcpy(now, o.bytes, sizeof now);
-        for (int at : FLASH_COLORS) tint((float*)(now + at - FLASH_COLORS[0]), color, 1.0f);
-        for (int at : FLASH_BEAMS)
-            for (int k = 0; k < 3; k++) ((float*)(now + at - FLASH_COLORS[0]))[k] *= glow;
-        for (int at : FLASH_INTENSITIES) *(float*)(now + at - FLASH_COLORS[0]) *= glow;
-        uint8_t current[FLASH_PART_BYTES];
-        if (rd(desc + FLASH_COLORS[0], current, sizeof current) && memcmp(current, now, sizeof now))
-            game::wr_bytes(desc + FLASH_COLORS[0], now, sizeof now);
-    }
-    uv_applied = true;
 }
 
 inline void apply_dfa_fall_speed() {
