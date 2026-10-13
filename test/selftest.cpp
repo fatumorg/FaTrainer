@@ -921,6 +921,14 @@ int main(int argc, char** argv) {
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_jump_attack_angle_max") == 180);
     cheats::side = side;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_zombie_grab_range") == 25);
+    CHECK(read_var("f_flare_throw_recharge_time") == 7);
+    cheats::find_tweak("h_recharge")->factor = 10.0f;
+    CHECK(std::fabs(read_var("f_flare_throw_recharge_time") - cheats::RECHARGE_AT_MAX) < 1e-4f);
+    CHECK(std::fabs(read_var("f_injector_throw_recharge_time_drained_btz_3_human") - cheats::RECHARGE_AT_MAX) < 1e-4f);
+    CHECK(read_var("f_flare_throw_use_amount") == 0 && read_var("f_mine_throw_recharge_delay_drained") == 0 && read_var("f_flare_throw_min_charge_on_drained") == 7);
+    cheats::find_tweak("h_recharge")->factor = 5.5f;
+    CHECK(std::fabs(read_var("f_grenade_throw_recharge_time") - (7 + (cheats::RECHARGE_AT_MAX - 7) * 0.5f)) < 1e-4f);
+    cheats::find_tweak("h_recharge")->factor = 1.0f;
     cheats::all_off();
     CHECK(read_var("f_btz_jump_attack_range") == 7);
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_wrestling_kick_angle_max") == 22 && cheats::active_count() == 0);
@@ -1117,6 +1125,34 @@ int main(int argc, char** argv) {
         CHECK((game::rdv<uint32_t>(d + 0x78) & ~(0xFu << 24)) == (before & ~(0xFu << 24)));
         game::g.stats[ST_Color] = saved;
     }
+    {
+        static uintptr_t firearm_vt[4] = {}, throwable_vt[4] = {};
+        std::vector<std::pair<uintptr_t, const ItemInfo*>> mixed;
+        int firearms = 0, throwables = 0;
+        for (int i = 0; i < ITEM_COUNT; i++) {
+            float ammo = ITEMS[i].st[ST_AmmoCount];
+            if (std::isnan(ammo)) continue;
+            bool firearm = !strncmp(ITEMS[i].id, "Firearm", 7);
+            if (firearm ? firearms >= 30 : throwables >= 30) continue;
+            uintptr_t d = w.alloc(0x600);
+            w.put<uintptr_t>(d, (uintptr_t)(firearm ? firearm_vt : throwable_vt));
+            w.put<int>(d + (firearm ? 0x160 : 0x200), (int)ammo);
+            mixed.push_back({d, &ITEMS[i]});
+            (firearm ? firearms : throwables)++;
+        }
+        game::StatField global[ST_COUNT];
+        game::calibrate_stats(mixed, global);
+        auto classes = game::calibrate_classes(mixed, global);
+        CHECK(firearms == 30 && throwables == 30 && global[ST_AmmoCount].off < 0);
+        CHECK(classes[ST_AmmoCount].size() == 2 && classes[ST_AmmoCount][(uintptr_t)firearm_vt].off == 0x160 && classes[ST_AmmoCount][(uintptr_t)throwable_vt].off == 0x200);
+        auto saved_global = game::g.stats[ST_AmmoCount];
+        auto saved_classes = game::g.class_stats[ST_AmmoCount];
+        game::g.stats[ST_AmmoCount] = global[ST_AmmoCount], game::g.class_stats[ST_AmmoCount] = classes[ST_AmmoCount];
+        uintptr_t gun = 0;
+        for (auto& [d, info] : mixed) gun = !gun && game::rdv<uintptr_t>(d) == (uintptr_t)firearm_vt ? d : gun;
+        CHECK(game::has_stat(ST_AmmoCount) && game::write_stat(gun, ST_AmmoCount, 999) && game::rdv<int>(gun + 0x160) == 999 && game::get_stat(gun, ST_AmmoCount) == 999);
+        game::g.stats[ST_AmmoCount] = saved_global, game::g.class_stats[ST_AmmoCount] = saved_classes;
+    }
 
     {
         static uintptr_t refusing_vt[8] = {}, accepting_vt[8] = {};
@@ -1145,6 +1181,48 @@ int main(int argc, char** argv) {
         game::g.invs = saved;
         game::g.vt_inv[2] = saved_vts[0];
         game::g.vt_inv[3] = saved_vts[1];
+    }
+    {
+        static uintptr_t pack_vt[8] = {}, stash_vt[8] = {};
+        pack_vt[6] = stash_vt[6] = (uintptr_t)&fake_add;
+        uintptr_t pack = w.alloc(0x80), stash = w.alloc(0x80);
+        w.put<uintptr_t>(pack, (uintptr_t)pack_vt), w.put<uintptr_t>(stash, (uintptr_t)stash_vt);
+        w.put<uintptr_t>(pack + 0x40, w.alloc(8 * 16)), w.put<uintptr_t>(stash + 0x40, w.alloc(8 * 16));
+        uintptr_t axe = w.alloc(0x100), knife = w.alloc(0x100);
+        auto make = [&](uintptr_t desc, int count) {
+            uintptr_t it = w.alloc(0x100);
+            w.put<int>(it + 0x40, count), w.put<float>(it + 0x44, 50.0f), w.put<uintptr_t>(it + 0x60, desc), w.put<uintptr_t>(it + 0xA0, 0x1234);
+            return it;
+        };
+        uintptr_t weapon = make(axe, 1), stack = make(knife, 5), other = make(knife, 1);
+        auto set_items = [&](uintptr_t inv, std::vector<uintptr_t> items) {
+            for (size_t i = 0; i < items.size(); i++) w.put<uintptr_t>(game::rdv<uintptr_t>(inv + 0x40) + i * 8, items[i]);
+            w.put<uint32_t>(inv + 0x48, (uint32_t)items.size());
+        };
+        set_items(pack, {weapon, stack, other});
+        uintptr_t saved_vts[2] = {game::g.vt_inv[3], game::g.vt_inv[4]};
+        game::g.vt_inv[3] = (uintptr_t)pack_vt, game::g.vt_inv[4] = (uintptr_t)stash_vt;
+        auto saved_invs = game::g.invs;
+        auto saved_wallets = game::g.wallets;
+        game::g.invs = {{pack, game::K_BACKPACK, 22, {}}, {stash, game::K_STASH, -1, {}}};
+        game::g.wallets.clear();
+        cheats::dupe_drops(true);
+        set_items(pack, {stack, other});
+        cheats::dupe_drops(true);
+        uint32_t n = game::rdv<uint32_t>(pack + 0x48);
+        uintptr_t copy = game::rdv<uintptr_t>(game::rdv<uintptr_t>(pack + 0x40) + 2 * 8);
+        CHECK(n == 3 && game::rdv<uintptr_t>(copy + 0x60) == axe && cheats::dupes == 1);
+        set_items(pack, {stack, copy}), set_items(stash, {other});
+        cheats::dupe_drops(true);
+        CHECK(game::rdv<uint32_t>(pack + 0x48) == 2 && cheats::dupes == 1);
+        set_items(pack, {stack});
+        cheats::dupe_drops(true);
+        CHECK(game::rdv<uint32_t>(pack + 0x48) == 1 && cheats::dupes == 1);
+        cheats::dupe_drops(false);
+        CHECK(cheats::held_items.empty());
+        game::g.invs = saved_invs, game::g.wallets = saved_wallets;
+        game::g.vt_inv[3] = saved_vts[0], game::g.vt_inv[4] = saved_vts[1];
+        cheats::duped_at.clear(), cheats::dupes = 0;
     }
 
     config::cfg.accent[0] = 0.25f;

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <array>
 #include <map>
 #include <mutex>
 #include <string>
@@ -348,6 +349,7 @@ struct State {
     std::vector<Inventory> invs;
     std::map<std::string, uintptr_t> descs;
     StatField stats[ST_COUNT];
+    std::map<uintptr_t, StatField> class_stats[ST_COUNT];
     NameRule rule;
     std::string status = "starting";
     bool scanning = false;
@@ -361,15 +363,19 @@ inline int count(const Item& it) { return rdv<int>(it.addr + 0x40); }
 inline bool set_count(const Item& it, int v) { return wr<int>(it.addr + 0x40, v); }
 inline uintptr_t item_desc(const Item& it) { return rdv<uintptr_t>(it.addr + 0x60); }
 
-inline bool has_stat(int s) { return g.stats[s].off >= 0; }
+inline const StatField& stat_field(uintptr_t desc, int s) {
+    auto it = g.class_stats[s].find(desc ? rdv<uintptr_t>(desc) : 0);
+    return it != g.class_stats[s].end() ? it->second : g.stats[s];
+}
+inline bool has_stat(int s) { return g.stats[s].off >= 0 || !g.class_stats[s].empty(); }
 inline float get_stat(uintptr_t desc, int s) {
-    auto& f = g.stats[s];
+    auto& f = stat_field(desc, s);
     if (f.off < 0) return NAN;
     if (f.shift >= 0) return (float)((rdv<uint32_t>(desc + f.off) >> f.shift) & NIBBLE);
     return f.is_float ? rdv<float>(desc + f.off, NAN) : (float)rdv<int>(desc + f.off);
 }
 inline bool write_stat(uintptr_t desc, int s, float v) {
-    auto& f = g.stats[s];
+    auto& f = stat_field(desc, s);
     if (f.off < 0 || !desc) return false;
     if (f.shift >= 0) {
         uint32_t word = rdv<uint32_t>(desc + f.off), value = (uint32_t)std::lround(v) & NIBBLE;
@@ -452,6 +458,24 @@ inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInf
         if (few ? best.votes < samples || best.votes < 2 : best.votes < std::max(8, (int)(samples * 0.7))) best.off = -1;
         out[s] = best;
     }
+}
+
+using ClassStats = std::array<std::map<uintptr_t, StatField>, ST_COUNT>;
+const int CLASS_SAMPLES = 8;
+
+inline ClassStats calibrate_classes(const std::vector<std::pair<uintptr_t, const ItemInfo*>>& descs, const StatField global[ST_COUNT]) {
+    std::map<uintptr_t, std::vector<std::pair<uintptr_t, const ItemInfo*>>> by_class;
+    for (auto& d : descs) by_class[rdv<uintptr_t>(d.first)].push_back(d);
+    ClassStats out;
+    for (auto& [vt, list] : by_class) {
+        if (!vt) continue;
+        StatField fields[ST_COUNT];
+        calibrate_stats(list, fields);
+        for (int s = 0; s < ST_COUNT; s++)
+            if (fields[s].off >= 0 && fields[s].samples >= CLASS_SAMPLES && (fields[s].off != global[s].off || fields[s].is_float != global[s].is_float || fields[s].shift != global[s].shift))
+                out[s][vt] = fields[s];
+    }
+    return out;
 }
 
 inline bool resolve_classes(uintptr_t base) {
@@ -560,12 +584,14 @@ inline void refresh() {
     }
     StatField stats[ST_COUNT];
     calibrate_stats(desc_list, stats);
+    auto class_stats = calibrate_classes(desc_list, stats);
 
     std::lock_guard<std::mutex> l(mx);
     int calibrated = 0;
     for (int s = 0; s < ST_COUNT; s++) {
         if (stats[s].off < 0 && g.stats[s].off >= 0) stats[s] = g.stats[s];
-        calibrated += stats[s].off >= 0;
+        for (auto& [vt, f] : g.class_stats[s]) class_stats[s].emplace(vt, f);
+        calibrated += stats[s].off >= 0 || !class_stats[s].empty();
     }
     g.players = found[2 + N_INV_CLASSES];
     g.equipment = found[3 + N_INV_CLASSES];
@@ -577,7 +603,7 @@ inline void refresh() {
     g.wallets = wallets;
     g.invs = std::move(invs);
     g.descs = std::move(descs);
-    for (int s = 0; s < ST_COUNT; s++) g.stats[s] = stats[s];
+    for (int s = 0; s < ST_COUNT; s++) g.stats[s] = stats[s], g.class_stats[s] = std::move(class_stats[s]);
     g.rule = rule;
     char s[260];
     snprintf(s, sizeof s,
@@ -600,6 +626,7 @@ inline std::string stat_report() {
     for (int s = 0; s < ST_COUNT; s++) {
         char b[96];
         auto& f = g.stats[s];
+        if (!g.class_stats[s].empty()) out += std::string(STAT_KEYS[s]) + " in " + std::to_string(g.class_stats[s].size()) + " classes, ";
         if (f.off >= 0 && f.shift >= 0) snprintf(b, sizeof b, "%s=bits+%x>>%d(%d/%d) ", STAT_KEYS[s], f.off, f.shift, f.votes, f.samples);
         else snprintf(b, sizeof b, "%s=%s+%x(%d/%d) ", STAT_KEYS[s], f.off < 0 ? "none" : f.is_float ? "f" : "i", f.off < 0 ? 0 : f.off, f.votes, f.samples);
         out += b;

@@ -390,23 +390,171 @@ inline void item_label(const char* name, const char* id) {
 
 inline uintptr_t g_edit_desc = 0, g_edit_item = 0;
 inline std::string g_edit_name, g_edit_id;
+inline const ItemInfo* g_edit_info = nullptr;
 inline bool g_edit_request = false;
 inline const char* RARITY[] = {"Gray", "Green", "Blue", "Purple", "Orange", "Gold"};
+inline const ImU32 RARITY_COLORS[] = {IM_COL32(170, 168, 162, 255), IM_COL32(110, 200, 95, 255), IM_COL32(80, 150, 245, 255),
+                                      IM_COL32(175, 110, 245, 255), IM_COL32(243, 154, 30, 255), IM_COL32(235, 205, 90, 255)};
+const float NO_RELOAD_MAGAZINE = 999, NO_RELOAD_TIME = 0.05f;
 
 inline bool editable(const game::Item& it) {
     if (!it.info) return false;
     int c = cat_of(it.info->id);
-    return c == C_WEAPONS || c == C_THROWABLE;
+    return c == C_WEAPONS || c == C_THROWABLE || !strncmp(it.info->id, "Flashlight_", 11) || !strncmp(it.info->id, "Special_Hook", 12);
 }
 
 inline void open_editor(const game::Item& it, const std::string& id) {
-    g_edit_desc = game::item_desc(it), g_edit_item = it.addr, g_edit_name = it.name, g_edit_id = id;
+    g_edit_desc = game::item_desc(it), g_edit_item = it.addr, g_edit_name = it.name, g_edit_id = id, g_edit_info = it.info;
     g_edit_request = true;
+}
+
+inline void remember_edits() {
+    cheats::set_weapon_edits(config::cfg.weapon_edits);
+    save_config();
 }
 
 inline void edit_stat(int stat, float v) {
     logf("edit: %s %s %g -> %g", g_edit_id.c_str(), STAT_KEYS[stat], game::get_stat(g_edit_desc, stat), v);
-    game::set_stat(g_edit_desc, stat, v);
+    uintptr_t desc = g_edit_desc;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        game::set_stat(desc, stat, v);
+    });
+    config::cfg.weapon_edits[g_edit_id][STAT_KEYS[stat]] = v;
+    remember_edits();
+}
+
+inline float game_value(int stat) { return g_edit_info ? g_edit_info->st[stat] : NAN; }
+
+inline void reset_stat(int stat) {
+    float original = game_value(stat);
+    auto it = config::cfg.weapon_edits.find(g_edit_id);
+    if (it != config::cfg.weapon_edits.end() && it->second.erase(STAT_KEYS[stat]) && it->second.empty()) config::cfg.weapon_edits.erase(it);
+    remember_edits();
+    if (std::isnan(original)) return;
+    uintptr_t desc = g_edit_desc;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        game::write_stat(desc, stat, original);
+        game::g.stat_overrides.erase({desc, stat});
+    });
+}
+
+inline bool edited(int stat) {
+    auto it = config::cfg.weapon_edits.find(g_edit_id);
+    return it != config::cfg.weapon_edits.end() && it->second.count(STAT_KEYS[stat]);
+}
+
+struct EditRow { int stat; const char* name; const char* fmt; float mul; };
+inline const EditRow EDIT_ROWS[] = {{ST_Damage, "Damage", "%.1f", 2},           {ST_Condition, "Durability", "%.0f", 10},
+                                    {ST_CriticalProb, "Critical chance", "%.2f", 2}, {ST_CriticalDamage, "Critical damage", "%.2f", 2},
+                                    {ST_Force, "Knockback", "%.1f", 2},           {ST_StaminaUsage, "Stamina per swing", "%.3f", 0.5f},
+                                    {ST_DamageRange, "Reach", "%.2f", 1.5f},      {ST_AmmoCount, "Magazine", "%.0f", 2},
+                                    {ST_ReloadTime, "Reload time", "%.2f", 0.5f}, {ST_AllowedRepairs, "Repairs left", "%.0f", 0},
+                                    {ST_UpgradeLevel, "Upgrade level", "%.0f", 0}, {ST_MaxStackCount, "Max stack", "%.0f", 0},
+                                    {ST_DepletionTime, "Battery", "%.0f", 10},    {ST_Price, "Price", "%.0f", 0}};
+
+inline void stat_cell(const EditRow& r, float v, float width) {
+    ImGui::PushID(r.stat);
+    bool changed = edited(r.stat);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, V(T.frame, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_Border, changed ? V(T.accent, 0.55f) : V(T.line_soft));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(14), S(12)});
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::BeginChild("cell", {width, 0}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+    float top = ImGui::GetCursorPosY();
+    caps(r.name, changed ? T.accent : 0);
+    float original = game_value(r.stat);
+    if (changed && !std::isnan(original)) {
+        char was[48];
+        snprintf(was, sizeof was, "Game %g", original);
+        float w = f_small->CalcTextSizeA(font_size(f_small), FLT_MAX, 0, was).x;
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - w);
+        ImGui::SetCursorPosY(top);
+        label(was);
+    }
+    ImGui::Dummy({0, S(2)});
+    float bw = S(58), gap = S(6);
+    ImGui::PushFont(f_tile);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0, 0, 0, 0});
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - bw * 2 - gap * 2);
+    float e = v;
+    ImGui::InputFloat("##v", &e, 0, 0, r.fmt);
+    bool done = ImGui::IsItemDeactivatedAfterEdit() && e != v;
+    float h = ImGui::GetItemRectSize().y;
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+    if (done) edit_stat(r.stat, e);
+    char quick[16];
+    snprintf(quick, sizeof quick, r.mul > 0 ? "x%g" : "+1", r.mul);
+    ImGui::SameLine(0, gap);
+    if (ImGui::Button(quick, {bw, h})) edit_stat(r.stat, r.mul > 0 ? v * r.mul : v + 1);
+    ImGui::SameLine(0, gap);
+    ImGui::BeginDisabled(!changed);
+    if (ImGui::Button("Undo", {bw, h})) reset_stat(r.stat);
+    ImGui::EndDisabled();
+    ImGui::EndChild();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+    ImGui::PopID();
+}
+
+inline void rarity_picker() {
+    int cur = game::rarity(g_edit_item, g_edit_desc);
+    if (cur < 0 || cur >= 6) return;
+    caps("RARITY OF THIS ONE");
+    ImGui::Dummy({0, S(2)});
+    for (int i = 0; i < 6; i++) {
+        if (i) ImGui::SameLine(0, S(6));
+        bool on = i == cur;
+        ImGui::PushStyleColor(ImGuiCol_Button, on ? V(RARITY_COLORS[i], 0.28f) : ImVec4{1, 1, 1, 0.04f});
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, V(RARITY_COLORS[i], 0.2f));
+        ImGui::PushStyleColor(ImGuiCol_Text, on ? V(RARITY_COLORS[i]) : V(T.soft));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, S(20));
+        if (ImGui::Button(RARITY[i]) && !on) {
+            logf("edit: %s rarity -> %s", g_edit_id.c_str(), RARITY[i]);
+            uintptr_t item = g_edit_item, desc = g_edit_desc;
+            on_game_thread([=] {
+                std::lock_guard<std::mutex> l(game::mx);
+                game::set_rarity(item, desc, i);
+            });
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+    }
+    ImGui::Dummy({0, S(10)});
+}
+
+inline bool has_own_stat(int stat);
+
+inline void editor_extras() {
+    const char* id = g_edit_id.c_str();
+    bool gun = has_own_stat(ST_AmmoCount) && !(g_edit_info && g_edit_info->melee);
+    bool bow = strstr(id, "Bow") != nullptr, melee = g_edit_info && g_edit_info->melee;
+    bool flashlight = !strncmp(id, "Flashlight_", 11), hook = !strncmp(id, "Special_Hook", 12);
+    if (!gun && !bow && !melee && !flashlight && !hook) return;
+    caps("EXTRAS");
+    if (gun) {
+        bool no_reload = game::get_stat(g_edit_desc, ST_AmmoCount) >= NO_RELOAD_MAGAZINE;
+        if (switch_row("No reload for this weapon", "A 999 round magazine and an instant reload, for every one of this type.", no_reload)) {
+            if (no_reload) {
+                edit_stat(ST_AmmoCount, NO_RELOAD_MAGAZINE);
+                if (!std::isnan(game::get_stat(g_edit_desc, ST_ReloadTime))) edit_stat(ST_ReloadTime, NO_RELOAD_TIME);
+            } else {
+                reset_stat(ST_AmmoCount), reset_stat(ST_ReloadTime);
+            }
+        }
+    }
+    if (gun || bow) cheat_switch("ammo", "Infinite ammo, every weapon");
+    if (melee) cheat_switch("durability", "Unbreakable, every melee weapon");
+    if (flashlight) cheat_switch("uv", "Infinite UV light");
+    if (hook) cheat_switch("hook", "Infinite grappling hook");
+    ImGui::Dummy({0, S(6)});
+}
+
+inline bool has_own_stat(int stat) {
+    if (!game::has_stat(stat) || std::isnan(game::get_stat(g_edit_desc, stat))) return false;
+    return !g_edit_info || !std::isnan(game_value(stat)) || edited(stat);
 }
 
 inline void editor_popup() {
@@ -415,71 +563,49 @@ inline void editor_popup() {
         g_edit_request = false;
     }
     ImGuiIO& io = ImGui::GetIO();
+    ImVec2 size{std::min(S(700), io.DisplaySize.x * 0.92f), std::min(S(780), io.DisplaySize.y * 0.88f)};
     ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_Appearing, {0.5f, 0.5f});
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(24), S(20)});
-    if (!ImGui::BeginPopupModal("Edit weapon", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(26), S(22)});
+    if (!ImGui::BeginPopupModal("Edit weapon", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar)) {
         ImGui::PopStyleVar();
         return;
     }
+    Cat cat = category(g_edit_id.c_str());
     ImGui::PushFont(f_head);
-    ImGui::TextUnformatted(g_edit_name.c_str());
+    ImGui::TextUnformatted(g_edit_name.empty() ? g_edit_id.c_str() : g_edit_name.c_str());
     ImGui::PopFont();
-    label((g_edit_id + "  -  stats apply to every item of this type while the trainer runs, rarity to this weapon").c_str());
-    ImGui::Dummy({0, S(4)});
-    struct Row { int stat; const char* name; const char* fmt; float mul; };
-    const Row rows[] = {{ST_Damage, "Damage", "%.1f", 2},          {ST_Condition, "Durability", "%.0f", 10},
-                        {ST_CriticalProb, "Critical chance", "%.2f", 2}, {ST_CriticalDamage, "Critical damage", "%.2f", 2},
-                        {ST_Force, "Knockback force", "%.1f", 2},  {ST_StaminaUsage, "Stamina per swing", "%.3f", 0.5f},
-                        {ST_DamageRange, "Reach", "%.2f", 1.5f},   {ST_UpgradeLevel, "Upgrade level", "%.0f", 0},
-                        {ST_AllowedRepairs, "Repairs left", "%.0f", 0}, {ST_MaxStackCount, "Max stack", "%.0f", 0},
-                        {ST_AmmoCount, "Magazine size", "%.0f", 2}, {ST_ReloadTime, "Reload time", "%.2f", 0.5f},
-                        {ST_Price, "Price", "%.0f", 0}};
-    int shown = 0;
-    if (ImGui::BeginTable("stats", 3, ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(190));
-        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthFixed, S(180));
-        ImGui::TableSetupColumn("quick", ImGuiTableColumnFlags_WidthFixed, S(70));
-        for (auto& r : rows) {
-            if (!game::has_stat(r.stat)) continue;
-            float v = game::get_stat(g_edit_desc, r.stat);
-            if (std::isnan(v)) continue;
-            shown++;
-            ImGui::PushID(r.stat);
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(r.name);
-            ImGui::TableNextColumn();
-            ImGui::SetNextItemWidth(S(170));
-            float e = v;
-            ImGui::InputFloat("##v", &e, 0, 0, r.fmt);
-            if (ImGui::IsItemDeactivatedAfterEdit()) edit_stat(r.stat, e);
-            ImGui::TableNextColumn();
-            char b[16];
-            snprintf(b, sizeof b, r.mul > 0 ? "x%g" : "+1", r.mul);
-            if (ImGui::Button(b, {S(64), 0})) edit_stat(r.stat, r.mul > 0 ? v * r.mul : v + 1);
-            ImGui::PopID();
+    caps(cat.label, cat.color);
+    label(g_edit_id.c_str());
+    ImGui::Dummy({0, S(8)});
+    float footer = ImGui::GetFrameHeight() + S(14);
+    ImGui::BeginChild("body", {0, -footer}, ImGuiChildFlags_None);
+    std::vector<const EditRow*> rows;
+    for (auto& r : EDIT_ROWS)
+        if (has_own_stat(r.stat)) rows.push_back(&r);
+    if (!rows.empty()) {
+        caps("STATS, EVERY ONE OF THIS TYPE");
+        ImGui::Dummy({0, S(2)});
+        float gap = S(10), cell = (ImGui::GetContentRegionAvail().x - gap) / 2;
+        for (size_t i = 0; i < rows.size(); i++) {
+            if (i % 2) ImGui::SameLine(0, gap);
+            stat_cell(*rows[i], game::get_stat(g_edit_desc, rows[i]->stat), cell);
         }
-        {
-            int cur = game::rarity(g_edit_item, g_edit_desc);
-            if (cur >= 0 && cur < 6) {
-                shown++;
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted("Rarity");
-                ImGui::TableNextColumn();
-                ImGui::SetNextItemWidth(S(170));
-                if (ImGui::Combo("##rarity", &cur, RARITY, 6)) {
-                    logf("edit: %s rarity -> %s", g_edit_id.c_str(), RARITY[cur]);
-                    game::set_rarity(g_edit_item, g_edit_desc, cur);
-                }
-            }
-        }
-        ImGui::EndTable();
+        ImGui::Dummy({0, S(10)});
     }
-    if (!shown) note("No editable stats found for this item. Press Refresh after loading your save and check fatrainer.log.");
-    ImGui::Dummy({0, S(6)});
+    rarity_picker();
+    editor_extras();
+    if (rows.empty()) note("No editable stats found for this item. Press Refresh after loading your save and check fatrainer.log.");
+    else note("Stat edits change every item of this type and come back each time you start the game. Rarity changes only this one.");
+    ImGui::EndChild();
+    ImGui::Dummy({0, S(4)});
+    bool any = config::cfg.weapon_edits.count(g_edit_id) > 0;
+    ImGui::BeginDisabled(!any);
+    if (ImGui::Button("Undo every edit", {0, ImGui::GetFrameHeight()}))
+        for (auto& r : EDIT_ROWS)
+            if (edited(r.stat)) reset_stat(r.stat);
+    ImGui::EndDisabled();
+    ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - S(120));
     if (accent_button("Done", {S(120), 0})) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
     ImGui::PopStyleVar();
@@ -780,6 +906,7 @@ inline void combat_page() {
     end_card();
     begin_card("weapons", "WEAPONS");
     cheat_switch("durability");
+    cheat_switch("item_dupe");
     ImGui::Dummy({0, S(4)});
     tweak_sliders(cheats::G_WEAPONS);
     end_card();
@@ -2450,7 +2577,7 @@ inline const Page PAGES[] = {
 #else
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS",
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
-    {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability", "melee_speed"}},
+    {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability", "item_dupe", "melee_speed"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
@@ -3098,6 +3225,7 @@ inline void startup() {
     if (config::cfg.remember_cheats) p.cheats = config::cfg.cheats_on;
     p.tweaks = config::cfg.tweaks;
     cheats::apply_profile(p);
+    cheats::set_weapon_edits(config::cfg.weapon_edits);
 #endif
     if (getenv("DLT_ESP")) config::cfg.esp.on = config::cfg.esp.health_text = config::cfg.esp.rank = config::cfg.esp.rage = true;
 }

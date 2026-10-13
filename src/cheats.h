@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <atomic>
 #include <deque>
 #include <random>
@@ -66,14 +67,15 @@ inline Cheat CHEATS[] = {
      {{"RopeEnergyRegenTime", 0.01f}}, {"CanUseHook", "ThrowHookCanUseInAir"}},
     {"uv", "Infinite UV flashlight", "The UV light never drains.", {{"FlashlightDrainMul", 0}, {"FlashlightRechargeSpeed", 1000}}, {}},
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},
-    {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full.", {}, {}},
+    {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full, arrows and crossbow bolts too.", {}, {}},
     {"supplies", "Infinite consumables", "Medkits, throwables and crafting materials never run out.", {}, {}},
+    {"item_dupe", "Item Dupe", "Weapons and other single items you drop stay in your backpack too, so they lie on the ground and you still have them. Upgrades are not copied.", {}, {}},
     {"lockpick", "Instant lockpicking", "Every pick position opens the lock and lockpicks never break.", {}, {}},
     {"durability", "Unbreakable weapons", "Melee weapons stop losing durability when you hit things.",
      {{"BluntWpnDurabilityLoss", 0}, {"CutWpnDurabilityLoss", 0}}, {}},
     {"no_fall", "No fall damage", "Land safely from any height.", {{"FallDamageReduction", 1}, {"FallHeightMedium", 9999}, {"FallHeightHigh", 9999}},
      {"FallDampingEnabled", "AutomaticFallDamping"}},
-    {"no_reload", "No reload", "999 round magazines and instant reloads. Best together with infinite ammo.",
+    {"no_reload", "No reload", "999 round magazines and instant reloads, crossbows too. Best together with infinite ammo.",
      {{"FirearmsPistolReloadTimeMul", 0.05f}, {"FirearmsRevolverReloadTimeMul", 0.05f}, {"FirearmsRifleReloadTimeMul", 0.05f},
       {"FirearmsShotgunReloadTimeMul", 0.05f}, {"FirearmsHeavyReloadTimeMul", 0.05f}},
      {"FastRevolverReload"}},
@@ -98,6 +100,26 @@ inline Cheat CHEATS[] = {
 enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER, G_WEAPONS };
 
 struct ScriptVar { const char* name; float at_max; };
+
+inline const char* THROWABLE_KINDS[] = {"flare", "grenade", "decoy", "molotov", "throwing_star", "magic_wand", "injector", "mine"};
+const int BTZ_TEAM_SIZES = 4;
+const float RECHARGE_AT_MAX = 0.1f;
+
+inline std::vector<ScriptVar> throwable_recharge_vars() {
+    static std::deque<std::string> names;
+    std::vector<ScriptVar> out;
+    auto add = [&](const std::string& name, float at_max) { names.push_back(name), out.push_back({names.back().c_str(), at_max}); };
+    for (const char* kind : THROWABLE_KINDS) {
+        std::string at = std::string("f_") + kind + "_throw_";
+        add(at + "recharge_time", RECHARGE_AT_MAX), add(at + "recharge_time_drained", RECHARGE_AT_MAX);
+        add(at + "recharge_delay", 0), add(at + "recharge_delay_drained", 0), add(at + "use_amount", 0);
+        for (int team = 1; team <= BTZ_TEAM_SIZES; team++) {
+            std::string humans = "_btz_" + std::to_string(team) + "_human";
+            add(at + "use_amount" + humans, 0), add(at + "recharge_time_drained" + humans, RECHARGE_AT_MAX);
+        }
+    }
+    return out;
+}
 
 struct Tweak {
     const char* key;
@@ -130,6 +152,8 @@ inline Tweak TWEAKS[] = {
     {"z_claws", "Claws", "Reach of your claw swipes. The game still aims at the survivor nearest to you.", G_ZOMBIE, {"RangeMeleeMul"}},
     {"z_spit", "Spit hit radius", "How far from a survivor your spit can land and still hit him (normally 5 m). The game that hosts the match decides spit hits, so this only works while you host, never when you invade, and it is off while you play a survivor.",
      G_ZOMBIE, {}, {}, 6.0f},
+    {"h_recharge", "Throwable recharge", "How fast UV flares, injectors, grenades, molotovs, throwing stars and mines come back in Be The Zombie. At Max they are back right away and a throw uses none of the charge.",
+     G_HUMAN, {}, throwable_recharge_vars()},
     {"h_dfa", "Death from above range", "How far away the hunter can be when you start it. At Max, 12 m. Also grows the landing shockwave.",
      G_HUMAN, {"JumpAttackRange", "JumpAttackShockwaveRadius"}, {{"f_btz_jump_attack_range", 12}, {"f_btz_jump_attack_range_velocity_factor", 0.5f}}},
     {"h_dfa_pull", "Death from above pull", "How far off target you can start it; the attack pulls you onto the hunter. At Max he can be beside or behind you.",
@@ -486,7 +510,7 @@ inline void set_param(const std::string& name, float value, bool is_switch, cons
 }
 
 inline void set_desc_stat(uintptr_t desc, int stat, float v, std::set<uintptr_t>& touched) {
-    auto& f = g.stats[stat];
+    auto& f = game::stat_field(desc, stat);
     if (f.off < 0 || !desc) return;
     int n = (int)std::lround(v);
     put_bytes(desc + f.off, f.is_float ? (const void*)&v : (const void*)&n, 4, touched);
@@ -512,7 +536,7 @@ inline bool human_targeting_set() {
 inline bool human_targeting_widened() { return side != SIDE_HUNTER && human_targeting_set(); }
 
 inline void scale_desc_stat(uintptr_t desc, int stat, float factor, std::set<uintptr_t>& touched) {
-    auto& f = g.stats[stat];
+    auto& f = game::stat_field(desc, stat);
     if (factor == 1.0f || f.off < 0 || !f.is_float) return;
     float base = original_float(desc + f.off);
     if (base > 0 && base < 1000) set_desc_stat(desc, stat, base * factor, touched);
@@ -810,14 +834,14 @@ inline void apply_overrides() {
 inline float scaled_var_float(uintptr_t self, uintptr_t name, uintptr_t scope, uintptr_t extra) {
     float v = original_var_float(self, name, scope, extra);
     const char* s = name ? *(const char**)name : nullptr;
-    if (!s || strncmp(s, "f_btz_", 6)) return v;
+    if (!s || strncmp(s, "f_", 2)) return v;
     float best = v;
     for (auto& t : TWEAKS)
         for (auto& var : t.vars)
             if (!strcmp(s, var.name) && t.factor != 1.0f && tweak_applies(t)) {
                 float strength = std::clamp((t.factor - 1.0f) / (t.max - 1.0f), 0.0f, 1.0f);
                 float moved = v + (var.at_max - v) * strength;
-                if (std::fabs(moved) > std::fabs(best)) best = moved;
+                if (std::fabs(moved - v) > std::fabs(best - v)) best = moved;
             }
     return best;
 }
@@ -1273,7 +1297,7 @@ inline void keep_stacks(bool ammo, bool supplies) {
         auto present = items_present(inv.obj);
         for (auto& it : inv.items) {
             bool wanted = is_ammo(it) ? ammo : supplies;
-            if (!wanted || !it.info || !(it.info->st[ST_MaxStackCount] > 1) || !present.count(it.addr)) continue;
+            if (!wanted || !it.info || !(is_ammo(it) || it.info->st[ST_MaxStackCount] > 1) || !present.count(it.addr)) continue;
             int cur = game::count(it);
             auto f = stack_floor.find(it.addr);
             if (f == stack_floor.end()) f = stack_floor.emplace(it.addr, std::max(cur, 2)).first;
@@ -1281,6 +1305,113 @@ inline void keep_stacks(bool ammo, bool supplies) {
             if (cur < f->second) game::set_count(it, f->second);
         }
     }
+}
+
+const size_t ITEM_DATA = 0x40, ITEM_DATA_SIZE = 0xC0, DATA_COUNT = 0x00, DATA_CONDITION = 0x04, DATA_DESC = 0x20, DATA_UPGRADE = 0x60;
+const DWORD DUPE_SAME_ITEM_MS = 2000;
+struct HeldItem { std::array<uint8_t, ITEM_DATA_SIZE> data; };
+inline std::unordered_map<uintptr_t, HeldItem> held_items;
+inline std::map<uintptr_t, int> held_elsewhere;
+inline std::map<uintptr_t, DWORD> duped_at;
+inline long long held_money = -1;
+inline int dupes = 0;
+
+inline std::mutex edits_mx;
+inline std::map<std::string, std::map<std::string, float>> weapon_edits;
+
+inline void set_weapon_edits(const std::map<std::string, std::map<std::string, float>>& edits) {
+    std::lock_guard<std::mutex> l(edits_mx);
+    weapon_edits = edits;
+}
+
+inline int stat_index(const std::string& key) {
+    for (int s = 0; s < ST_COUNT; s++)
+        if (key == STAT_KEYS[s]) return s;
+    return -1;
+}
+
+inline void apply_weapon_edits() {
+    std::lock_guard<std::mutex> l(edits_mx);
+    for (auto& [id, stats] : weapon_edits) {
+        auto d = g.descs.find(id);
+        if (d == g.descs.end()) continue;
+        for (auto& [key, v] : stats) {
+            int s = stat_index(key);
+            auto done = g.stat_overrides.find({d->second, s});
+            if (s >= 0 && (done == g.stat_overrides.end() || done->second != v)) game::set_stat(d->second, s, v);
+        }
+    }
+}
+
+inline uintptr_t live_backpack() {
+    for (auto& inv : g.invs)
+        if (inv.kind == game::K_BACKPACK && game::live_inventory(inv.obj)) return inv.obj;
+    return 0;
+}
+
+inline std::map<uintptr_t, int> descs_elsewhere(uintptr_t backpack) {
+    std::map<uintptr_t, int> out;
+    for (auto& inv : g.invs)
+        if (inv.obj != backpack && game::live_inventory(inv.obj))
+            for (uintptr_t item : items_present(inv.obj)) out[rdv<uintptr_t>(item + ITEM_DATA + DATA_DESC)]++;
+    return out;
+}
+
+inline long long money_held() {
+    long long most = 0;
+    for (uintptr_t w : g.wallets) most = std::max<long long>(most, game::money(w));
+    return most;
+}
+
+inline const char* desc_id(uintptr_t desc) {
+    const ItemInfo* info = game::str_at(rdv<uintptr_t>(desc + 0x18));
+    return info ? info->id : "an item";
+}
+
+inline bool duplicate_into(uintptr_t inv, const HeldItem& held) {
+    std::array<uint8_t, ITEM_DATA_SIZE> data = held.data;
+    uintptr_t none = 0;
+    memcpy(data.data() + DATA_UPGRADE, &none, sizeof none);
+    auto add = (game::AddItemFn)rdv<uintptr_t>(rdv<uintptr_t>(inv) + 6 * 8);
+    if (!add) return false;
+    size_t before = items_present(inv).size();
+    add(inv, data.data(), 0, false);
+    if (items_present(inv).size() == before) add(inv, data.data(), 0, true);
+    return items_present(inv).size() != before;
+}
+
+inline void dupe_drops(bool on) {
+    uintptr_t backpack = on ? live_backpack() : 0;
+    if (!backpack) {
+        held_items.clear(), held_elsewhere.clear(), held_money = -1;
+        return;
+    }
+    auto present = items_present(backpack);
+    auto elsewhere = descs_elsewhere(backpack);
+    long long money = money_held();
+    bool sold = held_money >= 0 && money > held_money;
+    DWORD now = GetTickCount();
+    for (auto& [addr, held] : held_items) {
+        if (present.count(addr) || sold) continue;
+        uintptr_t desc;
+        float condition;
+        memcpy(&desc, held.data.data() + DATA_DESC, sizeof desc);
+        memcpy(&condition, held.data.data() + DATA_CONDITION, sizeof condition);
+        bool moved = elsewhere[desc] > held_elsewhere[desc];
+        auto last = duped_at.find(desc);
+        bool repeating = last != duped_at.end() && now - last->second < DUPE_SAME_ITEM_MS;
+        if (moved || repeating || !(condition > 0)) continue;
+        if (duplicate_into(backpack, held)) duped_at[desc] = now, dupes++, logf_hook("dupe: %s kept in the backpack", desc_id(desc));
+    }
+    held_items.clear();
+    for (uintptr_t addr : items_present(backpack)) {
+        HeldItem h;
+        if (!rd(addr + ITEM_DATA, h.data.data(), ITEM_DATA_SIZE)) continue;
+        int count;
+        memcpy(&count, h.data.data() + DATA_COUNT, sizeof count);
+        if (count <= 1) held_items.emplace(addr, h);
+    }
+    held_elsewhere = std::move(elsewhere), held_money = money;
 }
 
 inline void keep_durability(bool on) {
@@ -2122,11 +2253,13 @@ inline void tick() {
     apply_spit_radius(playing_hunter() ? std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max) : 1.0f);
     route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
+    apply_weapon_edits();
     game::reapply_stats();
     player = find_player();
     if (alive(player)) {
         keep_stacks(is_on("ammo"), is_on("supplies"));
         keep_durability(is_on("durability"));
+        dupe_drops(is_on("item_dupe"));
         if (is_on("one_hit")) weaken_enemies();
         if (is_on("one_hit_hunter")) weaken_hunter();
     }

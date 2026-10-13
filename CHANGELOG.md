@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5 b15
+
+Survivor Update
+
+- New: the weapon editor is redesigned: big editable values in a two column grid, the game's value next to every stat you changed, Undo per stat and for everything, rarity as colored buttons, and extras that fit the item (no reload for guns and crossbows, infinite ammo, unbreakable melee weapons, infinite UV for the UV flashlight, infinite grappling hook). Flashlights and the grappling hook can be edited too.
+- New: weapon edits are saved and come back every time you start the game.
+- New: Item Dupe on the Combat page: weapons and other single items you drop stay in your backpack too.
+- New: Throwable recharge on the PvP page: UV flares, injectors, grenades, molotovs, throwing stars and mines come back faster in Be The Zombie, at Max right away.
+- Fixed: No reload never changed magazine sizes, because guns and throwables keep the magazine in different places; the trainer now finds it for every kind of item, crossbows included.
+- Fixed: Infinite ammo skipped crossbow bolts.
+
 ## 2.5 b14
 
 Survivor Update

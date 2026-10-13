@@ -94,6 +94,7 @@ struct Config {
     std::map<std::string, float> rainbow;
     Crosshair crosshair;
     std::map<std::string, std::string> texts;
+    std::map<std::string, std::map<std::string, float>> weapon_edits;
     std::string game_language, voice_language, subtitle_language;
     float fov = 1.0f;
     Look look;
@@ -341,6 +342,10 @@ inline void load(const std::string& path) {
         else if (k == "voice_language") cfg.voice_language = v;
         else if (k == "subtitle_language") cfg.subtitle_language = v;
         else if (k == "fov") cfg.fov = std::clamp((float)atof(v.c_str()), FOV_MIN, FOV_MAX);
+        else if (k == "weapon_edit") {
+            size_t a = v.find(','), b = a == std::string::npos ? a : v.find(',', a + 1);
+            if (b != std::string::npos) cfg.weapon_edits[v.substr(0, a)][v.substr(a + 1, b - a - 1)] = (float)atof(v.c_str() + b + 1);
+        }
         else if (k == "crosshair") {
             auto& x = cfg.crosshair;
             int on = 0, outline = 1;
@@ -425,6 +430,8 @@ inline bool save(const std::string& path) {
     if (!cfg.voice_language.empty()) fprintf(f, "voice_language=%s\n", cfg.voice_language.c_str());
     if (!cfg.subtitle_language.empty()) fprintf(f, "subtitle_language=%s\n", cfg.subtitle_language.c_str());
     if (cfg.fov != 1.0f) fprintf(f, "fov=%.2f\n", cfg.fov);
+    for (auto& [id, stats] : cfg.weapon_edits)
+        for (auto& [stat, value] : stats) fprintf(f, "weapon_edit=%s,%s,%g\n", id.c_str(), stat.c_str(), value);
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
     fclose(f);
     return true;
