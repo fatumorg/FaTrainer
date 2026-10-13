@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5 b14
+
+Survivor Update
+
+- Fixed: Melee speed did nothing. The weapon swing value the trainer changed is not used by the game; Melee speed now speeds up your animations while you hold a melee weapon.
+- Fixed: the voices stayed English with Polish picked. The game also sets the voices from its own settings; the trainer now catches that call too.
+- Fixed: colored callouts showed raw tags in the killfeed. Colors now use the killfeed's own color codes, and texts you colored before are converted.
+- New: more callouts: Dropkicked, From Above, Drop Attack, Clawed, Pounce Blast, Horde Hit, Horde Kill, UV Off, Toxic, Sense Off, Tripped, Headshot, Downed, Finished, Spiked, Nest Down and Hunter Down.
+- New: Preview on a text and Show in the killfeed post the line into the game's real killfeed when you are in a game.
+- Fixed: Show on a HUD piece now shows the whole piece, also the parts the game keeps hidden until something happens.
+
 ## 2.5 b13
 
 Survivor Update

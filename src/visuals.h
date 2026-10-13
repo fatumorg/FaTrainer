@@ -145,6 +145,8 @@ struct Ui {
     float(__fastcall* get_opacity)(uintptr_t element) = nullptr;
     void(__fastcall* set_opacity)(uintptr_t element, float opacity) = nullptr;
     bool(__fastcall* shown)(uintptr_t element) = nullptr;
+    bool(__fastcall* visible)(uintptr_t element) = nullptr;
+    void(__fastcall* set_visible)(uintptr_t element, bool visible) = nullptr;
 };
 
 inline Ui ui;
@@ -266,8 +268,11 @@ inline void write_color(const HudNode& n, const float rgb[3]) {
     trainer_writing = false;
 }
 
+inline void release_forced();
+
 inline void forget_hud() {
     std::lock_guard<std::mutex> l(hud_mx);
+    release_forced();
     for (auto& n : hud_nodes)
         if (n.wrote && node_alive(n)) write_color(n, n.original);
     for (auto& r : hud_roots)
@@ -300,16 +305,57 @@ inline bool part_hidden(int part) {
 inline int preview_part = -1;
 inline DWORD preview_until = 0;
 
+struct Forced { uintptr_t element, vtable; float opacity; bool visible; };
+const size_t FORCED_LIMIT = 4000;
+const int FORCED_CHILDREN = 512;
+inline std::vector<Forced> forced;
+inline int forced_part = -1;
+
+inline bool previewing_part() { return GetTickCount() < preview_until && preview_part >= 0; }
+
+inline void release_forced() {
+    for (auto& f : forced) {
+        if (ui.vtable_of(f.element) != f.vtable) continue;
+        ui.set_opacity(f.element, f.opacity);
+        if (!f.visible && ui.set_visible) ui.set_visible(f.element, false);
+    }
+    forced.clear(), forced_part = -1;
+}
+
+inline void force_preview() {
+    if (!ui.get_opacity || !ui.set_opacity || !ui.visible || !ui.set_visible) return;
+    if (!previewing_part() || forced_part != preview_part) release_forced();
+    if (!previewing_part()) return;
+    if (forced_part != preview_part) {
+        forced_part = preview_part;
+        std::vector<uintptr_t> stack;
+        for (auto& r : hud_roots)
+            if (r.part == preview_part && ui.vtable_of(r.element) == r.vtable) stack.push_back(r.element);
+        while (!stack.empty() && forced.size() < FORCED_LIMIT) {
+            uintptr_t e = stack.back();
+            stack.pop_back();
+            forced.push_back({e, ui.vtable_of(e), ui.get_opacity(e), ui.visible(e)});
+            for (int i = 0, n = std::min(ui.children_count(e), FORCED_CHILDREN); i < n; i++)
+                if (uintptr_t c = ui.child(e, i)) stack.push_back(c);
+        }
+    }
+    for (auto& f : forced) {
+        if (ui.vtable_of(f.element) != f.vtable) continue;
+        if (!ui.visible(f.element)) ui.set_visible(f.element, true);
+        if (ui.get_opacity(f.element) < 1) ui.set_opacity(f.element, 1);
+    }
+}
+
 inline void hide_parts() {
     if (!ui.get_opacity || !ui.set_opacity) return;
-    bool previewing = GetTickCount() < preview_until;
     for (auto& r : hud_roots) {
-        if (ui.vtable_of(r.element) != r.vtable) continue;
+        if (ui.vtable_of(r.element) != r.vtable || (previewing_part() && r.part == preview_part)) continue;
         float now = ui.get_opacity(r.element);
-        bool show = previewing && r.part == preview_part, hide = !show && part_hidden(r.part);
-        if (show && now < 1) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 1);
-        else if (hide && now != 0) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 0); else if (!hide && !show && r.hid) r.hid = false, ui.set_opacity(r.element, r.game_opacity);
+        bool hide = part_hidden(r.part);
+        if (hide && now != 0) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 0);
+        else if (!hide && r.hid) r.hid = false, ui.set_opacity(r.element, r.game_opacity);
     }
+    force_preview();
 }
 
 inline void wanted_color(const HudNode& n, const float from[3], float out[3]) {
@@ -500,6 +546,8 @@ inline bool locate_engine(HMODULE engine) {
     ui.get_opacity = (decltype(ui.get_opacity))get("?GetOpacity@IUIElement@@UEBAMXZ");
     ui.set_opacity = (decltype(ui.set_opacity))get("?SetOpacity@IUIElement@@UEAAXM@Z");
     ui.shown = (decltype(ui.shown))get("?IsActuallyVisible@IUIElement@@QEBA_NXZ");
+    ui.visible = (decltype(ui.visible))get("?IsVisible@IUIElement@@QEBA_NXZ");
+    ui.set_visible = (decltype(ui.set_visible))get("?SetVisible@IUIElement@@QEAAX_N@Z");
     ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
@@ -509,7 +557,7 @@ inline void locate(uintptr_t gamedll) {
 }
 
 inline bool hud_colors_on() {
-    if (config::cfg.hud_tint.on) return true;
+    if (config::cfg.hud_tint.on || GetTickCount() < preview_until) return true;
     for (auto& [key, h] : config::cfg.hud_parts)
         if (h.on || h.hidden) return true;
     return false;
@@ -660,7 +708,7 @@ inline const char* game_language_name(const std::string& code) {
 inline std::string forced_language, forced_voice, steam_language, started_language, started_voice, startup_game_setting, startup_voice_setting;
 inline std::string command_line;
 using ForceLangFn = TtlText*(__fastcall*)(TtlText* out, TtlText* fallback);
-using SpeechFn = bool(__fastcall*)(uintptr_t game, const char* id, bool force);
+using SpeechFn = bool(__fastcall*)(uintptr_t inner_game, const char* id, bool force);
 using CommandLineFn = LPSTR(WINAPI*)();
 inline ForceLangFn force_lang_original = nullptr;
 inline SpeechFn speech_original = nullptr;
@@ -715,12 +763,31 @@ inline std::string wanted_voice(const std::string& setting) {
     return setting;
 }
 
+inline std::string speech_asked;
+
 inline bool __fastcall speech_hook(uintptr_t game, const char* id, bool force) {
     learn_steam_language();
     std::string voice = wanted_voice(forced_voice);
     std::string use = voice.size() == 2 && id ? styled_like(voice, id) : id ? id : "";
+    speech_asked = id ? language_code(id) : "";
     started_voice = language_code(use);
-    return speech_original(game, use.c_str(), force);
+    return speech_original(rdv<uintptr_t>(game + 8), use.c_str(), force);
+}
+
+const uint8_t SPEECH_EXPORT[] = {0x48, 0x8B, 0x49, 0x08, 0xE9};
+const size_t SPEECH_EXPORT_SPAN = 9, SPEECH_PATCH = 14;
+
+inline SpeechFn hook_speech_export(uint8_t* fn) {
+    if (!fn || memcmp(fn, SPEECH_EXPORT, sizeof SPEECH_EXPORT)) return nullptr;
+    for (size_t i = SPEECH_EXPORT_SPAN; i < SPEECH_PATCH; i++)
+        if (fn[i] != 0xCC) return nullptr;
+    auto inner = (SpeechFn)(fn + SPEECH_EXPORT_SPAN + *(int32_t*)(fn + sizeof SPEECH_EXPORT));
+    DWORD old;
+    if (!VirtualProtect(fn, SPEECH_PATCH, PAGE_EXECUTE_READWRITE, &old)) return nullptr;
+    game::write_jump(fn, (uintptr_t)speech_hook);
+    VirtualProtect(fn, SPEECH_PATCH, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), fn, SPEECH_PATCH);
+    return inner;
 }
 
 inline void install_language_hooks(const std::string& game_language, const std::string& voice_language) {
@@ -734,13 +801,14 @@ inline void install_language_hooks(const std::string& game_language, const std::
     if (!force_lang_original) return;
     if (!forced_language.empty()) command_line_original = (CommandLineFn)game::hook_import(engine, "KERNEL32.dll", "GetCommandLineA", (void*)command_line_hook);
     if (!forced_language.empty() || (!voice_language.empty() && voice_language != config::STEAM_LANGUAGE))
-        speech_original = (SpeechFn)game::hook_import(exe, ENGINE_DLL, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z", (void*)speech_hook);
+        speech_original = hook_speech_export((uint8_t*)GetProcAddress(engine, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z"));
 }
 
 inline std::string language_report() {
     return "steam " + (steam_language.empty() ? std::string("unknown") : steam_language) + ", game " + (started_language.empty() ? "unknown" : started_language) +
            (forced_language.empty() ? "" : " (forced " + forced_language + (command_line_original ? "" : ", command line not hooked") + ")") + ", voices " +
-           (started_voice.empty() ? (speech_original ? "not set yet" : "game default") : started_voice);
+           (started_voice.empty() ? (speech_original ? "not set yet" : "game default") : started_voice) +
+           (speech_asked.empty() || speech_asked == started_voice ? "" : " (the game asked for " + speech_asked + ")");
 }
 
 struct GameText { std::string key; std::wstring text; int kind; };
@@ -841,6 +909,8 @@ inline void put_text(const std::string& key, const std::wstring& text) {
     texts_api.add(texts_api.tools, &k, &t, true);
 }
 
+inline void locate_messages(uintptr_t gamedll);
+
 inline void locate_texts(uintptr_t gamedll, HMODULE engine) {
     if (auto hits = game::find_code(gamedll, TOOLS_CODE); !hits.empty()) tools_global = game::rip_target(hits[0], 3, 7);
     if (auto hits = engine ? game::find_code((uintptr_t)engine, TEXT_FIND_CODE, 2) : std::vector<uintptr_t>{}; hits.size() == 1) {
@@ -848,6 +918,36 @@ inline void locate_texts(uintptr_t gamedll, HMODULE engine) {
         uintptr_t lea = hits[0] + FIND_TABLE_AT;
         if (rdv<uint8_t>(lea) == 0x48 && rdv<uint8_t>(lea + 1) == 0x8D && rdv<uint8_t>(lea + 2) == 0x05) texts_api.table = game::rip_target(lea, 3, 7);
     }
+    locate_messages(gamedll);
+}
+
+const char GAME_GLOBAL_CODE[] = "48 8B 05 ? ? ? ? 48 85 C0 74 09 48 8B 98 70 02 00 00";
+const char POST_MESSAGE_CODE[] = "4C 8B F9 4C 8B C2 48 8B 0D ? ? ? ? 48 8D 54 24 20 41 B1 01 48 8B 01 FF 90 08 02 00 00";
+const uint8_t POST_MESSAGE_PROLOGUE[] = {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x74,
+                                         0x24, 0x20, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x60};
+const size_t GAME_MESSAGES = 0x270;
+struct MessagesApi { uintptr_t game_global = 0; void(__fastcall* post)(uintptr_t messages, const TtlString<char>* text) = nullptr; };
+inline MessagesApi messages_api;
+
+inline void locate_messages(uintptr_t gamedll) {
+    if (auto hits = game::find_code(gamedll, GAME_GLOBAL_CODE, 2); hits.size() == 1) messages_api.game_global = game::rip_target(hits[0], 3, 7);
+    if (auto hits = game::find_code(gamedll, POST_MESSAGE_CODE, 2); hits.size() == 1) {
+        uintptr_t fn = hits[0] - sizeof POST_MESSAGE_PROLOGUE;
+        if (!memcmp((const void*)fn, POST_MESSAGE_PROLOGUE, sizeof POST_MESSAGE_PROLOGUE)) messages_api.post = (decltype(messages_api.post))fn;
+    }
+}
+
+inline uintptr_t game_messages() {
+    uintptr_t game_object = messages_api.game_global ? rdv<uintptr_t>(messages_api.game_global) : 0;
+    return game_object && messages_api.post ? rdv<uintptr_t>(game_object + GAME_MESSAGES) : 0;
+}
+
+inline bool post_message(const std::string& text) {
+    uintptr_t messages = game_messages();
+    if (!messages) return false;
+    TtlString<char> t{text.c_str(), (uint32_t)text.size(), (uint32_t)text.size()};
+    messages_api.post(messages, &t);
+    return true;
 }
 
 inline bool texts_ready() {
@@ -858,10 +958,16 @@ inline bool texts_ready() {
     return texts_api.find && texts_api.add && texts_api.tools;
 }
 
+inline size_t color_sequence(const std::string& text, size_t at);
+
 inline std::map<char, int> format_specifiers(const std::string& text, bool* broken) {
     std::map<char, int> out;
     for (size_t i = 0; i < text.size(); i++) {
         if (text[i] != '%') continue;
+        if (size_t n = color_sequence(text, i)) {
+            i += n - 1;
+            continue;
+        }
         if (i + 1 == text.size()) {
             *broken = true;
             break;
@@ -972,56 +1078,124 @@ inline void keep_texts() {
 }
 
 struct Callout { const char* key; const char* before; const char* label; const char* after; const char* tone; };
-inline const char POUNCE_TONE[] = "#FF4D6D", FAILED_POUNCE_TONE[] = "#38E1A0", TACKLE_TONE[] = "#FFB000", FAILED_TACKLE_TONE[] = "#5AC8FA", KILL_TONE[] = "#F2EDE4";
+inline const char POUNCE_TONE[] = "FF4D6D", TACKLE_TONE[] = "FFB000", SPIT_TONE[] = "B98CFF", SAVE_TONE[] = "38E1A0", KICK_TONE[] = "5AC8FA", KILL_TONE[] = "F2EDE4";
 inline const Callout CALLOUTS[] = {
     {"HUDMessage_BTZDeath_Killer_Hunter_Highrage", "", "Pounced:", " %s", POUNCE_TONE},
     {"HUDMessage_BTZDeath_Observer_Hunter_Highrage", "%s ", "Pounced:", " %s", POUNCE_TONE},
     {"HUDMessage_BTZDeath_Victim_Hunter_Highrage", "%s ", "Pounced:", " You", POUNCE_TONE},
     {"BtzZombie_PounceHighRageKill_AwardReason", "", "Pounced", "", POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Attacker_SelfInterrupt", "", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Attacker_AdditionalInterrupt", "%s ", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt", "%s ", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Observer_AdditionalInterrupt", "%s | %s ", "Failed Pounce:", " %s", FAILED_POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Observer_SelfInterrupt", "%s | %s ", "Failed Pounce", "", FAILED_POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Vicitm_AdditionalInterrupt", "%s | %s ", "Failed Pounce:", " You", FAILED_POUNCE_TONE},
-    {"HUDMessage_BTZZombiePounceInterrupt_Victim_SelfInterrupt", "%s ", "Failed Pounce:", " You", FAILED_POUNCE_TONE},
-    {"btz_pounce_interrupted", "", "Failed Pounce", "", FAILED_POUNCE_TONE},
-    {"BtzHuman_PounceInterrupted_AwardReason", "", "Failed Pounce", "", FAILED_POUNCE_TONE},
-    {"BtzZombie_PounceHighRageInterrupt_AwardReason", "", "Failed Pounce", "", FAILED_POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Hunter_Highrage_Explosion", "", "Pounce Blast:", " %s", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Hunter_Highrage_Explosion", "%s ", "Pounce Blast:", " %s", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Hunter_Highrage_Explosion", "%s ", "Pounce Blast:", " You", POUNCE_TONE},
+    {"BtzZombie_PounceHighRageExplosionKill_AwardReason", "", "Pounce Blast", "", POUNCE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Attacker_SelfInterrupt", "", "Failed Pounce:", " %s", SAVE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Attacker_AdditionalInterrupt", "%s ", "Failed Pounce:", " %s", SAVE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt", "%s ", "Failed Pounce:", " %s", SAVE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Observer_AdditionalInterrupt", "%s | %s ", "Failed Pounce:", " %s", SAVE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Observer_SelfInterrupt", "", "Failed Pounce:", " %s by %s", SAVE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Vicitm_AdditionalInterrupt", "%s | %s ", "Failed Pounce:", " You", SAVE_TONE},
+    {"HUDMessage_BTZZombiePounceInterrupt_Victim_SelfInterrupt", "%s ", "Failed Pounce:", " You", SAVE_TONE},
+    {"btz_pounce_interrupted", "", "Failed Pounce", "", SAVE_TONE},
+    {"BtzHuman_PounceInterrupted_AwardReason", "", "Failed Pounce", "", SAVE_TONE},
+    {"BtzZombie_PounceHighRageInterrupt_AwardReason", "", "Failed Pounce", "", SAVE_TONE},
     {"HUDMessage_BTZDeath_Killer_Hunter_Charge", "", "Tackled:", " %s", TACKLE_TONE},
     {"HUDMessage_BTZDeath_Observer_Hunter_Charge", "%s ", "Tackled:", " %s", TACKLE_TONE},
     {"HUDMessage_BTZDeath_Victim_Hunter_Charge", "%s ", "Tackled:", " You", TACKLE_TONE},
     {"BtzZombie_Charge_AwardReason", "", "Tackled", "", TACKLE_TONE},
-    {"HUDMessage_BTZZombieChargeEvade_Attacker", "", "Failed Tackle:", " %s", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZZombieChargeEvade_Observer", "%s | %s ", "Failed Tackle", "", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZZombieChargeEvade_Victim", "%s ", "Failed Tackle:", " You", FAILED_TACKLE_TONE},
-    {"BtzZombie_ChargeEvade_AwardReason", "", "Failed Tackle", "", FAILED_TACKLE_TONE},
+    {"BtzZombie_ChargeSuccess_AwardReason", "", "Tackled", "", TACKLE_TONE},
+    {"HUDMessage_BTZZombieChargeEvade_Attacker", "", "Failed Tackle:", " %s", SAVE_TONE},
+    {"HUDMessage_BTZZombieChargeEvade_Observer", "", "Failed Tackle:", " %s by %s", SAVE_TONE},
+    {"HUDMessage_BTZZombieChargeEvade_Victim", "%s ", "Failed Tackle:", " You", SAVE_TONE},
+    {"BtzZombie_ChargeEvade_AwardReason", "", "Failed Tackle", "", SAVE_TONE},
+    {"BtzHuman_ChargeEvade_AwardReason", "", "Failed Tackle", "", SAVE_TONE},
     {"HUDMessage_BTZDeath_Killer_Hunter_Groundpound", "", "Ground Pound:", " %s", TACKLE_TONE},
     {"HUDMessage_BTZDeath_Observer_Hunter_Groundpound", "%s ", "Ground Pound:", " %s", TACKLE_TONE},
     {"HUDMessage_BTZDeath_Victim_Hunter_Groundpound", "%s ", "Ground Pound:", " You", TACKLE_TONE},
-    {"HUDMessage_BTZDeath_Killer_Kick", "", "Kicked:", " %s", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZDeath_Observer_Kick", "%s ", "Kicked:", " %s", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZDeath_Victim_Kick", "%s ", "Kicked:", " You", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZDeath_Killer_Pvp_Human_Jump_Attack", "", "Dropped:", " %s", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZDeath_Observer_Pvp_Human_Jump_Attack", "%s ", "Dropped:", " %s", FAILED_TACKLE_TONE},
-    {"HUDMessage_BTZDeath_Victim_Pvp_Human_Jump_Attack", "%s ", "Dropped:", " You", FAILED_TACKLE_TONE},
+    {"BtzZombie_GroundPoundHit_AwardReason", "", "Ground Pound", "", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Hunter_Punch1", "", "Clawed:", " %s", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Hunter_Punch1", "%s ", "Clawed:", " %s", TACKLE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Hunter_Punch1", "%s ", "Clawed:", " You", TACKLE_TONE},
+    {"HUDMessage_BTZHordeDeath_Killer", "", "Horde Kill:", " %s", SPIT_TONE},
+    {"HUDMessage_BTZHordeDeath_Observer", "%s ", "Horde Kill:", " %s", SPIT_TONE},
+    {"HUDMessage_BTZHordeDeath_Victim", "%s ", "Horde Kill:", " You", SPIT_TONE},
+    {"BtzZombie_HumanPlayerKilled_Horde_AwardReason", "", "Horde Kill", "", SPIT_TONE},
+    {"HUDMessage_BTZZombieSpitHit_ControlTheHorde_Attacker", "", "Horde Hit:", " %s", SPIT_TONE},
+    {"HUDMessage_BTZZombieSpitHit_ControlTheHorde_Observer", "", "Horde Hit:", " %s by %s", SPIT_TONE},
+    {"HUDMessage_BTZZombieSpitHit_ControlTheHorde_Victim", "%s ", "Horde Hit:", " You", SPIT_TONE},
+    {"BtzZombie_SpitHitControlTheHorde_AwardReason", "", "Horde Hit", "", SPIT_TONE},
+    {"HUDMessage_BTZZombieSpitHit_LightDisable_Attacker", "", "UV Off:", " %s", SPIT_TONE},
+    {"HUDMessage_BTZZombieSpitHit_LightDisable_Observer", "", "UV Off:", " %s by %s", SPIT_TONE},
+    {"HUDMessage_BTZZombieSpitHit_LightDisable_Victim", "", "UV Off:", " You", SPIT_TONE},
+    {"BtzZombie_SpitHitLightDisable_AwardReason", "", "UV Off", "", SPIT_TONE},
+    {"BtzZombie_SpitHitCamo_AwardReason", "", "Sense Off", "", SPIT_TONE},
+    {"HUDMessage_BTZDeath_Killer_toxic_spit", "", "Toxic:", " %s", SPIT_TONE},
+    {"HUDMessage_BTZDeath_Observer_toxic_spit", "%s ", "Toxic:", " %s", SPIT_TONE},
+    {"HUDMessage_BTZDeath_Victim_toxic_spit", "%s ", "Toxic:", " You", SPIT_TONE},
+    {"BtzZombie_SpitHitToxic_AwardReason", "", "Toxic Hit", "", SPIT_TONE},
+    {"HUDMessage_BTZDeath_Killer_Kick", "", "Kicked:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Observer_Kick", "%s ", "Kicked:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Victim_Kick", "%s ", "Kicked:", " You", KICK_TONE},
+    {"HUDMessage_BTZDeath_Killer_Pvp_Human_Wrestling_Kick", "", "Dropkicked:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Observer_Pvp_Human_Wrestling_Kick", "%s ", "Dropkicked:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Victim_Pvp_Human_Wrestling_Kick", "%s ", "Dropkicked:", " You", KICK_TONE},
+    {"BtzHuman_WrestlingKick_AwardReason", "", "Dropkick", "", KICK_TONE},
+    {"BtzHuman_WrestlingKickKill_AwardReason", "", "Dropkick", "", KICK_TONE},
+    {"HUDMessage_BTZDeath_Killer_Pvp_Human_Jump_Attack", "", "From Above:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Observer_Pvp_Human_Jump_Attack", "%s ", "From Above:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Victim_Pvp_Human_Jump_Attack", "%s ", "From Above:", " You", KICK_TONE},
+    {"BtzHuman_JumpAttackKill_AwardReason", "", "From Above", "", KICK_TONE},
+    {"HUDMessage_BTZJumpAttackDeath_Killer", "", "Drop Attack:", " %s", KICK_TONE},
+    {"HUDMessage_BTZJumpAttackDeath_Observer", "%s ", "Drop Attack:", " %s", KICK_TONE},
+    {"HUDMessage_BTZJumpAttackDeath_Victim", "%s ", "Drop Attack:", " You", KICK_TONE},
+    {"BtzHuman_JumpAttack_AwardReason", "", "Drop Attack", "", KICK_TONE},
+    {"HUDMessage_BTZDeath_Killer_Slide", "", "Tripped:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Observer_Slide", "%s ", "Tripped:", " %s", KICK_TONE},
+    {"HUDMessage_BTZDeath_Victim_Slide", "%s ", "Tripped:", " You", KICK_TONE},
     {"HUDMessage_BTZDeath_Killer", "", "Killed:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Observer", "%s ", "Killed:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Victim", "%s ", "Killed:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_FinishedOff", "", "Finished:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_FinishedOff", "%s ", "Finished:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_FinishedOff", "%s ", "Finished:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Headshot", "", "Headshot:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Headshot", "%s ", "Headshot:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Headshot", "%s ", "Headshot:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Downed", "", "Downed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Downed", "%s ", "Downed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Downed", "%s ", "Downed:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Spike", "", "Spiked:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Spike", "%s ", "Spiked:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Spike", "%s ", "Spiked:", " You", KILL_TONE},
+    {"BtzHuman_ZombiePlayerKilled_AwardReason", "", "Hunter Down", "", SAVE_TONE},
+    {"HUDMessage_BTZHiveDestroyed_Attacker", "", "Nest Down", "", SAVE_TONE},
+    {"HUDMessage_BTZHiveDestroyed_Observer", "%s ", "Nest Down", "", SAVE_TONE},
+    {"BtzHuman_HiveDestroyed_AwardReason", "", "Nest Down", "", SAVE_TONE},
 };
 
-inline std::string colored(const std::string& text, const char* tone) { return std::string("<font color=\"") + tone + "\">" + text + "</font>"; }
+inline const char COLOR_OPEN[] = "%COLOR(", COLOR_RESET[] = "%COLOR(reset)";
+
+inline std::string colored(const std::string& text, const std::string& tone) {
+    return COLOR_OPEN + (!tone.empty() && tone[0] == '#' ? tone.substr(1) : tone) + ")" + text + COLOR_RESET;
+}
 
 inline std::string callout_text(const Callout& c, bool tinted) { return std::string(c.before) + (tinted ? colored(c.label, c.tone) : std::string(c.label)) + c.after; }
 
-inline std::string without_colors(std::string text) {
-    for (size_t at; (at = text.find("<font")) != std::string::npos;) {
-        size_t end = text.find('>', at);
-        text.erase(at, end == std::string::npos ? std::string::npos : end - at + 1);
-    }
-    for (size_t at; (at = text.find("</font>")) != std::string::npos;) text.erase(at, 7);
-    return text;
+inline size_t color_sequence(const std::string& text, size_t at) {
+    if (text.compare(at, strlen(COLOR_OPEN), COLOR_OPEN)) return 0;
+    size_t end = text.find(')', at);
+    return end == std::string::npos ? 0 : end - at + 1;
 }
+
+inline std::string without_colors(const std::string& text) {
+    std::string out;
+    for (size_t i = 0; i < text.size();) {
+        size_t n = color_sequence(text, i);
+        if (n) i += n;
+        else out += text[i++];
+    }
+    return out;
+}
+
 
 inline int callouts_used(const std::map<std::string, std::string>& texts) {
     int n = 0;

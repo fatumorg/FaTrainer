@@ -217,6 +217,17 @@ inline std::string escape_text(const std::string& text) {
     return out;
 }
 
+inline std::string game_colors(std::string text) {
+    for (size_t at; (at = text.find("<font")) != std::string::npos;) {
+        size_t end = text.find('>', at), hash = text.find('#', at);
+        std::string tone = hash != std::string::npos && hash < end ? text.substr(hash + 1, 6) : "";
+        bool hex = tone.size() == 6 && tone.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+        text.replace(at, end == std::string::npos ? std::string::npos : end - at + 1, hex ? "%COLOR(" + tone + ")" : "");
+    }
+    for (size_t at; (at = text.find("</font>")) != std::string::npos;) text.replace(at, 7, "%COLOR(reset)");
+    return text;
+}
+
 inline std::string unescape_text(const std::string& text) {
     std::string out;
     for (size_t i = 0; i < text.size(); i++) {
@@ -342,7 +353,7 @@ inline void load(const std::string& path) {
             if (c == std::string::npos || !c) continue;
             std::string key = v.substr(0, c);
             HudColor h;
-            if (k == "text") cfg.texts[key] = unescape_text(v.substr(c + 1));
+            if (k == "text") cfg.texts[key] = game_colors(unescape_text(v.substr(c + 1)));
             else if (k == "rainbow") cfg.rainbow[key] = std::clamp((float)atof(v.c_str() + c + 1), RAINBOW_FASTEST, RAINBOW_SLOWEST);
             else if (int fields = read_hud_color(v.c_str() + c + 1, h); fields && k == "hud") read_hud_part(key, h, fields);
             else if (fields) cfg.survivor_glow[key] = h;

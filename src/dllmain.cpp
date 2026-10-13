@@ -363,6 +363,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
+    if (g_ready) cheats::speed_melee_anims();
 #endif
     if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);
@@ -635,7 +636,8 @@ static void main_thread() {
     logf("hud colors: %s, color hooks %d/5", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll));
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
     visuals::locate_texts((uintptr_t)gamedll, engine);
-    logf("texts: %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found");
+    logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",
+         visuals::messages_api.post && visuals::messages_api.game_global ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     Sleep(4000);
@@ -683,7 +685,8 @@ static void main_thread() {
     logf("hud colors: %s, color hooks %d/5", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll));
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
     visuals::locate_texts((uintptr_t)gamedll, engine);
-    logf("texts: %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found");
+    logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",
+         visuals::messages_api.post && visuals::messages_api.game_global ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
     if (getenv("DLT_OPEN")) g_open = true;
     std::thread([] {

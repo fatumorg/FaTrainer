@@ -1682,11 +1682,28 @@ inline const char* SAMPLE_NAMES[] = {"Jade", "Rahim", "Brecken"};
 
 inline bool previewing() { return GetTickCount() < preview.until || GetTickCount() < visuals::preview_until; }
 
-inline void preview_text(const std::string& text) { preview.text = text, preview.until = GetTickCount() + PREVIEW_MS; }
+inline std::string with_names(const std::string& text);
+
+inline void preview_lines(const std::vector<std::string>& lines) {
+    preview.until = GetTickCount() + PREVIEW_MS;
+    if (!visuals::game_messages()) {
+        preview.text = lines.empty() ? "" : lines[0];
+        return;
+    }
+    preview.text.clear();
+    std::vector<std::string> named;
+    for (auto& l : lines) named.push_back(with_names(l));
+    on_game_thread([named] {
+        for (auto& l : named) visuals::post_message(l);
+    });
+}
+
+inline void preview_text(const std::string& text) { preview_lines({text}); }
 
 inline void preview_part(const std::string& key) {
     for (int p = 0; p < visuals::HUD_PART_COUNT; p++)
         if (key == visuals::HUD_PARTS[p].key) visuals::preview_part = p, visuals::preview_until = GetTickCount() + PREVIEW_MS;
+    if (key == "killfeed" && visuals::game_messages()) preview_lines({"%s killed %s"});
 }
 
 inline bool part_row(const char* label, const std::string& key, std::map<std::string, config::HudColor>& colors, bool can_hide) {
@@ -1899,29 +1916,24 @@ inline std::string with_names(const std::string& text) {
 
 inline float draw_rich(ImDrawList* dl, ImFont* font, float size, ImVec2 at, const std::string& text, ImU32 color, float width) {
     std::string line = text.substr(0, text.find('\n'));
-    std::vector<ImU32> colors{color};
+    ImU32 now = color;
     float x = at.x, right = at.x + width;
     for (size_t i = 0; i < line.size();) {
-        if (!line.compare(i, 5, "<font")) {
-            size_t end = line.find('>', i), hash = line.find('#', i);
-            colors.push_back(hash != std::string::npos && hash < end ? hex_color(line.substr(hash, 7), colors.back()) : colors.back());
-            i = end == std::string::npos ? line.size() : end + 1;
+        if (size_t n = visuals::color_sequence(line, i)) {
+            std::string tone = line.substr(i + strlen(visuals::COLOR_OPEN), n - strlen(visuals::COLOR_OPEN) - 1);
+            now = _stricmp(tone.c_str(), "reset") ? hex_color(tone, now) : color;
+            i += n;
             continue;
         }
-        if (!line.compare(i, 7, "</font>")) {
-            if (colors.size() > 1) colors.pop_back();
-            i += 7;
-            continue;
-        }
-        size_t next = line.find('<', i + 1);
+        size_t next = line.find(visuals::COLOR_OPEN, i + 1);
         std::string run = line.substr(i, (next == std::string::npos ? line.size() : next) - i);
         float run_w = font->CalcTextSizeA(size, FLT_MAX, 0, run.c_str()).x;
         if (x + run_w > right) {
             std::string cut = fit_text(font, size, run, right - x);
-            dl->AddText(font, size, {x, at.y}, colors.back(), cut.c_str());
+            dl->AddText(font, size, {x, at.y}, now, cut.c_str());
             return right - at.x;
         }
-        dl->AddText(font, size, {x, at.y}, colors.back(), run.c_str());
+        dl->AddText(font, size, {x, at.y}, now, run.c_str());
         x += run_w;
         i += run.size();
     }
@@ -2053,14 +2065,22 @@ inline bool callouts_card() {
     ImVec2 p = ImGui::GetCursorScreenPos();
     auto* dl = ImGui::GetWindowDrawList();
     const char* samples[] = {"HUDMessage_BTZDeath_Killer_Hunter_Highrage", "HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt",
-                             "HUDMessage_BTZDeath_Observer_Hunter_Charge", "HUDMessage_BTZZombieChargeEvade_Victim"};
+                             "HUDMessage_BTZDeath_Observer_Pvp_Human_Wrestling_Kick", "HUDMessage_BTZZombieSpitHit_ControlTheHorde_Victim"};
     dl->AddRectFilled(p, {p.x + w, p.y + row * 4 + S(16)}, C(T.ground), R(10));
     int line = 0;
     for (auto& c : visuals::CALLOUTS)
         for (const char* key : samples)
             if (!strcmp(c.key, key)) draw_rich(dl, f_body, font_size(f_body), {p.x + S(14), p.y + S(8) + row * line++}, with_names(visuals::callout_text(c, true)), C(T.text), w - S(28));
     ImGui::Dummy({w, row * 4 + S(22)});
-    changed |= switch_row("Colored labels", "Pounced: red, Failed Pounce: green, Tackled: amber, Failed Tackle: blue. Uses the game's font colors.", tinted);
+    if (ImGui::Button("Show in the killfeed", {0, ImGui::GetFrameHeight()})) {
+        std::vector<std::string> lines;
+        for (const char* key : samples)
+            for (auto& c : visuals::CALLOUTS)
+                if (!strcmp(c.key, key)) lines.push_back(visuals::callout_text(c, tinted));
+        preview_lines(lines);
+    }
+    ImGui::Dummy({0, S(4)});
+    changed |= switch_row("Colored labels", "Pounces red, tackles and claws amber, spits violet, failed pounces and tackles green, kicks blue. The killfeed shows them in color.", tinted);
     char use[64];
     snprintf(use, sizeof use, used == count ? "Update the callouts" : "Use the callouts");
     if (accent_button(use)) {

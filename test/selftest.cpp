@@ -376,6 +376,7 @@ int main(int argc, char** argv) {
         CHECK(visuals::locate_engine(engine));
         visuals::locate_texts(game::g.base, engine);
         CHECK(visuals::tools_global == cheats::var_root && visuals::texts_api.find && (uintptr_t)visuals::texts_api.find - (uintptr_t)engine == 0x634e30);
+        CHECK(visuals::messages_api.post && (uintptr_t)visuals::messages_api.post - game::g.base == 0x57bdc0 && visuals::messages_api.game_global - game::g.base == 0x1c16358);
         auto english = std::make_shared<const visuals::TextLibrary>(visuals::load_language(visuals::game_folder(), "En"));
         auto polish = visuals::load_language(visuals::game_folder(), "Pl");
         size_t count = 0;
@@ -384,6 +385,15 @@ int main(int argc, char** argv) {
             for (auto& t : f.texts) count++, killer = t.key == "HUDMessage_BTZDeath_Killer" ? &t : killer;
         CHECK(english->size() > 20 && count > 20000 && killer && killer->text == L"You killed %s" && killer->kind == visuals::TEXT_HUD);
         CHECK(polish.size() == english->size() && visuals::load_language(visuals::game_folder(), "Zz").empty());
+        std::map<std::string, std::string> english_texts;
+        for (auto& f : *english)
+            for (auto& t : f.texts) english_texts.emplace(t.key, visuals::narrow(t.text.c_str()));
+        for (auto& c : visuals::CALLOUTS) {
+            auto it = english_texts.find(c.key);
+            bool fits = it != english_texts.end() && visuals::safe_format(visuals::callout_text(c, true), it->second);
+            if (!fits) printf("callout %s does not fit the game's text\n", c.key);
+            CHECK(fits);
+        }
         CHECK(visuals::console_text_file("data/maps/common_texts_xbo.bin") && visuals::console_text_file("data/maps/testmap_shop_texts_all.bin"));
         CHECK(!visuals::console_text_file("data/maps/slums_texts_all.bin") && !visuals::console_text_file("common_texts_all_DLC1.bin"));
         visuals::libraries["En"] = english;
@@ -391,6 +401,29 @@ int main(int argc, char** argv) {
         CHECK(visuals::text_kind("Skill_Agility_1") == visuals::TEXT_SKILLS && visuals::text_kind("Q_Explosives_OBJ_TurnOfAlarm") == visuals::TEXT_QUESTS);
         CHECK(visuals::text_kind("Tut_CoopInLegend") == visuals::TEXT_TUTORIALS && visuals::text_kind("HUDMessage_BTZDeath_Victim") == visuals::TEXT_HUD);
         CHECK(visuals::text_kind("MMenuMisisionEnd_Demo_BtnBuyNow") == visuals::TEXT_MENUS && visuals::text_kind("ChatterNeutral_01") == visuals::TEXT_SPOKEN);
+    }
+    {
+        static uintptr_t inner_seen;
+        static std::string id_seen;
+        static bool force_seen;
+        auto inner = [](uintptr_t inner_game, const char* id, bool force) -> bool { return inner_seen = inner_game, id_seen = id, force_seen = force, true; };
+        auto* code = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        memset(code, 0xCC, 64);
+        memcpy(code, visuals::SPEECH_EXPORT, sizeof visuals::SPEECH_EXPORT);
+        *(int32_t*)(code + sizeof visuals::SPEECH_EXPORT) = 32 - (int32_t)visuals::SPEECH_EXPORT_SPAN;
+        game::write_jump(code + 32, (uintptr_t)(bool (*)(uintptr_t, const char*, bool))inner);
+        auto saved_original = visuals::speech_original;
+        auto saved_voice = visuals::forced_voice;
+        visuals::speech_original = visuals::hook_speech_export(code);
+        CHECK(visuals::speech_original == (visuals::SpeechFn)(code + 32));
+        visuals::forced_voice = "Pl";
+        uintptr_t fake_game[2] = {0, 0x4242};
+        CHECK(((bool (*)(uintptr_t, const char*, bool))code)((uintptr_t)fake_game, "En", true));
+        CHECK(inner_seen == 0x4242 && id_seen == "Pl" && force_seen && visuals::language_report().find("the game asked for En") != std::string::npos);
+        uint8_t plain[16] = {0x48, 0x8B, 0x49, 0x08, 0xE9, 0, 0, 0, 0, 0x90};
+        CHECK(!visuals::hook_speech_export(plain));
+        visuals::speech_original = saved_original, visuals::forced_voice = saved_voice, visuals::started_voice.clear(), visuals::speech_asked.clear();
+        VirtualFree(code, 0, MEM_RELEASE);
     }
     visuals::locate(game::g.base);
     CHECK(game::g.vt_hud && visuals::hud_element_offset >= 0);
@@ -549,7 +582,7 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(param("RangeMeleeMul")) == 1.0f && game::rdv<float>(param("BestTargetMeleeRange")) == 3.0f);
     CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 0.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 0.25f);
     CHECK(game::g.stats[ST_SwingSpeed].off == fake::SWING_OFF && game::g.stats[ST_DamageRange].off == fake::MELEE_RANGE_OFF);
-    CHECK(game::rdv<float>(w.desc["Melee_Fists"] + fake::SWING_OFF) == 0.9f * 2.0f && game::rdv<float>(w.desc["Melee_Fists"] + fake::MELEE_RANGE_OFF) == 1.15f * 2.0f);
+    CHECK(game::rdv<float>(w.desc["Melee_Fists"] + fake::SWING_OFF) == 0.9f && game::rdv<float>(w.desc["Melee_Fists"] + fake::MELEE_RANGE_OFF) == 1.15f * 2.0f);
     CHECK(game::rdv<float>(w.desc["Throwable_LightDisable_Spit"] + fake::MELEE_RANGE_OFF) == 5.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
@@ -658,6 +691,38 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<uint8_t>(param("InfiniteStamina")) == 1 && game::rdv<float>(param("FlashlightRechargeSpeed")) == 1000);
     CHECK(game::rdv<uint8_t>(param("CanUseHook")) == 1 && game::rdv<float>(param("ZombieSpitLightDisableAmmoRegenTime3v1")) == 0.05f);
     CHECK(fake_rules[0] == 1);
+    {
+        static uint8_t bind[0x100] = {}, nodes[2][0x40] = {}, anims[2][0x40] = {}, item[0x80] = {}, desc[0x10] = {};
+        static uintptr_t fake_bind;
+        fake_bind = (uintptr_t)bind;
+        auto saved_bind = cheats::anim_bind_of;
+        auto saved_desc = cheats::vt_melee_desc;
+        cheats::anim_bind_of = [](uintptr_t model) -> uintptr_t { return model == cheats::player ? fake_bind : 0; };
+        cheats::vt_melee_desc = 0x7777;
+        *(uintptr_t*)desc = 0x7777;
+        *(uintptr_t*)(item + cheats::ITEM_DESC) = (uintptr_t)desc;
+        *(uintptr_t*)(bind + cheats::ANIMS_PLAYING) = (uintptr_t)(nodes[0] + 0x10);
+        *(uintptr_t*)(nodes[0] + 0x10) = (uintptr_t)(nodes[1] + 0x10);
+        *(uintptr_t*)(nodes[0] + 0x08) = (uintptr_t)anims[0];
+        *(uintptr_t*)(nodes[1] + 0x08) = (uintptr_t)anims[1];
+        *(float*)(anims[0] + cheats::ANIM_SPEED) = 1.0f;
+        *(float*)(anims[1] + cheats::ANIM_SPEED) = 0.5f;
+        uintptr_t hand = cheats::player + cheats::PLAYER_HANDS + cheats::HAND_SIZE;
+        game::wr<uintptr_t>(hand, 1);
+        game::wr<uintptr_t>(hand + cheats::HAND_ITEM, (uintptr_t)item);
+        auto speed = [](int i) { return *(float*)(anims[i] + cheats::ANIM_SPEED); };
+        cheats::find_tweak("melee_speed")->factor = 2.0f;
+        cheats::speed_melee_anims();
+        cheats::speed_melee_anims();
+        CHECK(speed(0) == 2.0f && speed(1) == 1.0f);
+        *(float*)(anims[1] + cheats::ANIM_SPEED) = 0.75f;
+        cheats::speed_melee_anims();
+        CHECK(speed(1) == 1.5f);
+        game::wr<uintptr_t>(hand, 0);
+        cheats::speed_melee_anims();
+        CHECK(speed(0) == 1.0f && speed(1) == 0.75f && cheats::anim_speeds.empty());
+        cheats::anim_bind_of = saved_bind, cheats::vt_melee_desc = saved_desc;
+    }
     for (auto& c : cheats::CHEATS) c.on = false;
     cheats::find_tweak("h_dropkick")->factor = 1.0f;
     cheats::find_tweak("h_melee")->factor = 1.0f;
@@ -1289,6 +1354,10 @@ int main(int argc, char** argv) {
         CHECK(visuals::safe_format("Got you %s", "You killed %s") && visuals::safe_format("100%% sure %s", "You killed %s"));
         CHECK(!visuals::safe_format("%s got 100% rekt", "You killed %s") && !visuals::safe_format("%s and %s", "You killed %s"));
         CHECK(!visuals::safe_format("trailing %", "Pounce interrupted by UV light!") && visuals::safe_format("No pounce", "You interrupted %s pouncing %s"));
+        CHECK(visuals::safe_format("%COLOR(FF4D6D)Pounced:%COLOR(reset) %s", "You pounced %s") && !visuals::safe_format("%COLOR(FF4D6D %s", "You pounced %s"));
+        CHECK(visuals::colored("Kicked:", "#5AC8FA") == "%COLOR(5AC8FA)Kicked:%COLOR(reset)" && visuals::without_colors("%s %COLOR(5AC8FA)Kicked:%COLOR(reset) You") == "%s Kicked: You");
+        CHECK(config::game_colors("%s <font color=\"#38E1A0\">Failed Pounce:</font> You") == "%s %COLOR(38E1A0)Failed Pounce:%COLOR(reset) You");
+        CHECK(config::game_colors("<font color=\"red\">x</font>") == "x%COLOR(reset)");
         fake_load_text("HUDMessage_BTZDeath_Killer", L"You killed %s");
         config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "%s got 100% rekt";
         visuals::keep_texts();
@@ -1454,6 +1523,9 @@ int main(int argc, char** argv) {
         uintptr_t text_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, "?SetTextColor@IUIText@@QEAAXAEBVvec4@@@Z"), visuals::EXPORT_SPAN);
         CHECK(view_internal && !memcmp((const void*)view_internal, visuals::VIEW_COLOR_PROLOGUE, sizeof visuals::VIEW_COLOR_PROLOGUE));
         CHECK(text_internal && !memcmp((const void*)text_internal, visuals::TEXT_COLOR_PROLOGUE, sizeof visuals::TEXT_COLOR_PROLOGUE));
+        auto* speech = (const uint8_t*)GetProcAddress(engine, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z");
+        CHECK(speech && !memcmp(speech, visuals::SPEECH_EXPORT, sizeof visuals::SPEECH_EXPORT));
+        for (size_t i = visuals::SPEECH_EXPORT_SPAN; speech && i < visuals::SPEECH_PATCH; i++) CHECK(speech[i] == 0xCC);
         cheats::active_level = real_level, cheats::view_camera = real_camera, cheats::get_position = get, cheats::set_position = set;
         cheats::field_int = fint, cheats::field_enum = fenum, cheats::field_bool = fbool, cheats::request_ownership = owner;
         cheats::float_field_editor = editor;

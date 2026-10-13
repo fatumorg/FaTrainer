@@ -144,7 +144,7 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
-    {"melee_speed", "Melee speed", "How fast you swing every melee weapon, two-handed ones too.", G_WEAPONS, {}, {}, 3.0f},
+    {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 3.0f},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -257,7 +257,10 @@ inline void read_param_names() {
         if (is_case(entry(p), common)) param_ids[(const char*)game::rip_target(entry(p), 3, 7)] = (int)((p - start) / 4);
 }
 
+inline uintptr_t vt_melee_desc = 0;
+
 inline void locate(uintptr_t base) {
+    vt_melee_desc = game::find_vtable(base, "ItemDescMelee");
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 88 80 07 00 00"); !hits.empty())
         local_player_root = game::rip_target(hits[0], 3, 7);
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 74 07 48 8B ? 58 0E 00 00"); !hits.empty())
@@ -522,22 +525,78 @@ inline float tweak_factor(const char* key) {
 
 inline void item_overrides(std::set<uintptr_t>& touched) {
     bool uv = is_on("uv"), no_reload = is_on("no_reload");
-    float swing = tweak_factor("melee_speed"), reach = tweak_factor("h_melee");
-    if (!uv && !no_reload && swing == 1.0f && reach == 1.0f) return;
+    float reach = tweak_factor("h_melee");
+    if (!uv && !no_reload && reach == 1.0f) return;
     for (int i = 0; i < ITEM_COUNT; i++) {
         const ItemInfo& info = ITEMS[i];
         auto d = g.descs.find(info.id);
         if (d == g.descs.end()) continue;
-        if (info.melee) {
-            scale_desc_stat(d->second, ST_SwingSpeed, swing, touched);
-            scale_desc_stat(d->second, ST_DamageRange, reach, touched);
-        }
+        if (info.melee) scale_desc_stat(d->second, ST_DamageRange, reach, touched);
         if (uv && info.st[ST_DepletionTime] < 1e6f) set_desc_stat(d->second, ST_DepletionTime, 1e7f, touched);
         if (no_reload && info.st[ST_AmmoCount] > 0) {
             set_desc_stat(d->second, ST_AmmoCount, 999, touched);
             if (info.st[ST_ReloadTime] > 0) set_desc_stat(d->second, ST_ReloadTime, 0.05f, touched);
         }
     }
+}
+
+const size_t PLAYER_HANDS = 0x1630, HAND_SIZE = 0x20, HAND_ITEM = 8, ITEM_DESC = 0x60, ANIMS_PLAYING = 0xe8, ANIM_SPEED = 0x2c;
+const int HANDS = 3, ANIM_NODES = 256;
+const float ANIM_SPEED_MAX = 10.0f;
+struct AnimSpeed { float original, written; };
+inline uintptr_t(__fastcall* anim_bind_of)(uintptr_t model) = nullptr;
+inline std::unordered_map<uintptr_t, AnimSpeed> anim_speeds;
+
+inline bool holding_melee(uintptr_t p) {
+    for (int h = 0; vt_melee_desc && h < HANDS; h++) {
+        uintptr_t at = p + PLAYER_HANDS + h * HAND_SIZE;
+        uintptr_t item = rdv<uintptr_t>(at) ? rdv<uintptr_t>(at + HAND_ITEM) : 0;
+        uintptr_t desc = item ? rdv<uintptr_t>(item + ITEM_DESC) : 0;
+        if (desc && rdv<uintptr_t>(desc) == vt_melee_desc) return true;
+    }
+    return false;
+}
+
+inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
+    std::vector<uintptr_t> out, stack;
+    if (uintptr_t root = rdv<uintptr_t>(bind + ANIMS_PLAYING)) stack.push_back(root);
+    for (int seen = 0; !stack.empty() && seen < ANIM_NODES; seen++) {
+        uintptr_t n = stack.back();
+        stack.pop_back();
+        if (uintptr_t a = rdv<uintptr_t>(n - 8)) out.push_back(a);
+        for (size_t side : {(size_t)0, (size_t)0x10})
+            if (uintptr_t c = rdv<uintptr_t>(n + side)) stack.push_back(c);
+    }
+    return out;
+}
+
+inline void speed_melee_anims() {
+    float f = tweak_factor("melee_speed");
+    uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
+    uintptr_t bind = p && anim_bind_of ? anim_bind_of(p) : 0;
+    bool on = f != 1.0f && bind && holding_melee(p);
+    if (!on && anim_speeds.empty()) return;
+    std::unordered_map<uintptr_t, AnimSpeed> next;
+    for (uintptr_t a : bind ? playing_anims(bind) : std::vector<uintptr_t>{}) {
+        float now = rdv<float>(a + ANIM_SPEED);
+        auto it = anim_speeds.find(a);
+        bool ours = it != anim_speeds.end() && now == it->second.written;
+        if (!on) {
+            if (ours) game::wr<float>(a + ANIM_SPEED, it->second.original);
+            continue;
+        }
+        AnimSpeed s = ours ? it->second : AnimSpeed{now, now};
+        if (!(s.original > 0 && s.original < ANIM_SPEED_MAX)) continue;
+        s.written = s.original * f;
+        if (now != s.written) game::wr<float>(a + ANIM_SPEED, s.written);
+        next[a] = s;
+    }
+    static size_t logged = ~(size_t)0;
+    static DWORD logged_at = 0;
+    static int lines = 0;
+    if (next.size() != logged && GetTickCount() - logged_at > 2000 && lines < 200)
+        logged = next.size(), logged_at = GetTickCount(), lines++, logf_hook("melee speed: %zu animations at x%.2f", next.size(), f);
+    anim_speeds.swap(next);
 }
 
 inline void apply_cached(const std::map<std::string, std::pair<float, bool>>& want) {
@@ -1290,6 +1349,7 @@ inline void locate_engine(HMODULE engine) {
     find_in_radius = (FindInRadiusFn)GetProcAddress(
         engine, "?FindObjectsInRadius@ILevel@@QEAA_NPEAV?$vector@PEAVIControlObject@@@ttl@@AEBVvec3@@MPEBVCRTTI@@_NPEAH@Z");
     get_position = (GetPositionFn)GetProcAddress(engine, "?GetWorldPosition@IControlObject@@QEBA?AVvec3@@XZ");
+    anim_bind_of = (decltype(anim_bind_of))GetProcAddress(engine, "?GetAnimBind@IModelObject@@QEAAPEAVIAnimBind@@XZ");
     set_position = (SetPositionFn)GetProcAddress(engine, "?SetWorldPosition@IControlObject@@QEAAXAEBVvec3@@@Z");
     field_int = (FieldIntFn)GetProcAddress(engine, "?GetFieldInt@CRTTIObject@@QEBAPEBVCRTTIFieldInt@@PEBDAEAH@Z");
     field_enum = (FieldIntFn)GetProcAddress(engine, "?GetFieldEnum@CRTTIObject@@QEBAPEBVCRTTIFieldEnum@@PEBDAEAH@Z");
