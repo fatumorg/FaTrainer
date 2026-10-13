@@ -2,8 +2,8 @@
 *.exe
 *.log
 *.bak
-src/items.h
-src/skills.h
+#src/items.h
+#src/skills.h
 __pycache__/
 *.pyc
 graphify-out/
@@ -11,10 +11,10 @@ graphify-out/
 .idea/
 *.swp
 .DS_Store
-CLAUDE.md
-PROGRESS.md
+#CLAUDE.md
+#PROGRESS.md
 nexus/
-.zig-cache/
-dist/
-docs/
-.superpowers/
+#.zig-cache/
+#dist/
+#docs/
+#.superpowers/
