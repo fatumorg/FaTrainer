@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b16
+
+Survivor Update
+
+- New: keys for sliders on the Keybinds page. One press sets the slider to Max, the next press puts back what you had, and a message says which.
+
 ## 2.5 b15
 
 Survivor Update

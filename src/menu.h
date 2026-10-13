@@ -2581,7 +2581,7 @@ inline const Page PAGES[] = {
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
-     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee"}},
+     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge"}},
     {"visuals", "Visuals", "Player ESP, colors, HUD, field of view and glow", visuals_page, always, "MODES", {}},
     {"texts", "Texts", "Game language and your own texts", texts_page, always, "MODES", {}},
     {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
@@ -2591,7 +2591,7 @@ inline const Page PAGES[] = {
     {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always, "ITEMS", {}},
     {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, has_tools, "ITEMS", {}},
     {"give", "Give items", "Spawn any item in the game", give_page, always, "ITEMS", {}},
-    {"keys", "Keybinds", "Keys that turn cheats on and off", keybinds_page, always, "", {}},
+    {"keys", "Keybinds", "Keys for cheats and sliders", keybinds_page, always, "", {}},
 #endif
 #if FATRAINER_VISUALS
     {"settings", "Settings", "Look, menu key and version", settings_page, always, "", {}},
@@ -2726,18 +2726,20 @@ inline void keybinds_page() {
     capture_note();
     for (auto& page : PAGES) {
         bool any = false;
-        for (const char* key : page.keys) any |= cheats::find(key) != nullptr;
+        for (const char* key : page.keys) any |= cheats::find(key) != nullptr || cheats::find_tweak(key) != nullptr;
         if (!any) continue;
         std::string title = page.title;
         for (char& ch : title) ch = (char)toupper((unsigned char)ch);
         begin_card((std::string("keys_") + page.id).c_str(), title.c_str());
         for (const char* key : page.keys) {
             auto* cheat = cheats::find(key);
-            if (!cheat) continue;
+            auto* tweak = cheat ? nullptr : cheats::find_tweak(key);
+            if (!cheat && !tweak) continue;
             ImGui::PushID(key);
             ImGui::AlignTextToFramePadding();
-            ImGui::PushStyleColor(ImGuiCol_Text, cheat->on ? V(T.accent) : V(T.text));
-            ImGui::TextUnformatted(cheat->label);
+            bool lit = cheat ? cheat->on.load() : tweak->factor != 1.0f;
+            ImGui::PushStyleColor(ImGuiCol_Text, lit ? V(T.accent) : V(T.text));
+            ImGui::TextUnformatted(cheat ? cheat->label : (std::string(tweak->label) + " to Max").c_str());
             ImGui::PopStyleColor();
             ImGui::SameLine(S(300));
             auto found = config::cfg.cheat_keys.find(key);
@@ -2751,8 +2753,8 @@ inline void keybinds_page() {
         }
         end_card();
     }
-    note("Press a cheat's key while the menu is closed to turn it on or off, or the refill key to refill health and stamina. A message at the bottom of the screen says which. "
-         "Spit keys are on the Night Hunter page.");
+    note("Press a cheat's key while the menu is closed to turn it on or off, or the refill key to refill health and stamina. A slider's key sets it to Max and the next press puts back what you had. "
+         "A message at the bottom of the screen says which. Spit keys are on the Night Hunter page.");
     if (changed) save_config();
 }
 

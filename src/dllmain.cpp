@@ -239,6 +239,12 @@ static void poll_cheat_keys() {
             toast("Health & stamina refilled");
             continue;
         }
+        if (auto* tweak = pressed ? cheats::find_tweak(key) : nullptr) {
+            float v = cheats::toggle_max(*tweak);
+            save_config();
+            toast(std::string(tweak->label) + " " + cheats::tweak_text(*tweak, v));
+            continue;
+        }
         auto* cheat = pressed ? cheats::find(key) : nullptr;
         if (!cheat) continue;
         cheat->on = !cheat->on;

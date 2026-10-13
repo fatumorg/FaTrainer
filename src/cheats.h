@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <deque>
+#include <map>
 #include <random>
 #include <utility>
 #include <cstdio>
@@ -175,6 +176,27 @@ inline Tweak* find_tweak(const std::string& key) {
     for (auto& t : TWEAKS)
         if (key == t.key) return &t;
     return nullptr;
+}
+
+inline std::map<std::string, float> before_max;
+
+inline float toggle_max(Tweak& t) {
+    float now = t.factor;
+    if (now < t.max) before_max[t.key] = now, t.factor = t.max;
+    else {
+        auto it = before_max.find(t.key);
+        t.factor = it == before_max.end() ? 1.0f : it->second;
+    }
+    return t.factor;
+}
+
+inline std::string tweak_text(const Tweak& t, float v) {
+    char b[32];
+    if (v == 1.0f) snprintf(b, sizeof b, "Normal");
+    else if (v >= t.max) snprintf(b, sizeof b, "Max");
+    else if (!t.vars.empty()) snprintf(b, sizeof b, "%.0f%%", (v - 1.0f) / (t.max - 1.0f) * 100);
+    else snprintf(b, sizeof b, "x%.1f", v);
+    return b;
 }
 
 struct Tree { int type; const char* name; };

@@ -921,6 +921,15 @@ int main(int argc, char** argv) {
     CHECK(read_var("f_btz_zombie_grab_range") == 10 && read_var("f_btz_jump_attack_angle_max") == 180);
     cheats::side = side;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_zombie_grab_range") == 25);
+    {
+        auto& tackle = *cheats::find_tweak("z_tackle");
+        float saved = tackle.factor;
+        tackle.factor = 2.5f;
+        CHECK(cheats::toggle_max(tackle) == tackle.max && cheats::tweak_text(tackle, tackle.factor) == "Max");
+        CHECK(cheats::toggle_max(tackle) == 2.5f && cheats::tweak_text(tackle, 2.5f) == "x2.5" && cheats::tweak_text(tackle, 1.0f) == "Normal");
+        CHECK(cheats::tweak_text(*cheats::find_tweak("h_recharge"), 5.5f) == "50%");
+        tackle.factor = saved;
+    }
     CHECK(read_var("f_flare_throw_recharge_time") == 7);
     cheats::find_tweak("h_recharge")->factor = 10.0f;
     CHECK(std::fabs(read_var("f_flare_throw_recharge_time") - cheats::RECHARGE_AT_MAX) < 1e-4f);
