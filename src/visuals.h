@@ -790,6 +790,33 @@ inline SpeechFn hook_speech_export(uint8_t* fn) {
     return inner;
 }
 
+const uint8_t VOICE_LOCALE_EXPORT[] = {0x48, 0x8B, 0x49, 0x08, 0x48, 0x8D, 0x81, 0x50, 0x04, 0x00, 0x00, 0x80, 0x38, 0x00, 0x0F, 0x84};
+const size_t VOICE_LOCALE_RET = 20, VOICE_LOCALE_JE = 14, ENGINE_LOCALE = 0x450;
+using LocaleFallbackFn = const char*(__fastcall*)(uintptr_t inner_game);
+inline LocaleFallbackFn locale_fallback = nullptr;
+inline char voice_locale[8] = "";
+
+inline const char* __fastcall voice_locale_hook(uintptr_t game) {
+    uintptr_t inner = rdv<uintptr_t>(game + 8);
+    const char* locale = (const char*)(inner + ENGINE_LOCALE);
+    if (!*locale) locale = locale_fallback(inner);
+    std::string voice = wanted_voice(forced_voice);
+    if (voice.size() != 2 || !locale || strlen(locale) != 2) return locale;
+    snprintf(voice_locale, sizeof voice_locale, "%s", styled_like(voice, locale).c_str());
+    return voice_locale;
+}
+
+inline bool hook_voice_locale(uint8_t* fn) {
+    if (!fn || memcmp(fn, VOICE_LOCALE_EXPORT, sizeof VOICE_LOCALE_EXPORT) || fn[VOICE_LOCALE_RET] != 0xC3) return false;
+    locale_fallback = (LocaleFallbackFn)(fn + VOICE_LOCALE_RET + *(int32_t*)(fn + VOICE_LOCALE_JE + 2));
+    DWORD old;
+    if (!VirtualProtect(fn, SPEECH_PATCH, PAGE_EXECUTE_READWRITE, &old)) return false;
+    game::write_jump(fn, (uintptr_t)voice_locale_hook);
+    VirtualProtect(fn, SPEECH_PATCH, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), fn, SPEECH_PATCH);
+    return true;
+}
+
 inline void install_language_hooks(const std::string& game_language, const std::string& voice_language) {
     startup_game_setting = game_language, startup_voice_setting = voice_language;
     HMODULE exe = GetModuleHandleA(nullptr), engine = GetModuleHandleA("engine_x64_rwdi.dll");
@@ -800,15 +827,18 @@ inline void install_language_hooks(const std::string& game_language, const std::
     force_lang_original = (ForceLangFn)game::hook_import(exe, ENGINE_DLL, "?CheckForceLangParameter@IGame@@SA?AV?$string_base@D@ttl@@AEAV23@@Z", (void*)force_lang_hook);
     if (!force_lang_original) return;
     if (!forced_language.empty()) command_line_original = (CommandLineFn)game::hook_import(engine, "KERNEL32.dll", "GetCommandLineA", (void*)command_line_hook);
-    if (!forced_language.empty() || (!voice_language.empty() && voice_language != config::STEAM_LANGUAGE))
+    if (!forced_language.empty() || (!voice_language.empty() && voice_language != config::STEAM_LANGUAGE)) {
         speech_original = hook_speech_export((uint8_t*)GetProcAddress(engine, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z"));
+        hook_voice_locale((uint8_t*)GetProcAddress(engine, "?GetVoiceLocaleID@IGame@@UEAAPEBDXZ"));
+    }
 }
 
 inline std::string language_report() {
     return "steam " + (steam_language.empty() ? std::string("unknown") : steam_language) + ", game " + (started_language.empty() ? "unknown" : started_language) +
            (forced_language.empty() ? "" : " (forced " + forced_language + (command_line_original ? "" : ", command line not hooked") + ")") + ", voices " +
            (started_voice.empty() ? (speech_original ? "not set yet" : "game default") : started_voice) +
-           (speech_asked.empty() || speech_asked == started_voice ? "" : " (the game asked for " + speech_asked + ")");
+           (speech_asked.empty() || speech_asked == started_voice ? "" : " (the game asked for " + speech_asked + ")") +
+           (locale_fallback ? std::string(", voice files ") + (*voice_locale ? voice_locale : "not read yet") : "");
 }
 
 struct GameText { std::string key; std::wstring text; int kind; };

@@ -70,7 +70,7 @@ inline Cheat CHEATS[] = {
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},
     {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full, arrows and crossbow bolts too.", {}, {}},
     {"supplies", "Infinite consumables", "Medkits, throwables and crafting materials never run out.", {}, {}},
-    {"item_dupe", "Item Dupe", "Weapons and other single items you drop stay in your backpack too, so they lie on the ground and you still have them. Upgrades are not copied.", {}, {}},
+    {"item_dupe", "Item Dupe", "Whatever you drop also stays in your backpack as an exact copy, part of a stack too. Only drops count, not selling, storing or using.", {}, {}},
     {"lockpick", "Instant lockpicking", "Every pick position opens the lock and lockpicks never break.", {}, {}},
     {"durability", "Unbreakable weapons", "Melee weapons stop losing durability when you hit things.",
      {{"BluntWpnDurabilityLoss", 0}, {"CutWpnDurabilityLoss", 0}}, {}},
@@ -221,7 +221,7 @@ inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
 inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
-inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, var_root = 0, xp_award_site = 0;
+inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, vt_player_bool = 0, var_root = 0, xp_award_site = 0;
 inline uintptr_t skill_manager = 0, add_skill_fn = 0, remove_skill_fn = 0;
 inline std::map<std::string, int> param_ids;
 inline uintptr_t immortal_vtable[COPIED_SLOTS + 1];
@@ -303,10 +303,11 @@ inline void read_param_names() {
         if (is_case(entry(p), common)) param_ids[(const char*)game::rip_target(entry(p), 3, 7)] = (int)((p - start) / 4);
 }
 
-inline uintptr_t vt_melee_desc = 0;
+inline uintptr_t vt_melee_desc = 0, vt_melee_controller = 0;
 
 inline void locate(uintptr_t base) {
     vt_melee_desc = game::find_vtable(base, "ItemDescMelee");
+    vt_melee_controller = game::find_vtable(base, "WeaponMeleeController");
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 88 80 07 00 00"); !hits.empty())
         local_player_root = game::rip_target(hits[0], 3, 7);
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 74 07 48 8B ? 58 0E 00 00"); !hits.empty())
@@ -368,6 +369,7 @@ inline void locate(uintptr_t base) {
     vt_param_float = game::find_vtable(base, "?$Param@M");
     vt_player_float = game::find_vtable(base, "FloatPlayerVariable");
     vt_param_bool = game::find_vtable(base, "?$Param@_N");
+    vt_player_bool = game::find_vtable(base, "BoolPlayerVariable");
     read_param_names();
 }
 
@@ -521,11 +523,18 @@ inline float original_float(uintptr_t at) {
     return f;
 }
 
+inline bool param_kind_ok(uintptr_t at, bool is_switch) {
+    uintptr_t vt = at ? rdv<uintptr_t>(at - PARAM_VALUE) : 0;
+    if (!vt) return false;
+    return is_switch ? vt == vt_param_bool || vt == vt_player_bool : vt == vt_param_float || vt == vt_player_float;
+}
+
 inline void set_param(const std::string& name, float value, bool is_switch, const std::vector<uintptr_t>& containers,
                       std::set<uintptr_t>& touched) {
     uint8_t yes = value != 0;
     for (uintptr_t c : containers) {
         uintptr_t at = param_value(c, name);
+        if (!param_kind_ok(at, is_switch)) continue;
         if (is_switch) put_bytes(at, &yes, 1, touched);
         else put_bytes(at, &value, 4, touched);
     }
@@ -533,7 +542,7 @@ inline void set_param(const std::string& name, float value, bool is_switch, cons
 
 inline void set_desc_stat(uintptr_t desc, int stat, float v, std::set<uintptr_t>& touched) {
     auto& f = game::stat_field(desc, stat);
-    if (f.off < 0 || !desc) return;
+    if (f.off < 0 || !game::desc_alive(desc)) return;
     int n = (int)std::lround(v);
     put_bytes(desc + f.off, f.is_float ? (const void*)&v : (const void*)&n, 4, touched);
 }
@@ -579,9 +588,11 @@ inline void item_overrides(std::set<uintptr_t>& touched) {
         if (d == g.descs.end()) continue;
         if (info.melee) scale_desc_stat(d->second, ST_DamageRange, reach, touched);
         if (uv && info.st[ST_DepletionTime] < 1e6f) set_desc_stat(d->second, ST_DepletionTime, 1e7f, touched);
-        if (no_reload && info.st[ST_AmmoCount] > 0) {
+        if (no_reload && info.st[ST_AmmoCount] > 0 && game::firearm_desc(d->second)) {
             set_desc_stat(d->second, ST_AmmoCount, 999, touched);
-            if (info.st[ST_ReloadTime] > 0) set_desc_stat(d->second, ST_ReloadTime, 0.05f, touched);
+            auto& field = game::stat_field(d->second, ST_ReloadTime);
+            float reload = field.off >= 0 && field.is_float ? original_float(d->second + field.off) : NAN;
+            if (reload > 0 && reload < 60) set_desc_stat(d->second, ST_ReloadTime, 0.05f, touched);
         }
     }
 }
@@ -616,11 +627,46 @@ inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
     return out;
 }
 
+const size_t MELEE_CONTROLLER = 0xc10, MELEE_ATTACK = 0x11c;
+const int SLOT_CONTROLLER_CLOCK = 6, NO_ATTACK = -1;
+inline uintptr_t melee_vtable_original = 0;
+const int MELEE_SLOTS = 128;
+inline uintptr_t melee_vtable[MELEE_SLOTS + 1];
+inline std::atomic<float> melee_clock_factor{1.0f};
+inline float melee_clock_now = 0, melee_clock_last = 0;
+inline bool melee_clock_started = false;
+
+inline float __fastcall melee_clock(uintptr_t controller) {
+    float real = ((float(__fastcall*)(uintptr_t))rdv<uintptr_t>(melee_vtable_original + SLOT_CONTROLLER_CLOCK * 8))(controller);
+    float f = melee_clock_factor;
+    bool idle = rdv<int>(controller + MELEE_ATTACK) == NO_ATTACK;
+    if (!melee_clock_started || real < melee_clock_last || (f == 1.0f && idle)) melee_clock_now = real, melee_clock_started = true;
+    else melee_clock_now += (real - melee_clock_last) * f;
+    melee_clock_last = real;
+    return melee_clock_now;
+}
+
+inline void keep_melee_clock(uintptr_t p, float f) {
+    melee_clock_factor = f;
+    uintptr_t controller = p ? rdv<uintptr_t>(p + MELEE_CONTROLLER) : 0;
+    uintptr_t current = controller ? rdv<uintptr_t>(controller) : 0, ours = (uintptr_t)&melee_vtable[1];
+    if (!current || (current != ours && current != vt_melee_controller)) return;
+    if (f != 1.0f && current == vt_melee_controller) {
+        if (!rd(current - 8, melee_vtable, sizeof melee_vtable)) return;
+        melee_vtable_original = current, melee_clock_started = false;
+        melee_vtable[1 + SLOT_CONTROLLER_CLOCK] = (uintptr_t)&melee_clock;
+        wr<uintptr_t>(controller, ours);
+    } else if (f == 1.0f && current == ours && rdv<int>(controller + MELEE_ATTACK) == NO_ATTACK) {
+        wr<uintptr_t>(controller, melee_vtable_original);
+    }
+}
+
 inline void speed_melee_anims() {
     float f = tweak_factor("melee_speed");
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
     uintptr_t bind = p && anim_bind_of ? anim_bind_of(p) : 0;
     bool on = f != 1.0f && bind && holding_melee(p);
+    keep_melee_clock(p, on ? f : 1.0f);
     if (!on && anim_speeds.empty()) return;
     std::unordered_map<uintptr_t, AnimSpeed> next;
     for (uintptr_t a : bind ? playing_anims(bind) : std::vector<uintptr_t>{}) {
@@ -806,6 +852,7 @@ inline bool float_value(uintptr_t at) {
 }
 
 inline void apply_overrides() {
+    if (!alive(player)) return;
     auto containers = param_containers();
     if (containers != saved_containers) saved_bytes.clear(), saved_containers = containers;
     std::map<std::string, std::pair<float, bool>> want;
@@ -1329,15 +1376,6 @@ inline void keep_stacks(bool ammo, bool supplies) {
     }
 }
 
-const size_t ITEM_DATA = 0x40, ITEM_DATA_SIZE = 0xC0, DATA_COUNT = 0x00, DATA_CONDITION = 0x04, DATA_DESC = 0x20, DATA_UPGRADE = 0x60;
-const DWORD DUPE_SAME_ITEM_MS = 2000;
-struct HeldItem { std::array<uint8_t, ITEM_DATA_SIZE> data; };
-inline std::unordered_map<uintptr_t, HeldItem> held_items;
-inline std::map<uintptr_t, int> held_elsewhere;
-inline std::map<uintptr_t, DWORD> duped_at;
-inline long long held_money = -1;
-inline int dupes = 0;
-
 inline std::mutex edits_mx;
 inline std::map<std::string, std::map<std::string, float>> weapon_edits;
 
@@ -1363,77 +1401,6 @@ inline void apply_weapon_edits() {
             if (s >= 0 && (done == g.stat_overrides.end() || done->second != v)) game::set_stat(d->second, s, v);
         }
     }
-}
-
-inline uintptr_t live_backpack() {
-    for (auto& inv : g.invs)
-        if (inv.kind == game::K_BACKPACK && game::live_inventory(inv.obj)) return inv.obj;
-    return 0;
-}
-
-inline std::map<uintptr_t, int> descs_elsewhere(uintptr_t backpack) {
-    std::map<uintptr_t, int> out;
-    for (auto& inv : g.invs)
-        if (inv.obj != backpack && game::live_inventory(inv.obj))
-            for (uintptr_t item : items_present(inv.obj)) out[rdv<uintptr_t>(item + ITEM_DATA + DATA_DESC)]++;
-    return out;
-}
-
-inline long long money_held() {
-    long long most = 0;
-    for (uintptr_t w : g.wallets) most = std::max<long long>(most, game::money(w));
-    return most;
-}
-
-inline const char* desc_id(uintptr_t desc) {
-    const ItemInfo* info = game::str_at(rdv<uintptr_t>(desc + 0x18));
-    return info ? info->id : "an item";
-}
-
-inline bool duplicate_into(uintptr_t inv, const HeldItem& held) {
-    std::array<uint8_t, ITEM_DATA_SIZE> data = held.data;
-    uintptr_t none = 0;
-    memcpy(data.data() + DATA_UPGRADE, &none, sizeof none);
-    auto add = (game::AddItemFn)rdv<uintptr_t>(rdv<uintptr_t>(inv) + 6 * 8);
-    if (!add) return false;
-    size_t before = items_present(inv).size();
-    add(inv, data.data(), 0, false);
-    if (items_present(inv).size() == before) add(inv, data.data(), 0, true);
-    return items_present(inv).size() != before;
-}
-
-inline void dupe_drops(bool on) {
-    uintptr_t backpack = on ? live_backpack() : 0;
-    if (!backpack) {
-        held_items.clear(), held_elsewhere.clear(), held_money = -1;
-        return;
-    }
-    auto present = items_present(backpack);
-    auto elsewhere = descs_elsewhere(backpack);
-    long long money = money_held();
-    bool sold = held_money >= 0 && money > held_money;
-    DWORD now = GetTickCount();
-    for (auto& [addr, held] : held_items) {
-        if (present.count(addr) || sold) continue;
-        uintptr_t desc;
-        float condition;
-        memcpy(&desc, held.data.data() + DATA_DESC, sizeof desc);
-        memcpy(&condition, held.data.data() + DATA_CONDITION, sizeof condition);
-        bool moved = elsewhere[desc] > held_elsewhere[desc];
-        auto last = duped_at.find(desc);
-        bool repeating = last != duped_at.end() && now - last->second < DUPE_SAME_ITEM_MS;
-        if (moved || repeating || !(condition > 0)) continue;
-        if (duplicate_into(backpack, held)) duped_at[desc] = now, dupes++, logf_hook("dupe: %s kept in the backpack", desc_id(desc));
-    }
-    held_items.clear();
-    for (uintptr_t addr : items_present(backpack)) {
-        HeldItem h;
-        if (!rd(addr + ITEM_DATA, h.data.data(), ITEM_DATA_SIZE)) continue;
-        int count;
-        memcpy(&count, h.data.data() + DATA_COUNT, sizeof count);
-        if (count <= 1) held_items.emplace(addr, h);
-    }
-    held_elsewhere = std::move(elsewhere), held_money = money;
 }
 
 inline void keep_durability(bool on) {
@@ -2052,6 +2019,138 @@ inline BYTE dodge_key(const float m[16], Vec3 away, Vec3 flight) {
         best = o.key, best_score = score;
     }
     return best && !input::held(best) ? best : 0;
+}
+
+const size_t ITEM_DATA = 0x40, ITEM_DATA_SIZE = 0xC0, DATA_COUNT = 0x00, DATA_CONDITION = 0x04, DATA_DESC = 0x20, DATA_UPGRADE = 0x60;
+const size_t DROPPED_SPAN = 0x800;
+const float DROP_RADIUS = 8.0f;
+const DWORD DROP_WAIT_MS = 2000;
+struct HeldItem { std::array<uint8_t, ITEM_DATA_SIZE> data; };
+struct PendingDrop { uintptr_t item, desc; HeldItem held; std::set<uintptr_t> before; DWORD at; bool whole; };
+inline std::unordered_map<uintptr_t, HeldItem> held_items;
+inline std::map<uintptr_t, int> held_elsewhere;
+inline std::vector<PendingDrop> pending_drops;
+inline std::set<uintptr_t> dropped_seen;
+inline std::unordered_map<uintptr_t, bool> dropped_classes;
+inline EngineVector dropped_scan{};
+inline long long held_money = -1;
+inline int dupes = 0;
+inline std::vector<uintptr_t> (*dropped_near)() = nullptr;
+
+inline uintptr_t live_backpack() {
+    for (auto& inv : g.invs)
+        if (inv.kind == game::K_BACKPACK && game::live_inventory(inv.obj)) return inv.obj;
+    return 0;
+}
+
+inline std::map<uintptr_t, int> descs_elsewhere(uintptr_t backpack) {
+    std::map<uintptr_t, int> out;
+    for (auto& inv : g.invs)
+        if (inv.obj != backpack && game::live_inventory(inv.obj))
+            for (uintptr_t item : items_present(inv.obj)) out[rdv<uintptr_t>(item + ITEM_DATA + DATA_DESC)]++;
+    return out;
+}
+
+inline long long money_held() {
+    long long most = 0;
+    for (uintptr_t w : g.wallets) most = std::max<long long>(most, game::money(w));
+    return most;
+}
+
+inline const char* desc_id(uintptr_t desc) {
+    const ItemInfo* info = game::str_at(rdv<uintptr_t>(desc + g.desc_name));
+    return info ? info->id : "an item";
+}
+
+inline bool known_desc(uintptr_t desc) {
+    for (auto& [id, d] : g.descs)
+        if (d == desc) return true;
+    return false;
+}
+
+inline bool duplicate_into(uintptr_t inv, const HeldItem& held) {
+    std::array<uint8_t, ITEM_DATA_SIZE> data = held.data;
+    uintptr_t upgrade;
+    memcpy(&upgrade, data.data() + DATA_UPGRADE, sizeof upgrade);
+    if (upgrade && !known_desc(upgrade)) upgrade = 0, memcpy(data.data() + DATA_UPGRADE, &upgrade, sizeof upgrade);
+    auto add = (game::AddItemFn)rdv<uintptr_t>(rdv<uintptr_t>(inv) + 6 * 8);
+    if (!add) return false;
+    size_t before = items_present(inv).size();
+    add(inv, data.data(), 0, false);
+    if (items_present(inv).size() == before) add(inv, data.data(), 0, true);
+    return items_present(inv).size() != before;
+}
+
+inline bool holds_pointer(uintptr_t object, uintptr_t a, uintptr_t b) {
+    uint64_t q[DROPPED_SPAN / 8];
+    if (!rd(object, q, sizeof q)) return false;
+    for (uint64_t v : q)
+        if (v == a || v == b) return true;
+    return false;
+}
+
+inline std::vector<uintptr_t> scan_dropped_near() {
+    std::vector<uintptr_t> out;
+    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
+    uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
+    Vec3 me;
+    if (!level || !find_in_radius || g.player_control < 0 || !position_of(player + g.player_control, &me)) return out;
+    dropped_scan.size = 0;
+    find_in_radius(level, &dropped_scan, &me, DROP_RADIUS, 0, false, nullptr);
+    for (uint32_t i = 0; i < dropped_scan.size && dropped_scan.data; i++) {
+        uintptr_t control = dropped_scan.data[i], vt = rdv<uintptr_t>(control);
+        if (!vt) continue;
+        auto known = dropped_classes.find(vt);
+        if (known == dropped_classes.end()) known = dropped_classes.emplace(vt, game::base_offset(g.base, vt, "DroppedItem") >= 0).first;
+        if (!known->second) continue;
+        uintptr_t col = rdv<uintptr_t>(vt - 8);
+        out.push_back(control - rdv<uint32_t>(col + 4));
+    }
+    return out;
+}
+
+inline void dupe_drops(bool on) {
+    uintptr_t backpack = on ? live_backpack() : 0;
+    if (!backpack) {
+        held_items.clear(), held_elsewhere.clear(), pending_drops.clear(), dropped_seen.clear(), held_money = -1;
+        return;
+    }
+    auto present = items_present(backpack);
+    auto elsewhere = descs_elsewhere(backpack);
+    long long money = money_held();
+    bool sold = held_money >= 0 && money > held_money;
+    DWORD now = GetTickCount();
+    for (auto& [addr, held] : held_items) {
+        if (sold) break;
+        uintptr_t desc;
+        int had;
+        memcpy(&desc, held.data.data() + DATA_DESC, sizeof desc);
+        memcpy(&had, held.data.data() + DATA_COUNT, sizeof had);
+        bool whole = !present.count(addr);
+        if (!whole && rdv<int>(addr + ITEM_DATA + DATA_COUNT) >= had) continue;
+        if (whole && elsewhere[desc] > held_elsewhere[desc]) continue;
+        pending_drops.push_back({addr, desc, held, dropped_seen, now, whole});
+    }
+    auto close_by = dropped_near ? dropped_near() : scan_dropped_near();
+    std::set<uintptr_t> close_set(close_by.begin(), close_by.end());
+    for (auto it = pending_drops.begin(); it != pending_drops.end();) {
+        bool found = false;
+        for (uintptr_t obj : close_by)
+            if (!it->before.count(obj) && holds_pointer(obj, it->desc, it->item)) found = true;
+        int had;
+        memcpy(&had, it->held.data.data() + DATA_COUNT, sizeof had);
+        bool kept = found && (it->whole ? duplicate_into(backpack, it->held) : present.count(it->item) && wr<int>(it->item + ITEM_DATA + DATA_COUNT, had));
+        if (kept) dupes++, logf_hook("dupe: %s dropped, a copy stays in the backpack", desc_id(it->desc));
+        if (found || now - it->at > DROP_WAIT_MS) it = pending_drops.erase(it);
+        else ++it;
+    }
+    dropped_seen = std::move(close_set);
+    held_items.clear();
+    for (uintptr_t addr : items_present(backpack)) {
+        HeldItem h;
+        if (rd(addr + ITEM_DATA, h.data.data(), ITEM_DATA_SIZE)) held_items.emplace(addr, h);
+    }
+    held_elsewhere = std::move(elsewhere), held_money = money;
 }
 
 inline const char* key_name(BYTE key) { return key == KEY_LEFT ? "left" : key == KEY_RIGHT ? "right" : key == KEY_FORWARD ? "forward" : "back"; }

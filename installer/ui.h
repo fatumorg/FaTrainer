@@ -115,7 +115,7 @@ struct Model {
     std::string picked;
     std::vector<logic::Release> releases;
     logic::Release chosen;
-    bool allow_older = false, beta = false, visuals = false;
+    bool allow_older = false, beta = false, visuals = false, game_running = false;
     std::string installed_edition;
     logic::Announcement announcement;
 };
@@ -341,6 +341,48 @@ inline void start_play() {
     }).detach();
 }
 
+const int WATCH_MS = 1500, CLOSE_WAIT_MS = 15000, STEAM_SETTLE_MS = 3000;
+
+inline void watch_game() {
+    std::thread([] {
+        for (;;) {
+            bool running = !platform::game_processes().empty();
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                M.game_running = running;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(WATCH_MS));
+        }
+    }).detach();
+}
+
+inline void close_game(bool play_after) {
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        if (M.job == Job::working) return;
+        M.job = Job::working, M.step = "Closing Dying Light", M.progress = 0, M.message.clear();
+    }
+    std::thread([play_after] {
+        auto pids = platform::game_processes();
+        platform::stop_processes(pids);
+        for (int waited = 0; !platform::game_processes().empty(); waited += 250) {
+            if (waited >= CLOSE_WAIT_MS) return finish(Job::failed, "Dying Light did not close. " + replace_hint());
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        }
+        {
+            std::lock_guard<std::mutex> l(M.mx);
+            M.game_running = false;
+        }
+        if (!play_after) return finish(Job::idle, "Dying Light was closed.");
+        std::this_thread::sleep_for(std::chrono::milliseconds(STEAM_SETTLE_MS));
+        {
+            std::lock_guard<std::mutex> l(M.mx);
+            M.job = Job::idle;
+        }
+        start_play();
+    }).detach();
+}
+
 inline void start_self_update() {
     ReleaseInfo update;
     {
@@ -456,6 +498,7 @@ inline void init(float dpi_scale) {
     refresh_installed();
     fetch_release();
     fetch_announcement();
+    watch_game();
 }
 
 inline int tab = 0;
@@ -699,7 +742,7 @@ inline void detail(float width) {
         view.message_bad = M.message_bad, view.picking = M.picking, view.picker_missing = M.picker_missing;
         view.installer_update = M.installer_update;
         view.releases = M.releases, view.chosen = M.chosen, view.beta = M.beta, view.on_beta = M.on_beta;
-        view.visuals = M.visuals, view.installed_edition = M.installed_edition;
+        view.visuals = M.visuals, view.installed_edition = M.installed_edition, view.game_running = M.game_running;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -868,17 +911,24 @@ inline void detail(float width) {
         else if (view.fetch == Fetch::loading) text = "Checking for updates";
         else if (!found) text = "Choose the game folder first";
         else if (!playable) text = "Cannot reach GitHub";
+        else if (view.game_running) text = "Restart with FaTrainer", enabled = true;
         else text = !install ? "Play" : (newer_version(target, view.installed) ? "Update to " : "Install ") + target + " and play", enabled = true;
+        bool restart = view.game_running && enabled && view.installer_update.version.empty() && view.job != Job::working && !celebrate;
         ImVec2 at = ImGui::GetCursorScreenPos();
         float shown_progress = progress >= 0 ? follow(anim("progress"), progress, 10) : (anim("progress") = 0);
         if (button("install", text, {S(300), S(52)}, Kind::primary, enabled, progress >= 0 ? shown_progress : -1))
-            view.installer_update.version.empty() ? start_play() : start_self_update();
+            !view.installer_update.version.empty() ? start_self_update() : restart ? close_game(true) : start_play();
         if (celebrate) check_mark(dl, {at.x + S(300) / 2 - text_w(F.strong, "Running") / 2 - S(22), at.y + S(26)}, S(14), (float)(ImGui::GetTime() - view.finished_at) * 2.2f, C(ACCENT_INK));
-        if (!view.installed.empty() && view.job != Job::working && view.installer_update.version.empty()) {
+        if (view.game_running && view.job != Job::working && view.installer_update.version.empty()) {
+            ImGui::SameLine(0, S(12));
+            if (button("close_game", "Close Dying Light", {S(160), S(52)}, Kind::quiet)) close_game(false);
+        } else if (!view.installed.empty() && view.job != Job::working && view.installer_update.version.empty()) {
             ImGui::SameLine(0, S(12));
             if (button("uninstall", "Remove from game", {S(160), S(52)}, Kind::quiet)) uninstall();
         }
         std::string message = view.message;
+        if (message.empty() && view.game_running && view.job != Job::working)
+            message = "Dying Light is running. Restart with FaTrainer closes it and starts it again with the trainer; Close Dying Light only closes it.", view.message_bad = false;
         if (message.empty() && view.fetch == Fetch::failed) message = "Could not check for the latest release: " + view.fetch_error + ".", view.message_bad = true;
         if (message.empty() && !view.installer_update.version.empty())
             message = "FaTrainer " + view.installer_update.version + " is out (this is " INSTALLER_VERSION "). It updates itself first. Your game is not touched.";

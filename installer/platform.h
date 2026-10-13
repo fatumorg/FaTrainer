@@ -10,6 +10,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <tlhelp32.h>
 #include <shobjidl.h>
 #include <shlobj.h>
 #include "net_win.h"
@@ -365,6 +366,37 @@ const char* DOWNLOAD_NAME = "xinput1_3.dll.fatrainer-download";
 inline std::string read_file(const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(f), {});
+}
+
+inline std::vector<long> game_processes() {
+    std::vector<long> out;
+#ifdef _WIN32
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return out;
+    PROCESSENTRY32W e{sizeof e};
+    for (BOOL more = Process32FirstW(snap, &e); more; more = Process32NextW(snap, &e))
+        if (logic::game_process(utf8(e.szExeFile))) out.push_back((long)e.th32ProcessID);
+    CloseHandle(snap);
+#else
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator("/proc", ec)) {
+        std::string pid = entry.path().filename().string();
+        if (pid.empty() || pid.find_first_not_of("0123456789") != std::string::npos || atol(pid.c_str()) == (long)getpid()) continue;
+        std::string cmdline = read_file(entry.path() / "cmdline");
+        if (logic::game_process(cmdline.substr(0, cmdline.find('\0')))) out.push_back(atol(pid.c_str()));
+    }
+#endif
+    return out;
+}
+
+inline void stop_processes(const std::vector<long>& pids) {
+    for (long pid : pids) {
+#ifdef _WIN32
+        if (HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid)) TerminateProcess(h, 1), CloseHandle(h);
+#else
+        kill((pid_t)pid, SIGKILL);
+#endif
+    }
 }
 
 inline bool is_game_dir(const fs::path& dir) {

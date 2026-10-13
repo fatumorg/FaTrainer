@@ -42,6 +42,8 @@ struct World {
         for (int i = 0; i < ITEM_COUNT; i++) {
             uintptr_t d = alloc(0x600), s = names + i * 72;
             strcpy((char*)s, ITEMS[i].id);
+            bool firearm = !strncmp(ITEMS[i].id, "Firearm", 7) || strstr(ITEMS[i].id, "Crossbow_");
+            put<uintptr_t>(d, firearm && game::g.vt_firearm_desc ? game::g.vt_firearm_desc : game::g.base + 0x1000);
             put<uintptr_t>(d + 0x18, s);
             if (!std::isnan(ITEMS[i].st[ST_Damage])) put<float>(d + DAMAGE_OFF, ITEMS[i].st[ST_Damage]);
             if (!std::isnan(ITEMS[i].st[ST_Condition])) put<int>(d + CONDITION_OFF, (int)ITEMS[i].st[ST_Condition]);

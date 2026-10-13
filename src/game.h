@@ -6,6 +6,7 @@
 #include <cstring>
 #include <array>
 #include <map>
+#include <set>
 #include <mutex>
 #include <string>
 #include <tuple>
@@ -342,7 +343,7 @@ const uint32_t NIBBLE = 0xF;
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
     uintptr_t vt_player = 0, vt_tutorial_player = 0, vt_human = 0, vt_health[3] = {};
-    uintptr_t vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0;
+    uintptr_t vt_firearm_desc = 0, vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0;
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds;
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
@@ -350,6 +351,7 @@ struct State {
     std::map<std::string, uintptr_t> descs;
     StatField stats[ST_COUNT];
     std::map<uintptr_t, StatField> class_stats[ST_COUNT];
+    int desc_name = 0x18;
     NameRule rule;
     std::string status = "starting";
     bool scanning = false;
@@ -362,6 +364,22 @@ inline bool set_money(uintptr_t w, int v) { return wr<int>(w + 0x40, v); }
 inline int count(const Item& it) { return rdv<int>(it.addr + 0x40); }
 inline bool set_count(const Item& it, int v) { return wr<int>(it.addr + 0x40, v); }
 inline uintptr_t item_desc(const Item& it) { return rdv<uintptr_t>(it.addr + 0x60); }
+
+inline bool in_image(uintptr_t p) {
+    static uintptr_t base = 0, end = 0;
+    if (base != g.base) {
+        base = g.base;
+        auto nt = base ? (const IMAGE_NT_HEADERS64*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew) : nullptr;
+        end = nt ? base + nt->OptionalHeader.SizeOfImage : 0;
+    }
+    return p >= base && p < end;
+}
+
+inline bool desc_alive(uintptr_t desc) {
+    return desc && in_image(rdv<uintptr_t>(desc)) && str_at(rdv<uintptr_t>(desc + g.desc_name));
+}
+
+inline bool firearm_desc(uintptr_t desc) { return desc && g.vt_firearm_desc && rdv<uintptr_t>(desc) == g.vt_firearm_desc; }
 
 inline const StatField& stat_field(uintptr_t desc, int s) {
     auto it = g.class_stats[s].find(desc ? rdv<uintptr_t>(desc) : 0);
@@ -376,7 +394,7 @@ inline float get_stat(uintptr_t desc, int s) {
 }
 inline bool write_stat(uintptr_t desc, int s, float v) {
     auto& f = stat_field(desc, s);
-    if (f.off < 0 || !desc) return false;
+    if (f.off < 0 || !desc_alive(desc)) return false;
     if (f.shift >= 0) {
         uint32_t word = rdv<uint32_t>(desc + f.off), value = (uint32_t)std::lround(v) & NIBBLE;
         return wr<uint32_t>(desc + f.off, (word & ~(NIBBLE << f.shift)) | (value << f.shift));
@@ -409,7 +427,7 @@ inline void reapply_stats() {
 }
 
 inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInfo*>>& descs, StatField out[ST_COUNT]) {
-    const int SPAN = 0x600;
+    const int SPAN = 0x800;
     std::vector<std::vector<uint8_t>> bufs;
     std::vector<const ItemInfo*> infos;
     for (auto& [d, info] : descs) {
@@ -461,7 +479,7 @@ inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInf
 }
 
 using ClassStats = std::array<std::map<uintptr_t, StatField>, ST_COUNT>;
-const int CLASS_SAMPLES = 8;
+const int CLASS_SAMPLES = 8, CLASS_VALUES = 3;
 
 inline ClassStats calibrate_classes(const std::vector<std::pair<uintptr_t, const ItemInfo*>>& descs, const StatField global[ST_COUNT]) {
     std::map<uintptr_t, std::vector<std::pair<uintptr_t, const ItemInfo*>>> by_class;
@@ -471,9 +489,14 @@ inline ClassStats calibrate_classes(const std::vector<std::pair<uintptr_t, const
         if (!vt) continue;
         StatField fields[ST_COUNT];
         calibrate_stats(list, fields);
-        for (int s = 0; s < ST_COUNT; s++)
+        for (int s = 0; s < ST_COUNT; s++) {
+            std::set<float> values;
+            for (auto& [d, info] : list)
+                if (!std::isnan(info->st[s])) values.insert(info->st[s]);
+            if ((int)values.size() < CLASS_VALUES) continue;
             if (fields[s].off >= 0 && fields[s].samples >= CLASS_SAMPLES && (fields[s].off != global[s].off || fields[s].is_float != global[s].is_float || fields[s].shift != global[s].shift))
                 out[s][vt] = fields[s];
+        }
     }
     return out;
 }
@@ -490,6 +513,7 @@ inline bool resolve_classes(uintptr_t base) {
     const char* health_classes[] = {"HealthModule", "ArmorHealthModule", "BodyPartsHealthModule"};
     for (int i = 0; i < 3; i++) g.vt_health[i] = find_vtable(base, health_classes[i]);
     g.vt_equipment = find_vtable(base, "EquipmentController");
+    g.vt_firearm_desc = find_vtable(base, "ItemDescFirearm");
     g.vt_prison_data = find_vtable(base, "ReplData@Prison");
     g.vt_prison_sensor = find_vtable(base, "SensorPrisonRush");
     g.vt_rope = find_vtable(base, "RopeLocomotionController");
@@ -604,6 +628,7 @@ inline void refresh() {
     g.invs = std::move(invs);
     g.descs = std::move(descs);
     for (int s = 0; s < ST_COUNT; s++) g.stats[s] = stats[s], g.class_stats[s] = std::move(class_stats[s]);
+    g.desc_name = name_off;
     g.rule = rule;
     char s[260];
     snprintf(s, sizeof s,

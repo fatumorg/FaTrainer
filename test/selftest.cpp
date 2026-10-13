@@ -189,6 +189,9 @@ int main(int argc, char** argv) {
     CHECK(info.version == "2.1" && info.sha256 == "ab12" && info.size == 2598750);
     CHECK(!strcmp(VERSION, FATRAINER_VERSION));
     CHECK(logic::sha256_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    CHECK(logic::game_process("Z:\\mnt\\data\\Gaming\\Steam\\steamapps\\common\\Dying Light\\DyingLightGame.exe") && logic::game_process("DyingLightGame.exe"));
+    CHECK(logic::game_process("/home/x/.steam/steamapps/common/Dying Light/dyinglightgame.EXE") && !logic::game_process("grep DyingLightGame.exe"));
+    CHECK(!logic::game_process("/usr/bin/steam") && !logic::game_process("") && !logic::game_process("C:\\DyingLightGame.exe.bak"));
     CHECK(logic::sha256_hex(std::string(1000, 'a')) == "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
     auto libraries = logic::vdf_values("\"0\"\n{\n\t\t\"path\"\t\t\"D:\\\\Games\\\\Steam\"\n}\n\"1\" { \"path\" \"/home/a b/Steam\" }", "path");
     CHECK(libraries.size() == 2 && libraries[0] == "D:\\Games\\Steam" && libraries[1] == "/home/a b/Steam");
@@ -368,6 +371,15 @@ int main(int argc, char** argv) {
         for (auto& n : c.numbers) CHECK(cheats::param_ids.count(n.first));
         for (auto* n : c.switches) CHECK(cheats::param_ids.count(n));
     }
+    for (auto& [name, index] : cheats::param_ids) game::wr<uintptr_t>(w.params + index * 16, cheats::vt_param_float);
+    for (auto& c : cheats::CHEATS)
+        for (auto* n : c.switches) game::wr<uintptr_t>(w.params + cheats::param_ids[n] * 16, cheats::vt_param_bool);
+    {
+        uintptr_t hook = w.params + cheats::param_ids["CanUseHook"] * 16 + 8, regen = w.params + cheats::param_ids["RopeEnergyRegenTime"] * 16 + 8;
+        CHECK(cheats::param_kind_ok(hook, true) && !cheats::param_kind_ok(hook, false) && cheats::param_kind_ok(regen, false) && !cheats::param_kind_ok(regen, true));
+        uintptr_t stray = w.alloc(16);
+        CHECK(!cheats::param_kind_ok(stray + 8, false) && !cheats::param_kind_ok(0, false));
+    }
     CHECK(cheats::local_player_root && cheats::params_root && cheats::unlimited_ammo_flag && cheats::var_root);
     {
         std::string engine_dir = argv[1];
@@ -422,6 +434,21 @@ int main(int argc, char** argv) {
         CHECK(inner_seen == 0x4242 && id_seen == "Pl" && force_seen && visuals::language_report().find("the game asked for En") != std::string::npos);
         uint8_t plain[16] = {0x48, 0x8B, 0x49, 0x08, 0xE9, 0, 0, 0, 0, 0x90};
         CHECK(!visuals::hook_speech_export(plain));
+        auto* locale_code = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        memset(locale_code, 0xCC, 64);
+        memcpy(locale_code, visuals::VOICE_LOCALE_EXPORT, sizeof visuals::VOICE_LOCALE_EXPORT);
+        *(int32_t*)(locale_code + visuals::VOICE_LOCALE_JE + 2) = 0x20 - (int32_t)visuals::VOICE_LOCALE_RET;
+        locale_code[visuals::VOICE_LOCALE_RET] = 0xC3;
+        static uint8_t inner_game[0x500] = {};
+        memcpy(inner_game + visuals::ENGINE_LOCALE, "en", 3);
+        uintptr_t locale_game[2] = {0, (uintptr_t)inner_game};
+        CHECK(visuals::hook_voice_locale(locale_code) && visuals::locale_fallback == (visuals::LocaleFallbackFn)(locale_code + 0x20));
+        CHECK(!strcmp(((const char* (*)(uintptr_t))locale_code)((uintptr_t)locale_game), "pl"));
+        visuals::forced_voice = visuals::FOLLOW_GAME;
+        CHECK(!strcmp(((const char* (*)(uintptr_t))locale_code)((uintptr_t)locale_game), "en"));
+        visuals::forced_voice = "Pl";
+        VirtualFree(locale_code, 0, MEM_RELEASE);
+        visuals::locale_fallback = nullptr, visuals::voice_locale[0] = 0;
         visuals::speech_original = saved_original, visuals::forced_voice = saved_voice, visuals::started_voice.clear(), visuals::speech_asked.clear();
         VirtualFree(code, 0, MEM_RELEASE);
     }
@@ -586,6 +613,7 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(w.desc["Throwable_LightDisable_Spit"] + fake::MELEE_RANGE_OFF) == 5.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
+    CHECK(game::rdv<int>(w.desc["Ammo_PistolBig"] + fake::AMMO_OFF) == (int)game::lookup("Ammo_PistolBig")->st[ST_AmmoCount] && game::rdv<int>(w.desc["Crossbow_SHU"] + fake::AMMO_OFF) == 999);
     CHECK(game::rdv<float>(w.desc["Flashlight_Superlight"] + fake::DEPLETION_OFF) == 1e7f);
     CHECK(cheats::tree_level(2) == 7 && cheats::tree_max(2) == 25 && cheats::tree_max(5) == 0);
     game::wr<uint32_t>(w.trees + 2 * 0x20 + 0xc, 1000);
@@ -710,17 +738,37 @@ int main(int argc, char** argv) {
         uintptr_t hand = cheats::player + cheats::PLAYER_HANDS + cheats::HAND_SIZE;
         game::wr<uintptr_t>(hand, 1);
         game::wr<uintptr_t>(hand + cheats::HAND_ITEM, (uintptr_t)item);
+        static uintptr_t controller_vtable[cheats::MELEE_SLOTS + 2] = {};
+        static float clock_time = 10.0f;
+        controller_vtable[1 + cheats::SLOT_CONTROLLER_CLOCK] = (uintptr_t)(float (*)(uintptr_t))[](uintptr_t) -> float { return clock_time; };
+        static uint8_t controller[0x200] = {};
+        *(uintptr_t*)controller = (uintptr_t)&controller_vtable[1];
+        *(int*)(controller + cheats::MELEE_ATTACK) = 2;
+        auto saved_controller_vt = cheats::vt_melee_controller;
+        cheats::vt_melee_controller = (uintptr_t)&controller_vtable[1];
+        uintptr_t saved_controller = game::rdv<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER);
+        game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, (uintptr_t)controller);
+        auto clock = [] { return ((float (*)(uintptr_t))(*(uintptr_t**)controller)[cheats::SLOT_CONTROLLER_CLOCK])((uintptr_t)controller); };
         auto speed = [](int i) { return *(float*)(anims[i] + cheats::ANIM_SPEED); };
         cheats::find_tweak("melee_speed")->factor = 2.0f;
         cheats::speed_melee_anims();
         cheats::speed_melee_anims();
         CHECK(speed(0) == 2.0f && speed(1) == 1.0f);
+        CHECK(*(uintptr_t*)controller == (uintptr_t)&cheats::melee_vtable[1] && clock() == 10.0f);
+        clock_time = 10.5f;
+        CHECK(clock() == 11.0f);
         *(float*)(anims[1] + cheats::ANIM_SPEED) = 0.75f;
         cheats::speed_melee_anims();
         CHECK(speed(1) == 1.5f);
         game::wr<uintptr_t>(hand, 0);
         cheats::speed_melee_anims();
         CHECK(speed(0) == 1.0f && speed(1) == 0.75f && cheats::anim_speeds.empty());
+        CHECK(*(uintptr_t*)controller == (uintptr_t)&cheats::melee_vtable[1]);
+        *(int*)(controller + cheats::MELEE_ATTACK) = cheats::NO_ATTACK;
+        cheats::speed_melee_anims();
+        CHECK(*(uintptr_t*)controller == (uintptr_t)&controller_vtable[1]);
+        game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, saved_controller);
+        cheats::vt_melee_controller = saved_controller_vt;
         cheats::anim_bind_of = saved_bind, cheats::vt_melee_desc = saved_desc;
     }
     for (auto& c : cheats::CHEATS) c.on = false;
@@ -1120,6 +1168,8 @@ int main(int argc, char** argv) {
             float color = ITEMS[i].st[ST_Color];
             if (std::isnan(color) || color < 0 || color > 5) continue;
             uintptr_t d = w.alloc(0x600);
+            w.put<uintptr_t>(d, game::g.base + 0x1000);
+            w.put<uintptr_t>(d + 0x18, (uintptr_t)ITEMS[i].id);
             w.put<uint32_t>(d + 0x78, ((uint32_t)color << 24) | 0x00AB0013 | ((uint32_t)(i & 3) << 28));
             packed.push_back({d, &ITEMS[i]});
         }
@@ -1135,7 +1185,7 @@ int main(int argc, char** argv) {
         game::g.stats[ST_Color] = saved;
     }
     {
-        static uintptr_t firearm_vt[4] = {}, throwable_vt[4] = {};
+        uintptr_t firearm_vt = game::g.base + 0x2000, throwable_vt = game::g.base + 0x3000;
         std::vector<std::pair<uintptr_t, const ItemInfo*>> mixed;
         int firearms = 0, throwables = 0;
         for (int i = 0; i < ITEM_COUNT; i++) {
@@ -1145,6 +1195,7 @@ int main(int argc, char** argv) {
             if (firearm ? firearms >= 30 : throwables >= 30) continue;
             uintptr_t d = w.alloc(0x600);
             w.put<uintptr_t>(d, (uintptr_t)(firearm ? firearm_vt : throwable_vt));
+            w.put<uintptr_t>(d + 0x18, (uintptr_t)ITEMS[i].id);
             w.put<int>(d + (firearm ? 0x160 : 0x200), (int)ammo);
             mixed.push_back({d, &ITEMS[i]});
             (firearm ? firearms : throwables)++;
@@ -1160,6 +1211,10 @@ int main(int argc, char** argv) {
         uintptr_t gun = 0;
         for (auto& [d, info] : mixed) gun = !gun && game::rdv<uintptr_t>(d) == (uintptr_t)firearm_vt ? d : gun;
         CHECK(game::has_stat(ST_AmmoCount) && game::write_stat(gun, ST_AmmoCount, 999) && game::rdv<int>(gun + 0x160) == 999 && game::get_stat(gun, ST_AmmoCount) == 999);
+        uintptr_t freed = w.alloc(0x600);
+        w.put<uintptr_t>(freed, 0x3d4ccccd);
+        CHECK(!game::desc_alive(freed) && !game::write_stat(freed, ST_AmmoCount, 999) && game::rdv<int>(freed + 0x160) == 0);
+        CHECK(game::desc_alive(gun));
         game::g.stats[ST_AmmoCount] = saved_global, game::g.class_stats[ST_AmmoCount] = saved_classes;
     }
 
@@ -1208,6 +1263,14 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < items.size(); i++) w.put<uintptr_t>(game::rdv<uintptr_t>(inv + 0x40) + i * 8, items[i]);
             w.put<uint32_t>(inv + 0x48, (uint32_t)items.size());
         };
+        static std::vector<uintptr_t> ground;
+        ground.clear();
+        auto drop = [&](uintptr_t desc) {
+            uintptr_t obj = w.alloc(0x800);
+            w.put<uintptr_t>(obj + 0x120, desc);
+            ground.push_back(obj);
+        };
+        cheats::dropped_near = [] { return ground; };
         set_items(pack, {weapon, stack, other});
         uintptr_t saved_vts[2] = {game::g.vt_inv[3], game::g.vt_inv[4]};
         game::g.vt_inv[3] = (uintptr_t)pack_vt, game::g.vt_inv[4] = (uintptr_t)stash_vt;
@@ -1218,20 +1281,32 @@ int main(int argc, char** argv) {
         cheats::dupe_drops(true);
         set_items(pack, {stack, other});
         cheats::dupe_drops(true);
+        CHECK(game::rdv<uint32_t>(pack + 0x48) == 2 && cheats::dupes == 0 && cheats::pending_drops.size() == 1);
+        drop(axe);
+        cheats::dupe_drops(true);
         uint32_t n = game::rdv<uint32_t>(pack + 0x48);
         uintptr_t copy = game::rdv<uintptr_t>(game::rdv<uintptr_t>(pack + 0x40) + 2 * 8);
-        CHECK(n == 3 && game::rdv<uintptr_t>(copy + 0x60) == axe && cheats::dupes == 1);
+        CHECK(n == 3 && game::rdv<uintptr_t>(copy + 0x60) == axe && cheats::dupes == 1 && cheats::pending_drops.empty());
         set_items(pack, {stack, copy}), set_items(stash, {other});
+        drop(knife);
         cheats::dupe_drops(true);
         CHECK(game::rdv<uint32_t>(pack + 0x48) == 2 && cheats::dupes == 1);
+        w.put<int>(stack + 0x40, 3);
+        cheats::dupe_drops(true);
+        CHECK(game::rdv<int>(stack + 0x40) == 3);
+        drop(knife);
+        cheats::dupe_drops(true);
+        CHECK(game::rdv<int>(stack + 0x40) == 5 && cheats::dupes == 2);
         set_items(pack, {stack});
         cheats::dupe_drops(true);
-        CHECK(game::rdv<uint32_t>(pack + 0x48) == 1 && cheats::dupes == 1);
+        cheats::dupe_drops(true);
+        CHECK(game::rdv<uint32_t>(pack + 0x48) == 1 && cheats::dupes == 2);
         cheats::dupe_drops(false);
-        CHECK(cheats::held_items.empty());
+        CHECK(cheats::held_items.empty() && cheats::pending_drops.empty());
+        cheats::dropped_near = nullptr;
         game::g.invs = saved_invs, game::g.wallets = saved_wallets;
         game::g.vt_inv[3] = saved_vts[0], game::g.vt_inv[4] = saved_vts[1];
-        cheats::duped_at.clear(), cheats::dupes = 0;
+        cheats::dupes = 0;
     }
 
     config::cfg.accent[0] = 0.25f;
@@ -1613,6 +1688,8 @@ int main(int argc, char** argv) {
         auto* speech = (const uint8_t*)GetProcAddress(engine, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z");
         CHECK(speech && !memcmp(speech, visuals::SPEECH_EXPORT, sizeof visuals::SPEECH_EXPORT));
         for (size_t i = visuals::SPEECH_EXPORT_SPAN; speech && i < visuals::SPEECH_PATCH; i++) CHECK(speech[i] == 0xCC);
+        auto* voice_locale = (const uint8_t*)GetProcAddress(engine, "?GetVoiceLocaleID@IGame@@UEAAPEBDXZ");
+        CHECK(voice_locale && !memcmp(voice_locale, visuals::VOICE_LOCALE_EXPORT, sizeof visuals::VOICE_LOCALE_EXPORT) && voice_locale[visuals::VOICE_LOCALE_RET] == 0xC3);
         cheats::active_level = real_level, cheats::view_camera = real_camera, cheats::get_position = get, cheats::set_position = set;
         cheats::field_int = fint, cheats::field_enum = fenum, cheats::field_bool = fbool, cheats::request_ownership = owner;
         cheats::float_field_editor = editor;

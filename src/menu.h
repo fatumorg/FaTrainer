@@ -529,7 +529,7 @@ inline bool has_own_stat(int stat);
 
 inline void editor_extras() {
     const char* id = g_edit_id.c_str();
-    bool gun = has_own_stat(ST_AmmoCount) && !(g_edit_info && g_edit_info->melee);
+    bool gun = has_own_stat(ST_AmmoCount) && game::firearm_desc(g_edit_desc);
     bool bow = strstr(id, "Bow") != nullptr, melee = g_edit_info && g_edit_info->melee;
     bool flashlight = !strncmp(id, "Flashlight_", 11), hook = !strncmp(id, "Special_Hook", 12);
     if (!gun && !bow && !melee && !flashlight && !hook) return;

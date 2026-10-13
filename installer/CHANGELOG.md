@@ -1,5 +1,9 @@
 # FaTrainer launcher changelog
 
+## 2.4
+
+- New: FaTrainer notices when Dying Light is running. Restart with FaTrainer closes the game and starts it again with the trainer, Close Dying Light only closes it.
+
 ## 2.3
 
 - New: Visuals only. Tick it and Play installs the Visuals Version of the trainer instead: only the UV light, Night Hunter glow, HUD colors and texts, no cheats, no internet connection, and it also runs when you start the game from Steam. Untick it to get the full trainer back. The Visuals Version comes with FaTrainer 2.5 and the 2.5 beta builds.

@@ -72,6 +72,12 @@ inline std::vector<std::string> vdf_values(const std::string& text, const std::s
 
 const std::string LEGACY_VERSION = "1.x";
 
+inline bool game_process(const std::string& program) {
+    std::string name = program.substr(program.find_last_of("/\\") == std::string::npos ? 0 : program.find_last_of("/\\") + 1);
+    for (char& c : name) c = (char)tolower((unsigned char)c);
+    return name == "dyinglightgame.exe";
+}
+
 inline std::string trainer_version_in(const std::string& dll) {
     const std::string TAG = "FaTrainer-version:";
     size_t at = dll.find(TAG);
