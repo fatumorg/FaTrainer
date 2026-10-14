@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5 b20
+
+Survivor Update
+
+- Fixed: Melee speed still left a short wait after every swing. The game times each swing phase on its own clock, and that clock now runs at your melee speed too, so at x5 you swing about twice as often as before.
+- Fixed: some menu texts like Cash, Level, Power level and Survivors rescued stayed in the voice language. They were counted as spoken lines; now they follow the game language. Most texts already on screen switch right away; the first main menu after starting the game can still show some in the voice language.
+- New: Always 1 bullet for Last Wish (Combat). The Last Wish revolver always has one round loaded, so every shot is its explosive last round.
+- New: keys for more actions on the Keybinds page: Kill all enemies nearby, Save position, Go to saved position and Player ESP on / off, next to Refill health & stamina.
+- New: callout sets on the Texts page. Make your own sets of Be The Zombie callouts, rename and delete them, and edit every line. The two built-in sets can be edited too and restored with one click.
+
 ## 2.5 b19
 
 Survivor Update

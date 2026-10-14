@@ -231,12 +231,8 @@ static void poll_cheat_keys() {
         bool down = GetAsyncKeyState(vk) & 0x8000;
         bool pressed = !held[key] && down && !g_open;
         held[key] = down;
-        if (pressed && key == REFILL_KEY) {
-            on_game_thread([] {
-                std::lock_guard<std::mutex> l(game::mx);
-                cheats::refill();
-            });
-            toast("Health & stamina refilled");
+        if (auto* action = pressed ? menu::find_action(key) : nullptr) {
+            action->run();
             continue;
         }
         if (auto* tweak = pressed ? cheats::find_tweak(key) : nullptr) {
@@ -370,6 +366,9 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
     if (g_ready) cheats::speed_melee_anims();
+#if FATRAINER_DEV
+    probe::watch_frame();
+#endif
 #endif
     if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);

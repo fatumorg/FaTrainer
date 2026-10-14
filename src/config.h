@@ -130,10 +130,10 @@ inline std::string profile_name(const std::string& raw) {
 
 inline std::string profile_path(const std::string& name) { return profile_dir() + "\\" + name + ".ini"; }
 
-inline std::vector<std::string> list_profiles() {
+inline std::vector<std::string> ini_names(const std::string& dir) {
     std::vector<std::string> out;
     WIN32_FIND_DATAA d;
-    HANDLE h = FindFirstFileA((profile_dir() + "\\*.ini").c_str(), &d);
+    HANDLE h = FindFirstFileA((dir + "\\*.ini").c_str(), &d);
     if (h == INVALID_HANDLE_VALUE) return out;
     do {
         std::string n = d.cFileName;
@@ -143,6 +143,8 @@ inline std::vector<std::string> list_profiles() {
     std::sort(out.begin(), out.end());
     return out;
 }
+
+inline std::vector<std::string> list_profiles() { return ini_names(profile_dir()); }
 
 inline bool save_profile(const std::string& name, const Profile& p) {
     if (name.empty()) return false;
@@ -182,6 +184,21 @@ inline bool delete_profile(const std::string& name) { return DeleteFileA(profile
 
 inline bool rename_profile(const std::string& from, const std::string& to) {
     return !to.empty() && MoveFileA(profile_path(from).c_str(), profile_path(to).c_str());
+}
+
+inline std::string callout_dir() {
+    std::string ini = default_path();
+    return ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer_callouts";
+}
+
+inline std::string callout_path(const std::string& name) { return callout_dir() + "\\" + name + ".ini"; }
+
+inline std::vector<std::string> list_callout_sets() { return ini_names(callout_dir()); }
+
+inline bool delete_callout_set(const std::string& name) { return DeleteFileA(callout_path(name).c_str()); }
+
+inline bool rename_callout_set(const std::string& from, const std::string& to) {
+    return !to.empty() && MoveFileA(callout_path(from).c_str(), callout_path(to).c_str());
 }
 
 inline void normalize(const std::vector<std::string>& known) {
@@ -236,6 +253,33 @@ inline std::string unescape_text(const std::string& text) {
         else out += text[++i] == 'n' ? '\n' : text[i];
     }
     return out;
+}
+
+using CalloutTexts = std::map<std::string, std::string>;
+
+inline bool save_callout_set(const std::string& name, const CalloutTexts& texts) {
+    if (name.empty()) return false;
+    CreateDirectoryA(callout_dir().c_str(), nullptr);
+    FILE* f = fopen(callout_path(name).c_str(), "w");
+    if (!f) return false;
+    for (auto& [key, text] : texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
+    fclose(f);
+    return true;
+}
+
+inline bool load_callout_set(const std::string& name, CalloutTexts& texts) {
+    FILE* f = fopen(callout_path(name).c_str(), "r");
+    if (!f) return false;
+    char line[2048];
+    while (fgets(line, sizeof line, f)) {
+        std::string s = line;
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+        size_t comma = s.find(',');
+        if (s.compare(0, 5, "text=") || comma == std::string::npos || comma == 5) continue;
+        texts[s.substr(5, comma - 5)] = unescape_text(s.substr(comma + 1));
+    }
+    fclose(f);
+    return true;
 }
 
 inline int read_hud_color(const char* text, HudColor& h) {

@@ -418,6 +418,10 @@ int main(int argc, char** argv) {
         CHECK(visuals::text_kind("Skill_Agility_1") == visuals::TEXT_SKILLS && visuals::text_kind("Q_Explosives_OBJ_TurnOfAlarm") == visuals::TEXT_QUESTS);
         CHECK(visuals::text_kind("Tut_CoopInLegend") == visuals::TEXT_TUTORIALS && visuals::text_kind("HUDMessage_BTZDeath_Victim") == visuals::TEXT_HUD);
         CHECK(visuals::text_kind("MMenuMisisionEnd_Demo_BtnBuyNow") == visuals::TEXT_MENUS && visuals::text_kind("ChatterNeutral_01") == visuals::TEXT_SPOKEN);
+        CHECK(visuals::text_kind("PlayerBar_LevelFighterLabel") != visuals::TEXT_SPOKEN && visuals::text_kind("EncCounter_SurvivorsRescued") != visuals::TEXT_SPOKEN);
+        CHECK(visuals::text_kind("PLAYERMAN1_NAME") != visuals::TEXT_SPOKEN && visuals::text_kind("MenuOptionsGame_LabelSelectSpeechTip") != visuals::TEXT_SPOKEN);
+        CHECK(visuals::text_kind("EncEscortD_10CHT01_Babar") == visuals::TEXT_SPOKEN && visuals::text_kind("PlayerM1_BTZAllyDying_02") == visuals::TEXT_SPOKEN);
+        CHECK(visuals::text_kind("Player_SafePlace_Bed01") == visuals::TEXT_SPOKEN && visuals::text_kind("Akram_Cofee_01CHT01") == visuals::TEXT_SPOKEN);
     }
     {
         static uintptr_t inner_seen;
@@ -1821,6 +1825,24 @@ int main(int argc, char** argv) {
     cheats::all_off();
     CHECK(config::delete_profile("selftest profile") && !config::load_profile("selftest profile", back));
     RemoveDirectoryA(config::profile_dir().c_str());
+
+    {
+        auto stock = visuals::callout_set("Colored callouts");
+        CHECK(!stock.empty() && stock == visuals::stock_callouts(1) && stock.begin()->second.find("%COLOR(") != std::string::npos);
+        auto names = visuals::callout_set_names();
+        CHECK(names.size() == 2 && names[0] == "Callouts");
+        config::CalloutTexts mine = visuals::callout_set("Callouts");
+        mine["HUDMessage_BTZDeath_Killer_Hunter_Highrage"] = "Got %s\\back\nnow";
+        CHECK(config::save_callout_set("Callouts", mine));
+        CHECK(visuals::callout_set("Callouts") == mine && visuals::callout_set_names().size() == 2);
+        CHECK(config::delete_callout_set("Callouts") && visuals::callout_set("Callouts") == visuals::stock_callouts(0));
+        CHECK(config::save_callout_set("Selftest set", mine) && config::rename_callout_set("Selftest set", "Selftest two"));
+        names = visuals::callout_set_names();
+        CHECK(names.size() == 3 && names[2] == "Selftest two" && visuals::callout_set("Selftest two") == mine);
+        CHECK(visuals::callouts_used(mine, mine) == (int)mine.size() && visuals::callouts_used({}, mine) == 0);
+        CHECK(config::delete_callout_set("Selftest two"));
+        RemoveDirectoryA(config::callout_dir().c_str());
+    }
 
     {
         auto file = [](const char* path) {

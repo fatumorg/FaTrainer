@@ -542,6 +542,26 @@ inline uintptr_t engine_vtable_of(uintptr_t element) { return rdv<uintptr_t>(ele
 const int TEXT_ALPHA = 0x390;
 inline float engine_text_alpha(uintptr_t text) { return rdv<float>(rdv<uintptr_t>(text + UI_ENGINE_OBJECT) + TEXT_ALPHA, 1.0f); }
 
+struct TtlText { char* text; uint32_t size, capacity; };
+inline void texts_log_off(const char*, ...) {}
+inline void (*texts_log)(const char*, ...) = texts_log_off;
+inline void(__fastcall* set_raw_text)(uintptr_t wrapper, const TtlText* text) = nullptr;
+inline uintptr_t engine_text_vtable = 0;
+const int TEXT_RAW = 0x3d8;
+
+inline bool relocalize_text(uintptr_t engine_text) {
+    if (!set_raw_text || !engine_text_vtable || rdv<uintptr_t>(engine_text) != engine_text_vtable) return false;
+    TtlText raw = rdv<TtlText>(engine_text + TEXT_RAW);
+    if (!raw.text || !raw.size || raw.size > 4096) return false;
+    std::string copy(raw.size, '\0');
+    if (!game::rd((uintptr_t)raw.text, copy.data(), raw.size) || copy.find('&') == std::string::npos) return false;
+    uintptr_t wrapper[UI_ENGINE_OBJECT / 8 + 1] = {};
+    wrapper[UI_ENGINE_OBJECT / 8] = engine_text;
+    TtlText again{copy.data(), raw.size, raw.size};
+    set_raw_text((uintptr_t)wrapper, &again);
+    return true;
+}
+
 inline bool locate_engine(HMODULE engine) {
     if (!engine) return false;
     auto get = [&](const char* name) { return (void*)GetProcAddress(engine, name); };
@@ -557,6 +577,8 @@ inline bool locate_engine(HMODULE engine) {
     ui.visible = (decltype(ui.visible))get("?IsVisible@IUIElement@@QEBA_NXZ");
     ui.set_visible = (decltype(ui.set_visible))get("?SetVisible@IUIElement@@QEAAX_N@Z");
     ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
+    set_raw_text = (decltype(set_raw_text))get("?SetText@IUIText@@UEAAXAEBV?$string_base@D@ttl@@@Z");
+    engine_text_vtable = game::find_vtable((uintptr_t)engine, "CUIText");
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
 
@@ -688,7 +710,11 @@ inline int text_kind(const std::string& key) {
     std::string k = key;
     for (auto& c : k) c = (char)tolower((unsigned char)c);
     auto has = [&](const char* part) { return k.find(part) != std::string::npos; };
-    if (has("dlg") || has("_cht") || has("tlk") || starts_with(k, {"chatter", "random_", "player", "cin_", "enc", "dltb_"})) return TEXT_SPOKEN;
+    size_t cht = k.find("cht");
+    while (cht != std::string::npos && !(cht + 3 < k.size() && isdigit((unsigned char)k[cht + 3]))) cht = k.find("cht", cht + 1);
+    bool numbered_player = starts_with(k, {"playerm"}) && k.size() > 7 && isdigit((unsigned char)k[7]);
+    if (has("dlg") || has("tlk") || cht != std::string::npos || numbered_player || starts_with(k, {"chatter", "random_", "player_", "cin_", "dltb_"}))
+        return TEXT_SPOKEN;
     size_t cut = key.rfind('_');
     if ((cut != std::string::npos && game::lookup(key.substr(0, cut).c_str())) || starts_with(k, {"craftplan", "craft_", "outfit", "collectable", "blueprint"}))
         return TEXT_ITEMS;
@@ -699,7 +725,6 @@ inline int text_kind(const std::string& key) {
     return TEXT_MENUS;
 }
 
-struct TtlText { char* text; uint32_t size, capacity; };
 struct GameLanguage { const char* code; const char* name; bool voice; };
 inline const GameLanguage GAME_LANGUAGES[] = {
     {"En", "English", true}, {"Pl", "Polish", true}, {"De", "German", true}, {"Fr", "French", true}, {"Es", "Spanish", true},
@@ -1100,6 +1125,29 @@ inline const wchar_t* shown_text(const std::string& key) {
     return e ? e->text : nullptr;
 }
 
+inline std::mutex shown_texts_mx;
+inline std::vector<uintptr_t> shown_texts;
+inline std::atomic<bool> shown_texts_scanning{false}, shown_texts_found{false};
+
+inline void find_shown_texts() {
+    if (!engine_text_vtable || shown_texts_scanning.exchange(true)) return;
+    std::thread([] {
+        auto found = game::scan({engine_text_vtable});
+        std::lock_guard<std::mutex> l(shown_texts_mx);
+        shown_texts = found.empty() ? std::vector<uintptr_t>{} : found[0];
+        shown_texts_found = true, shown_texts_scanning = false;
+    }).detach();
+}
+
+inline int relocalize_shown_texts() {
+    if (!shown_texts_found.exchange(false)) return -1;
+    std::lock_guard<std::mutex> l(shown_texts_mx);
+    int n = 0;
+    for (uintptr_t t : shown_texts) n += relocalize_text(t);
+    shown_texts.clear();
+    return n;
+}
+
 inline void keep_texts() {
     if (!texts_ready() || !texts_settled()) return;
     const auto& c = config::cfg;
@@ -1145,8 +1193,11 @@ inline void keep_texts() {
         for (size_t i = 0; sentinel_lib && i < sentinel_lib->size(); i++)
             sentinels.push_back((*sentinel_lib)[i].texts.empty() ? nullptr : shown_text((*sentinel_lib)[i].texts[0].key));
         applied_language = code, applied_library = lib, applied_written = written, applied_written_library = written_lib;
+        if (wrote) find_shown_texts();
     }
     if (wrote) texts_written();
+    int relocalized = relocalize_shown_texts();
+    if (relocalized >= 0) texts_written(), texts_log("texts: %d shown texts localized again", relocalized);
 }
 
 struct Callout { const char* key; const char* before; const char* label; const char* after; const char* tone; };
@@ -1325,11 +1376,39 @@ inline std::string without_colors(const std::string& text) {
 }
 
 
-inline int callouts_used(const std::map<std::string, std::string>& texts) {
+inline const char* BUILTIN_CALLOUT_SETS[] = {"Callouts", "Colored callouts"};
+
+inline int builtin_callout_set(const std::string& name) {
+    for (int i = 0; i < (int)(sizeof BUILTIN_CALLOUT_SETS / sizeof BUILTIN_CALLOUT_SETS[0]); i++)
+        if (name == BUILTIN_CALLOUT_SETS[i]) return i;
+    return -1;
+}
+
+inline config::CalloutTexts stock_callouts(int builtin) {
+    config::CalloutTexts out;
+    for (auto& c : CALLOUTS) out[c.key] = callout_text(c, builtin == 1);
+    return out;
+}
+
+inline config::CalloutTexts callout_set(const std::string& name) {
+    config::CalloutTexts out;
+    if (config::load_callout_set(name, out)) return out;
+    int builtin = builtin_callout_set(name);
+    return builtin < 0 ? out : stock_callouts(builtin);
+}
+
+inline std::vector<std::string> callout_set_names() {
+    std::vector<std::string> out(std::begin(BUILTIN_CALLOUT_SETS), std::end(BUILTIN_CALLOUT_SETS));
+    for (auto& name : config::list_callout_sets())
+        if (builtin_callout_set(name) < 0) out.push_back(name);
+    return out;
+}
+
+inline int callouts_used(const std::map<std::string, std::string>& texts, const config::CalloutTexts& set) {
     int n = 0;
-    for (auto& c : CALLOUTS) {
-        auto it = texts.find(c.key);
-        n += it != texts.end() && (it->second == callout_text(c, false) || it->second == callout_text(c, true));
+    for (auto& [key, text] : set) {
+        auto it = texts.find(key);
+        n += it != texts.end() && it->second == text;
     }
     return n;
 }

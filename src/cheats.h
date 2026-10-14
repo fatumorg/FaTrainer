@@ -71,6 +71,7 @@ inline Cheat CHEATS[] = {
     {"ammo", "Infinite ammo", "Magazines never empty and reserve ammo stays full, arrows and crossbow bolts too.", {}, {}},
     {"supplies", "Infinite consumables", "Medkits, throwables and crafting materials never run out.", {}, {}},
     {"item_dupe", "Item Dupe", "Whatever you drop also stays in your backpack as an exact copy, part of a stack too. Only drops count, not selling, storing or using.", {}, {}},
+    {"last_wish", "Always 1 bullet for Last Wish", "The Last Wish revolver always has exactly one round loaded, so every shot is its explosive last round.", {}, {}},
     {"lockpick", "Instant lockpicking", "Every pick position opens the lock and lockpicks never break.", {}, {}},
     {"durability", "Unbreakable weapons", "Melee weapons stop losing durability when you hit things.",
      {{"BluntWpnDurabilityLoss", 0}, {"CutWpnDurabilityLoss", 0}}, {}},
@@ -627,6 +628,20 @@ inline void fill_magazines(uintptr_t p) {
     }
 }
 
+inline const char LAST_WISH[] = "Firearm_Gaas_Revolver";
+inline std::atomic<uintptr_t> last_wish_desc{0};
+
+inline void hold_last_round(uintptr_t p) {
+    uintptr_t want = last_wish_desc;
+    for (int h = 0; want && h < HANDS; h++) {
+        uintptr_t at = p + PLAYER_HANDS + h * HAND_SIZE;
+        uintptr_t item = rdv<uintptr_t>(at) ? rdv<uintptr_t>(at + HAND_ITEM) : 0;
+        if (!item || rdv<uintptr_t>(item + ITEM_DESC) != want) continue;
+        int loaded = rdv<int>(item + ITEM_LOADED, -1);
+        if (loaded >= 0 && loaded != 1) wr<int>(item + ITEM_LOADED, 1);
+    }
+}
+
 inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
     std::vector<uintptr_t> out, stack;
     if (uintptr_t root = rdv<uintptr_t>(bind + ANIMS_PLAYING)) stack.push_back(root);
@@ -640,7 +655,8 @@ inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
     return out;
 }
 
-const size_t MELEE_CONTROLLER = 0xc10, MELEE_ATTACK = 0x11c, MELEE_DURATIONS = 0x388;
+const size_t MELEE_CONTROLLER = 0xc10, MELEE_ATTACK = 0x11c, MELEE_DURATIONS = 0x388, MELEE_PHASE_SCALES = 0x2fc;
+const int MELEE_PHASE_SCALE_COUNT = 2;
 const int NO_ATTACK = -1, MELEE_ATTACK_TYPES = 64;
 struct MeleeDuration { uintptr_t controller; int type; float original, written; };
 inline std::vector<MeleeDuration> melee_durations;
@@ -670,12 +686,26 @@ inline void keep_melee_durations(uintptr_t p, float f) {
     if (now != want && wr<float>(at, want)) it->written = want;
 }
 
+inline uintptr_t melee_scaled_controller = 0;
+
+inline void keep_melee_phases(uintptr_t controller, float f) {
+    if (melee_scaled_controller && melee_scaled_controller != controller && rdv<uintptr_t>(melee_scaled_controller) == vt_melee_controller)
+        for (int i = 0; i < MELEE_PHASE_SCALE_COUNT; i++) wr<float>(melee_scaled_controller + MELEE_PHASE_SCALES + i * 4, 1.0f);
+    melee_scaled_controller = 0;
+    if (!controller || rdv<uintptr_t>(controller) != vt_melee_controller) return;
+    for (int i = 0; i < MELEE_PHASE_SCALE_COUNT; i++)
+        if (rdv<float>(controller + MELEE_PHASE_SCALES + i * 4) != 1.0f / f) wr<float>(controller + MELEE_PHASE_SCALES + i * 4, 1.0f / f);
+    if (f != 1.0f) melee_scaled_controller = controller;
+}
+
 inline void speed_melee_anims() {
     float f = tweak_factor("melee_speed");
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
+    if (p) hold_last_round(p);
     uintptr_t bind = p && anim_bind_of ? anim_bind_of(p) : 0;
     bool on = f != 1.0f && bind && holding_melee(p);
     keep_melee_durations(p, on ? f : 1.0f);
+    keep_melee_phases(p ? rdv<uintptr_t>(p + MELEE_CONTROLLER) : 0, on ? f : 1.0f);
     if (!on && anim_speeds.empty()) return;
     std::unordered_map<uintptr_t, AnimSpeed> next;
     for (uintptr_t a : bind ? playing_anims(bind) : std::vector<uintptr_t>{}) {
@@ -2412,6 +2442,9 @@ inline void tick() {
         keep_stacks(is_on("ammo"), is_on("supplies"));
         keep_durability(is_on("durability"));
         if (is_on("no_reload") && rdv<uintptr_t>(player) == g.vt_player) fill_magazines(player);
+        auto wish = g.descs.find(LAST_WISH);
+        last_wish_desc = is_on("last_wish") && wish != g.descs.end() && game::desc_alive(wish->second) ? wish->second : 0;
+        if (last_wish_desc && rdv<uintptr_t>(player) == g.vt_player) hold_last_round(player);
         dupe_drops(is_on("item_dupe"));
         if (is_on("one_hit")) weaken_enemies();
         if (is_on("one_hit_hunter")) weaken_hunter();

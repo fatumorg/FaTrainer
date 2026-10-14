@@ -882,8 +882,7 @@ inline void player_page() {
     end_card();
 }
 
-inline void kill_all_button() {
-    if (!accent_button("Kill all enemies nearby", {ImGui::GetContentRegionAvail().x, S(38)})) return;
+inline void kill_nearby() {
     std::thread([] {
         cheats::scan_enemies();
         on_game_thread([] {
@@ -892,6 +891,10 @@ inline void kill_all_button() {
             toast(n ? "Killed " + std::to_string(n) + (n == 1 ? " enemy" : " enemies") : std::string("No living enemies within 80 m"));
         });
     }).detach();
+}
+
+inline void kill_all_button() {
+    if (accent_button("Kill all enemies nearby", {ImGui::GetContentRegionAvail().x, S(38)})) kill_nearby();
 }
 
 inline void combat_page() {
@@ -904,6 +907,7 @@ inline void combat_page() {
     begin_card("supplies", "AMMO & SUPPLIES");
     cheat_switch("ammo");
     cheat_switch("no_reload");
+    cheat_switch("last_wish");
     cheat_switch("supplies");
     end_card();
     begin_card("weapons", "WEAPONS");
@@ -2173,53 +2177,169 @@ inline bool language_card() {
     return changed;
 }
 
+inline std::string callout_role(const std::string& key) {
+    auto has = [&](const char* part) { return key.find(part) != std::string::npos; };
+    if (has("AwardReason") || has("btz_pounce")) return "XP popup";
+    if (has("Observer")) return "seen by others";
+    if (has("Victim") || has("Vicitm")) return "done to you";
+    if (has("Interrupter")) return "you saved someone";
+    return "done by you";
+}
+
+inline std::string callout_line_label(const std::string& key) {
+    for (auto& c : visuals::CALLOUTS)
+        if (key == c.key) {
+            std::string label = c.label;
+            while (!label.empty() && label.back() == ':') label.pop_back();
+            return label + " - " + callout_role(key);
+        }
+    return key;
+}
+
 inline bool callouts_card() {
     auto& texts = config::cfg.texts;
-    static bool tinted = false;
+    static std::vector<std::string> names = visuals::callout_set_names();
+    static std::string selected = visuals::BUILTIN_CALLOUT_SETS[1], loaded_name, renaming, confirm_delete;
+    static config::CalloutTexts set;
+    static bool naming = false, editing = getenv("DLT_CALLOUTS") != nullptr;
+    static char name_buf[48] = "";
+    static std::map<std::string, std::string> drafts;
     bool changed = false;
+    auto reload = [&](bool list) {
+        if (list) names = visuals::callout_set_names();
+        if (std::find(names.begin(), names.end(), selected) == names.end()) selected = names.front();
+        set = visuals::callout_set(selected), loaded_name = selected, drafts.clear();
+    };
+    if (loaded_name != selected) reload(false);
+    int builtin = visuals::builtin_callout_set(selected);
+    bool overridden = builtin >= 0 && GetFileAttributesA(config::callout_path(selected).c_str()) != INVALID_FILE_ATTRIBUTES;
+
     begin_card("callouts", "BE THE ZOMBIE CALLOUTS");
-    const int count = (int)(sizeof visuals::CALLOUTS / sizeof visuals::CALLOUTS[0]);
-    int used = visuals::callouts_used(texts);
+    for (size_t i = 0; i < names.size(); i++)
+        if (flowing_chip(names[i].c_str(), names[i] == selected, i == 0)) selected = names[i], renaming.clear(), confirm_delete.clear();
+    if (flowing_chip("+ New set", naming, false)) naming = !naming, snprintf(name_buf, sizeof name_buf, "%s copy", selected.c_str());
+    if (naming) {
+        ImGui::Dummy({0, S(2)});
+        ImGui::SetNextItemWidth(S(260));
+        bool enter = ImGui::InputText("##new_set", name_buf, sizeof name_buf, ImGuiInputTextFlags_EnterReturnsTrue);
+        std::string clean = config::profile_name(name_buf);
+        bool taken = std::find(names.begin(), names.end(), clean) != names.end();
+        ImGui::SameLine(0, S(8));
+        ImGui::BeginDisabled(clean.empty() || taken);
+        if (accent_button("Create") || (enter && !clean.empty() && !taken)) {
+            if (config::save_callout_set(clean, set)) selected = clean, reload(true), toast("Created callout set " + clean);
+            else toast("Could not create the callout set");
+            naming = false;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine(0, S(8));
+        if (ImGui::Button("Cancel", {0, ImGui::GetFrameHeight()})) naming = false;
+        note(taken ? "A set with this name already exists." : "Starts as a copy of the selected set. Letters, numbers, spaces, - and _.");
+    }
+    ImGui::Dummy({0, S(4)});
+
+    int used = visuals::callouts_used(texts, set), count = (int)set.size();
     float w = ImGui::GetContentRegionAvail().x, row = font_size(f_body) + S(8);
     ImVec2 p = ImGui::GetCursorScreenPos();
     auto* dl = ImGui::GetWindowDrawList();
     const char* samples[] = {"HUDMessage_BTZDeath_Killer_Hunter_Highrage", "HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt",
                              "HUDMessage_BTZDeath_Observer_Pvp_Human_Wrestling_Kick", "HUDMessage_BTZZombieSpitHit_ControlTheHorde_Victim"};
-    dl->AddRectFilled(p, {p.x + w, p.y + row * 4 + S(16)}, C(T.ground), R(10));
-    int line = 0;
-    for (auto& c : visuals::CALLOUTS)
-        for (const char* key : samples)
-            if (!strcmp(c.key, key)) draw_rich(dl, f_body, font_size(f_body), {p.x + S(14), p.y + S(8) + row * line++}, with_names(visuals::callout_text(c, true)), C(T.text), w - S(28));
-    ImGui::Dummy({w, row * 4 + S(22)});
-    if (ImGui::Button("Show in the killfeed", {0, ImGui::GetFrameHeight()})) {
-        std::vector<std::string> lines;
-        for (const char* key : samples)
-            for (auto& c : visuals::CALLOUTS)
-                if (!strcmp(c.key, key)) lines.push_back(visuals::callout_text(c, tinted));
-        preview_lines(lines);
-    }
-    ImGui::Dummy({0, S(4)});
-    changed |= switch_row("Colored labels", "Pounces red, tackles and claws amber, spits violet, failed pounces and tackles green, kicks blue. The killfeed shows them in color.", tinted);
-    char use[64];
-    snprintf(use, sizeof use, used == count ? "Update the callouts" : "Use the callouts");
-    if (accent_button(use)) {
-        for (auto& c : visuals::CALLOUTS) texts[c.key] = visuals::callout_text(c, tinted);
+    std::vector<std::string> sample_lines;
+    for (const char* key : samples)
+        if (auto it = set.find(key); it != set.end()) sample_lines.push_back(it->second);
+    int shown = std::max(1, (int)sample_lines.size());
+    dl->AddRectFilled(p, {p.x + w, p.y + row * shown + S(16)}, C(T.ground), R(10));
+    if (sample_lines.empty()) dl->AddText(f_body, font_size(f_body), {p.x + S(14), p.y + S(8)}, C(T.soft), "This set has no lines yet.");
+    for (size_t i = 0; i < sample_lines.size(); i++)
+        draw_rich(dl, f_body, font_size(f_body), {p.x + S(14), p.y + S(8) + row * i}, with_names(sample_lines[i]), C(T.text), w - S(28));
+    ImGui::Dummy({w, row * shown + S(22)});
+
+    ImGui::BeginDisabled(set.empty());
+    if (accent_button(used == count && count ? "Update the callouts" : "Use these callouts")) {
+        for (auto& [key, text] : set) texts[key] = text;
         changed = true;
-        toast("Be The Zombie callouts are on");
+        toast("Callouts from " + selected + " are on");
     }
+    ImGui::EndDisabled();
     if (used) {
         ImGui::SameLine(0, S(8));
         if (ImGui::Button("Remove the callouts", {0, ImGui::GetFrameHeight()})) {
-            for (auto& c : visuals::CALLOUTS) {
-                auto it = texts.find(c.key);
-                if (it != texts.end() && (it->second == visuals::callout_text(c, false) || it->second == visuals::callout_text(c, true))) texts.erase(it);
-            }
+            for (auto& [key, text] : set)
+                if (auto it = texts.find(key); it != texts.end() && it->second == text) texts.erase(it);
             changed = true;
         }
     }
-    char status[256];
-    snprintf(status, sizeof status, "%d of %d killfeed and award texts. Short, the same order of names as the game. Your own edits below win.", used, count);
+    ImGui::SameLine(0, S(8));
+    if (ImGui::Button("Show in the killfeed", {0, ImGui::GetFrameHeight()})) preview_lines(sample_lines);
+    char status[200];
+    snprintf(status, sizeof status, "%d of %d lines of this set are in your game. Your own edits below win.", used, count);
     note(status);
+
+    ImGui::Dummy({0, S(4)});
+    if (ImGui::Button(editing ? "Close the editor" : "Edit lines", {0, ImGui::GetFrameHeight()})) editing = !editing;
+    if (builtin >= 0 && overridden) {
+        ImGui::SameLine(0, S(8));
+        if (ImGui::Button("Restore", {0, ImGui::GetFrameHeight()})) config::delete_callout_set(selected), reload(false), toast("Restored " + selected);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Put back the lines this set came with");
+    }
+    if (builtin < 0) {
+        ImGui::SameLine(0, S(8));
+        if (renaming == selected) {
+            ImGui::SetNextItemWidth(S(200));
+            bool enter = ImGui::InputText("##rename_set", name_buf, sizeof name_buf, ImGuiInputTextFlags_EnterReturnsTrue);
+            std::string clean = config::profile_name(name_buf);
+            bool taken = clean != selected && std::find(names.begin(), names.end(), clean) != names.end();
+            ImGui::SameLine(0, S(8));
+            ImGui::BeginDisabled(clean.empty() || taken);
+            if (accent_button("Rename") || (enter && !clean.empty() && !taken)) {
+                if (clean == selected || config::rename_callout_set(selected, clean)) selected = clean, reload(true);
+                else toast("Could not rename the callout set");
+                renaming.clear();
+            }
+            ImGui::EndDisabled();
+        } else {
+            if (ImGui::Button("Rename", {0, ImGui::GetFrameHeight()})) renaming = selected, snprintf(name_buf, sizeof name_buf, "%s", selected.c_str()), confirm_delete.clear();
+            ImGui::SameLine(0, S(8));
+            bool sure = confirm_delete == selected;
+            if (ImGui::Button(sure ? "Sure?" : "Delete", {0, ImGui::GetFrameHeight()})) {
+                if (sure) {
+                    std::string gone = selected;
+                    config::delete_callout_set(gone), confirm_delete.clear(), reload(true);
+                    toast("Deleted callout set " + gone);
+                } else {
+                    confirm_delete = selected;
+                }
+            }
+        }
+    }
+    if (editing) {
+        ImGui::Dummy({0, S(4)});
+        note("Keep %s where the game puts a name. %COLOR(rrggbb) starts a color, %COLOR(reset) ends it. Changes are saved when you leave a line.");
+        std::vector<std::string> keys;
+        for (auto& c : visuals::CALLOUTS)
+            if (set.count(c.key)) keys.push_back(c.key);
+        for (auto& [key, text] : set)
+            if (std::find(keys.begin(), keys.end(), key) == keys.end()) keys.push_back(key);
+        for (auto& key : keys) {
+            ImGui::PushID(key.c_str());
+            label(callout_line_label(key).c_str());
+            std::string& draft = drafts.try_emplace(key, set[key]).first->second;
+            char buf[512];
+            snprintf(buf, sizeof buf, "%s", draft.c_str());
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputText("##line", buf, sizeof buf)) draft = buf;
+            if (ImGui::IsItemDeactivatedAfterEdit() && draft != set[key]) {
+                bool was_on = texts.count(key) && texts[key] == set[key];
+                set[key] = draft;
+                if (config::save_callout_set(selected, set)) {
+                    if (was_on) texts[key] = draft, changed = true;
+                } else {
+                    toast("Could not save the callout set");
+                }
+            }
+            ImGui::PopID();
+        }
+    }
     end_card();
     return changed;
 }
@@ -2419,6 +2539,50 @@ inline void go_to(cheats::Vec3 to) {
     });
 }
 
+inline void save_position() {
+    on_game_thread([] {
+        std::lock_guard<std::mutex> l(game::mx);
+        cheats::saved_position = cheats::player_position();
+        cheats::has_saved_position = std::isfinite(cheats::saved_position.x);
+        toast(cheats::has_saved_position ? "Position saved" : "Your position could not be read");
+    });
+}
+
+inline void go_to_saved_position() {
+    if (!cheats::has_saved_position) return toast("No saved position yet");
+    go_to(cheats::saved_position);
+    toast("Back at the saved position");
+}
+
+inline void refill_now() {
+    on_game_thread([] {
+        std::lock_guard<std::mutex> l(game::mx);
+        cheats::refill();
+    });
+    toast("Health & stamina refilled");
+}
+
+inline void toggle_esp() {
+    config::cfg.esp.on = !config::cfg.esp.on;
+    save_config();
+    toast(std::string("Player ESP ") + (config::cfg.esp.on ? "on" : "off"));
+}
+
+struct KeyAction { const char* key; const char* label; void (*run)(); };
+inline const KeyAction KEY_ACTIONS[] = {
+    {REFILL_KEY, "Refill health & stamina", refill_now},
+    {"kill_nearby", "Kill all enemies nearby", kill_nearby},
+    {"save_position", "Save position", save_position},
+    {"go_saved_position", "Go to saved position", go_to_saved_position},
+    {"esp", "Player ESP on / off", toggle_esp},
+};
+
+inline const KeyAction* find_action(const std::string& key) {
+    for (auto& a : KEY_ACTIONS)
+        if (key == a.key) return &a;
+    return nullptr;
+}
+
 inline void route_action(std::function<void()> f) {
     on_game_thread([f] {
         std::lock_guard<std::mutex> l(game::mx);
@@ -2525,15 +2689,10 @@ inline void prison_page() {
     begin_card("position", "YOUR POSITION");
     note("Save where you stand and jump back to it later. Works everywhere, not only in the prison.");
     ImGui::Dummy({0, S(2)});
-    if (ImGui::Button("Save position")) on_game_thread([] {
-        std::lock_guard<std::mutex> l(game::mx);
-        cheats::saved_position = cheats::player_position();
-        cheats::has_saved_position = std::isfinite(cheats::saved_position.x);
-        toast(cheats::has_saved_position ? "Position saved" : "Your position could not be read");
-    });
+    if (ImGui::Button("Save position")) save_position();
     ImGui::SameLine();
     ImGui::BeginDisabled(!cheats::has_saved_position);
-    if (accent_button("Go to saved position")) go_to(cheats::saved_position);
+    if (accent_button("Go to saved position")) go_to_saved_position();
     ImGui::EndDisabled();
     end_card();
 }
@@ -2569,7 +2728,7 @@ inline const Page PAGES[] = {
 #else
     {"player", "Player", "Health, stamina, gear and movement", player_page, always, "CHEATS",
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
-    {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "supplies", "durability", "item_dupe", "melee_speed"}},
+    {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "last_wish", "supplies", "durability", "item_dupe", "melee_speed"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
     {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
@@ -2704,15 +2863,19 @@ inline void keybinds_page() {
     menu_key_combo(changed);
     end_card();
     begin_card("keys_actions", "ACTIONS");
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Refill health & stamina");
-    ImGui::SameLine(S(300));
-    auto refill = config::cfg.cheat_keys.find(REFILL_KEY);
-    int refill_vk = refill == config::cfg.cheat_keys.end() ? 0 : refill->second;
-    if (key_button("bind_refill", refill_vk)) {
-        if (refill_vk) take_key_from_others(refill_vk, REFILL_KEY), config::cfg.cheat_keys[REFILL_KEY] = refill_vk;
-        else config::cfg.cheat_keys.erase(REFILL_KEY);
-        changed = true;
+    for (auto& action : KEY_ACTIONS) {
+        ImGui::PushID(action.key);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(action.label);
+        ImGui::SameLine(S(300));
+        auto found = config::cfg.cheat_keys.find(action.key);
+        int vk = found == config::cfg.cheat_keys.end() ? 0 : found->second;
+        if (key_button("bind", vk)) {
+            if (vk) take_key_from_others(vk, action.key), config::cfg.cheat_keys[action.key] = vk;
+            else config::cfg.cheat_keys.erase(action.key);
+            changed = true;
+        }
+        ImGui::PopID();
     }
     end_card();
     capture_note();
@@ -2745,7 +2908,7 @@ inline void keybinds_page() {
         }
         end_card();
     }
-    note("Press a cheat's key while the menu is closed to turn it on or off, or the refill key to refill health and stamina. A slider's key sets it to Max and the next press puts back what you had. "
+    note("Press a cheat's key while the menu is closed to turn it on or off, or an action's key to run it. A slider's key sets it to Max and the next press puts back what you had. "
          "A message at the bottom of the screen says which. Spit keys are on the Night Hunter page.");
     if (changed) save_config();
 }

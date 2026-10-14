@@ -93,6 +93,31 @@ inline std::string hex_dump(uintptr_t a, size_t n) {
     return out;
 }
 
+struct Watch { uintptr_t at = 0; std::vector<int> offsets; DWORD until = 0; std::vector<uint32_t> last; FILE* out = nullptr; };
+inline Watch watch;
+inline std::mutex watch_mx;
+
+inline void watch_frame() {
+    std::lock_guard<std::mutex> l(watch_mx);
+    if (!watch.out) return;
+    if (GetTickCount() > watch.until) {
+        fclose(watch.out), watch.out = nullptr;
+        return;
+    }
+    std::vector<uint32_t> now;
+    for (int off : watch.offsets) now.push_back(rdv<uint32_t>(watch.at + off, 0xdeadbeef));
+    if (now == watch.last) return;
+    watch.last = now;
+    fprintf(watch.out, "%lu", (unsigned long)GetTickCount());
+    for (size_t i = 0; i < now.size(); i++) {
+        float f;
+        memcpy(&f, &now[i], 4);
+        fprintf(watch.out, " +%x=%d/%.4g", watch.offsets[i], (int)now[i], f);
+    }
+    fprintf(watch.out, "\n");
+    fflush(watch.out);
+}
+
 inline std::string run(const std::string& line) {
     char cmd[16] = {};
     int used = 0;
@@ -155,6 +180,116 @@ inline std::string run(const std::string& line) {
         if (t) t->factor = f;
         return out + (t ? "  set\n" : "  no such tweak\n");
     }
+    if (c == "findtext") {
+        std::string want = p.s;
+        for (auto& ch : want) ch = (char)tolower((unsigned char)ch);
+        auto found = game::scan({visuals::engine_text_vtable});
+        int shown = 0;
+        for (uintptr_t t : found.empty() ? std::vector<uintptr_t>{} : found[0]) {
+            visuals::TtlText raw = rdv<visuals::TtlText>(t + visuals::TEXT_RAW), wide = rdv<visuals::TtlText>(t + visuals::TEXT_RAW + 0x10);
+            std::string r(raw.text && raw.size < 400 ? raw.size : 0, '\0'), w;
+            if (!r.empty()) game::rd((uintptr_t)raw.text, r.data(), r.size());
+            for (uint32_t i = 0; wide.text && i < wide.size && i < 400; i++) w += (char)rdv<uint16_t>((uintptr_t)wide.text + i * 2);
+            std::string lw = w;
+            for (auto& ch : lw) ch = (char)tolower((unsigned char)ch);
+            if (lw.find(want) == std::string::npos || shown++ > 30) continue;
+            snprintf(b, sizeof b, "  %llx raw [%s] wide [%s]\n", (unsigned long long)t, r.c_str(), w.c_str());
+            out += b;
+        }
+        snprintf(b, sizeof b, "  %zu texts\n", found.empty() ? (size_t)0 : found[0].size());
+        return out + b;
+    }
+    if (c == "findwide") {
+        std::string want = p.s;
+        std::vector<uint8_t> needle;
+        for (char ch : want) needle.push_back((uint8_t)ch), needle.push_back(0);
+        int n = 0;
+        game::each_heap_chunk([&](const uint64_t* q, uintptr_t at, size_t len) {
+            const uint8_t* bytes = (const uint8_t*)q;
+            for (size_t i = 0; n < 20 && i + needle.size() <= len; i += 2)
+                if (!memcmp(bytes + i, needle.data(), needle.size())) {
+                    uintptr_t hit = at + i;
+                    std::string owner = "?";
+                    for (size_t back = 0; back < 0x1000 && owner == "?"; back += 8) {
+                        uintptr_t v = rdv<uintptr_t>((hit & ~(uintptr_t)7) - back);
+                        std::string name = v ? game::class_name(v) : "?";
+                        if (name != "?") snprintf(b, sizeof b, "%s at -%zx (%llx)", name.c_str(), back, (unsigned long long)((hit & ~(uintptr_t)7) - back)), owner = b;
+                    }
+                    snprintf(b, sizeof b, "  %llx in %s\n", (unsigned long long)hit, owner.c_str());
+                    out += b, n++;
+                }
+        });
+        return out;
+    }
+    if (c == "enemies") {
+        cheats::Vec3 me = cheats::player_position();
+        std::lock_guard<std::mutex> l(cheats::modules_mx);
+        int n = 0;
+        for (uintptr_t m : cheats::enemy_modules) {
+            uintptr_t owner = rdv<uintptr_t>(m + cheats::MODULE_OWNER);
+            cheats::Vec3 at;
+            float health = rdv<float>(m + cheats::MODULE_HEALTH, NAN);
+            if (!(health > 0) || !cheats::position_of(owner + game::g.human_control, &at) || n++ > 30) continue;
+            snprintf(b, sizeof b, "  %llx %s health %.0f at %.1f %.1f %.1f (%.1f m)\n", (unsigned long long)owner, game::class_name(owner).c_str(), health, at.x, at.y, at.z, cheats::distance(me, at));
+            out += b;
+        }
+        return out;
+    }
+    if (c == "aim") {
+        float m[16];
+        cheats::Vec3 me = cheats::player_position();
+        if (!cheats::view_matrix(m)) return out + "  no camera\n";
+        std::lock_guard<std::mutex> l(cheats::modules_mx);
+        float best = 1e9f, bx = 0, by = 0, bd = 0, bh = 0;
+        for (uintptr_t mod : cheats::enemy_modules) {
+            uintptr_t owner = rdv<uintptr_t>(mod + cheats::MODULE_OWNER);
+            cheats::Vec3 at;
+            float health = rdv<float>(mod + cheats::MODULE_HEALTH, NAN), sx, sy;
+            if (!(health > 0) || !cheats::position_of(owner + game::g.human_control, &at) || fabsf(at.y - me.y) > 3) continue;
+            at.y += 1.5f;
+            float d = cheats::distance(me, at);
+            if (d < 1.5f || d > 30 || !cheats::to_screen(m, at, 2560, 1440, sx, sy)) continue;
+            float off = fabsf(sx - 1280);
+            if (off < best) best = off, bx = sx, by = sy, bd = d, bh = health;
+        }
+        snprintf(b, sizeof b, "  %s %.0f %.0f %.1f %.0f\n", best < 1e9f ? "target" : "none", bx - 1280, by - 720, bd, bh);
+        return out + b;
+    }
+    if (c == "give") {
+        char id[96] = {};
+        int n = 1;
+        sscanf(p.s, "%95s %d", id, &n);
+        auto d = game::g.descs.find(id);
+        int into = d == game::g.descs.end() ? -2 : game::give_anywhere(game::K_BACKPACK, d->second, n);
+        snprintf(b, sizeof b, "  gave into %d\n", into);
+        return out + b;
+    }
+    if (c == "pos") {
+        cheats::Vec3 at = cheats::player_position();
+        snprintf(b, sizeof b, "  %.2f %.2f %.2f\n", at.x, at.y, at.z);
+        return out + b;
+    }
+    if (c == "tp") {
+        cheats::Vec3 at = cheats::player_position(), d{};
+        bool relative = p.s[0] == '+';
+        sscanf(p.s + relative, "%f %f %f", &d.x, &d.y, &d.z);
+        cheats::Vec3 to = relative ? cheats::Vec3{at.x + d.x, at.y + d.y, at.z + d.z} : d;
+        cheats::teleport(to);
+        snprintf(b, sizeof b, "  %.2f %.2f %.2f -> %.2f %.2f %.2f\n", at.x, at.y, at.z, to.x, to.y, to.z);
+        return out + b;
+    }
+    if (c == "param") {
+        char name[96] = {};
+        float v = NAN;
+        sscanf(p.s, "%95s %f", name, &v);
+        for (uintptr_t container : cheats::param_containers()) {
+            uintptr_t at = cheats::param_value(container, name);
+            if (at && !std::isnan(v)) game::wr<float>(at, v);
+            snprintf(b, sizeof b, "  container %llx: %llx = %g (byte %d)\n", (unsigned long long)container, (unsigned long long)at, at ? rdv<float>(at) : NAN, at ? rdv<uint8_t>(at) : -1);
+            out += b;
+        }
+        return out;
+    }
     if (c == "hud") {
         char key[64] = {};
         int on = 0, hidden = 0;
@@ -187,6 +322,24 @@ inline std::string run(const std::string& line) {
             for (int i = 0, n = visuals::ui.children_count(e); i < n && i < 400; i++) stack.push_back({visuals::ui.child(e, i), depth + 1});
         }
         return out + (shown ? "" : "  not found\n");
+    }
+    if (c == "watch") {
+        uintptr_t a = p.expr();
+        char* end;
+        double seconds = strtod(p.s, &end);
+        std::vector<int> offsets;
+        for (const char* q = end; *q;) {
+            while (*q == ' ') q++;
+            if (!*q) break;
+            offsets.push_back((int)strtol(q, &end, 16));
+            if (end == q) break;
+            q = end;
+        }
+        std::lock_guard<std::mutex> l(watch_mx);
+        if (watch.out) fclose(watch.out);
+        watch = {a, offsets, GetTickCount() + (DWORD)(seconds * 1000), {}, fopen((folder() + "fatrainer_watch.txt").c_str(), "wb")};
+        snprintf(b, sizeof b, "  watching %llx, %zu offsets for %.0f s\n", (unsigned long long)a, offsets.size(), seconds);
+        return out + b;
     }
     if (c == "near") {
         float radius = (float)atof(p.s);
