@@ -169,7 +169,7 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
-    {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 3.0f},
+    {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 5.0f},
 };
 
 inline Tweak* find_tweak(const std::string& key) {
@@ -860,6 +860,8 @@ inline bool float_value(uintptr_t at) {
     return vt && (vt == vt_param_float || vt == vt_player_float);
 }
 
+inline const char MELEE_REST[] = "MinTimeInRestToPerformAttack";
+
 inline void apply_overrides() {
     if (!alive(player)) return;
     auto containers = param_containers();
@@ -883,6 +885,11 @@ inline void apply_overrides() {
             float v = base * factor;
             if (it == want.end() || v > it->second.first) want[name] = {v, false};
         }
+    }
+    float melee = tweak_factor("melee_speed");
+    if (melee > 0 && melee != 1.0f && !containers.empty()) {
+        float rest = original_float(param_value(containers[0], MELEE_REST));
+        if (rest > 0) want[MELEE_REST] = {rest / melee, false};
     }
     for (int type = 0; type < 8 && !containers.empty(); type++) {
         int extra = extra_skill_points[type];
@@ -1466,7 +1473,15 @@ inline FieldBoolFn field_bool = nullptr;
 inline uintptr_t float_field_editor = 0;
 
 using EngineGetterFn = uintptr_t (*)(uintptr_t);
-inline EngineGetterFn active_level = nullptr, view_camera = nullptr;
+inline EngineGetterFn active_level = nullptr, view_camera = nullptr, object_level = nullptr;
+const size_t GS_LEVEL = 0x20;
+
+inline uintptr_t current_level() {
+    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
+    uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
+    if (!level && object_level && player && rdv<uintptr_t>(player) == g.vt_player && rdv<uintptr_t>(player + GS_LEVEL)) level = object_level(player);
+    return level;
+}
 struct EngineVector { uintptr_t* data; uint32_t size, capacity; };
 using FindInRadiusFn = bool (*)(uintptr_t, EngineVector*, const Vec3*, float, uintptr_t, bool, int*);
 inline FindInRadiusFn find_in_radius = nullptr;
@@ -1474,6 +1489,7 @@ inline FindInRadiusFn find_in_radius = nullptr;
 inline void locate_engine(HMODULE engine) {
     if (!engine) return;
     active_level = (EngineGetterFn)GetProcAddress(engine, "?GetActiveLevel@IGame@@QEAAPEAVILevel@@XZ");
+    object_level = (EngineGetterFn)GetProcAddress(engine, "?GetLevel@IGSObject@@QEBAPEAVILevel@@XZ");
     view_camera = (EngineGetterFn)GetProcAddress(engine, "?GetFirstActiveViewCamera@ILevel@@QEAAPEAVIBaseCamera@@XZ");
     find_in_radius = (FindInRadiusFn)GetProcAddress(
         engine, "?FindObjectsInRadius@ILevel@@QEAA_NPEAV?$vector@PEAVIControlObject@@@ttl@@AEBVvec3@@MPEBVCRTTI@@_NPEAH@Z");
@@ -1836,9 +1852,8 @@ inline bool install_grab_filter_hook() {
 const int CAMERA_EYE[3] = {0x4c, 0x5c, 0x6c};
 
 inline bool view_matrix(float m[16], Vec3* eye = nullptr) {
-    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
-    if (!game_object || !active_level || !view_camera) return false;
-    uintptr_t level = active_level(game_object);
+    if (!view_camera) return false;
+    uintptr_t level = current_level();
     uintptr_t camera = level ? view_camera(level) : 0;
     uintptr_t engine_camera = camera ? rdv<uintptr_t>(camera + CAMERA_ENGINE) : 0;
     if (!engine_camera || !rd(engine_camera + CAMERA_COMBINED, m, 16 * sizeof(float))) return false;
@@ -2103,8 +2118,7 @@ inline std::string near_classes;
 inline std::vector<uintptr_t> scan_dropped_near() {
     std::vector<uintptr_t> out;
     near_classes.clear();
-    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
-    uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
+    uintptr_t level = current_level();
     Vec3 me;
     if (!level || !find_in_radius || g.player_control < 0 || !position_of(player + g.player_control, &me)) return out;
     dropped_scan.size = 0;
@@ -2177,8 +2191,7 @@ inline void dodge_spits() {
     double now = now_seconds();
     float m[16];
     Vec3 eye;
-    uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
-    uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
+    uintptr_t level = current_level();
     if (!level || !find_in_radius || !view_matrix(m, &eye) || !std::isfinite(eye.x)) return;
     if (std::isfinite(my_last.x) && now - my_last_at > 0.001) {
         float k = (float)(1.0 / (now - my_last_at));

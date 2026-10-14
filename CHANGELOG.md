@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5 b19
+
+Survivor Update
+
+- Fixed: Melee speed still lagged at the end of each swing. The game makes you rest for a moment after every attack; that rest is now shortened by the same speed. Melee speed goes up to x5 now.
+- Fixed: Item Dupe never found the dropped item, and Dodge spit and the player ESP could lose the game world. The game's active level is empty in some sessions; the trainer now takes the level your character is in.
+- Fixed: scrolling in the menu stopped as soon as the mouse was over a card or the page title. Cards took the wheel for themselves; now the whole page scrolls wherever the mouse is.
+- Fixed: a crash when the HUD was rebuilt while loading into a game with HUD colors or colored callouts on.
+- Removed: Show next to HUD pieces.
+
 ## 2.5 b18
 
 Survivor Update

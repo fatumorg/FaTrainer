@@ -1505,11 +1505,7 @@ int main(int argc, char** argv) {
         visuals::forget_hud();
         CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.9f && dead_writes == 0 && radar.opacity == 0.7f);
         visuals::opacity_original = saved_opacity;
-        {
-            float out[3] = {0, 0, 0};
-            visuals::pulse_color(out);
-            CHECK(out[0] >= std::min(1.0f, config::cfg.accent[0]) - 1e-5f && out[0] <= 1.0f + 1e-5f);
-        }
+
         config::cfg.hud_parts.erase("radar");
         CHECK(visuals::looks_missing());
         config::cfg.hud_tint.on = false;

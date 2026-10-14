@@ -228,12 +228,17 @@ inline int part_named(const std::string& name) {
 
 inline bool node_alive(const HudNode& n) { return !n.dead && ui.vtable_of(n.element) == n.vtable && (!n.engine || rdv<uintptr_t>(n.engine) == n.engine_vtable); }
 
+inline bool ui_alive(uintptr_t element) {
+    uintptr_t engine = element ? rdv<uintptr_t>(element + UI_ENGINE_OBJECT) : 0;
+    return element && ui.vtable_of(element) && (!engine || rdv<uintptr_t>(engine));
+}
+
 inline void walk_hud(uintptr_t element, int part, int depth) {
-    if (depth > HUD_MAX_DEPTH || !ui.children_count) return;
+    if (depth > HUD_MAX_DEPTH || !ui.children_count || !ui_alive(element)) return;
     int n = ui.children_count(element);
     for (int i = 0; i < n && (int)hud_nodes.size() < HUD_MAX_ELEMENTS; i++) {
         uintptr_t c = ui.child(element, i);
-        if (!c) continue;
+        if (!ui_alive(c)) continue;
         int named = part_named(ui.name_of(c)), p = named >= 0 ? named : part;
         if (named >= 0) {
             auto r = hud_known_roots.find(c);
@@ -342,16 +347,10 @@ inline bool part_hidden(int part) {
     return it != config::cfg.hud_parts.end() && it->second.hidden;
 }
 
-inline int preview_part = -1;
-inline DWORD preview_until = 0;
-const float PULSE_HZ = 2.0f;
-
-inline bool previewing_part() { return GetTickCount() < preview_until && preview_part >= 0; }
-
 inline void hide_parts() {
     if (!opacity_original || !ui.get_opacity || !ui.set_opacity) return;
     for (auto& r : hud_roots) {
-        if (ui.vtable_of(r.element) != r.vtable) continue;
+        if (ui.vtable_of(r.element) != r.vtable || !ui_alive(r.element)) continue;
         uintptr_t engine = rdv<uintptr_t>(r.element + UI_ENGINE_OBJECT);
         bool hide = part_hidden(r.part) && engine;
         if (hide && !r.hid) {
@@ -367,49 +366,11 @@ inline void hide_parts() {
     }
 }
 
-inline void pulse_color(float out[3]) {
-    float wave = 0.5f + 0.5f * std::sin(GetTickCount() / 1000.0f * PULSE_HZ * 6.2831853f);
-    for (int k = 0; k < 3; k++) out[k] = 1.0f + (config::cfg.accent[k] - 1.0f) * wave;
-}
-
 inline void wanted_color(const HudNode& n, const float from[3], float out[3]) {
     memcpy(out, from, 3 * sizeof(float));
-    if (previewing_part() && n.part == preview_part) return pulse_color(out);
     const config::HudColor* own = part_color(n.part);
     const auto& tint = config::cfg.hud_tint;
     if (own || tint.on) visuals::tint(out, own ? own->color : tint.color, 1.0f);
-}
-
-using BoundsFn = void(__fastcall*)(uintptr_t element, float* min, float* max);
-using ToScreenFn = void(__fastcall*)(uintptr_t element, const float* in, float* out);
-inline BoundsFn element_bounds = nullptr;
-inline ToScreenFn element_to_screen = nullptr;
-
-inline bool element_rect(uintptr_t element, float out[4]) {
-    float lo[3] = {}, hi[3] = {}, a[3] = {}, b[3] = {};
-    element_bounds(element, lo, hi);
-    element_to_screen(element, lo, a);
-    element_to_screen(element, hi, b);
-    out[0] = std::min(a[0], b[0]), out[1] = std::min(a[1], b[1]), out[2] = std::max(a[0], b[0]), out[3] = std::max(a[1], b[1]);
-    for (int k = 0; k < 4; k++)
-        if (!std::isfinite(out[k])) return false;
-    return out[2] > out[0] && out[3] > out[1];
-}
-
-inline bool preview_rect(float rect[4]) {
-    if (!previewing_part() || !element_bounds || !element_to_screen) return false;
-    std::lock_guard<std::mutex> l(hud_mx);
-    for (bool only_shown : {true, false}) {
-        bool any = false;
-        for (auto& n : hud_nodes) {
-            float r[4];
-            if (n.part != preview_part || !node_alive(n) || !n.engine || (only_shown && ui.shown && !ui.shown(n.element)) || !element_rect(n.element, r)) continue;
-            if (!any) memcpy(rect, r, sizeof r), any = true;
-            else rect[0] = std::min(rect[0], r[0]), rect[1] = std::min(rect[1], r[1]), rect[2] = std::max(rect[2], r[2]), rect[3] = std::max(rect[3], r[3]);
-        }
-        if (any) return true;
-    }
-    return false;
 }
 
 inline bool adopt_game_color(uintptr_t engine, float rgb[3]) {
@@ -595,8 +556,6 @@ inline bool locate_engine(HMODULE engine) {
     ui.shown = (decltype(ui.shown))get("?IsActuallyVisible@IUIElement@@QEBA_NXZ");
     ui.visible = (decltype(ui.visible))get("?IsVisible@IUIElement@@QEBA_NXZ");
     ui.set_visible = (decltype(ui.set_visible))get("?SetVisible@IUIElement@@QEAAX_N@Z");
-    element_bounds = (BoundsFn)get("?GetBoundingBox@IUIElement@@UEAAXAEAVvec3@@0@Z");
-    element_to_screen = (ToScreenFn)get("?PointToScreenSpace@IUIElement@@QEAAXAEBVvec3@@AEAV2@@Z");
     ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
@@ -606,7 +565,7 @@ inline void locate(uintptr_t gamedll) {
 }
 
 inline bool hud_colors_on() {
-    if (config::cfg.hud_tint.on || GetTickCount() < preview_until) return true;
+    if (config::cfg.hud_tint.on) return true;
     for (auto& [key, h] : config::cfg.hud_parts)
         if (h.on || h.hidden) return true;
     return false;
@@ -641,7 +600,7 @@ inline uintptr_t live_hud_root() {
     uintptr_t best = 0;
     int most = 0;
     for (uintptr_t s : screens) {
-        if (hud_element_offset < 0 || rdv<uintptr_t>(s) != game::g.vt_hud || !rdv<uintptr_t>(s + hud_element_offset + UI_ENGINE_OBJECT)) continue;
+        if (hud_element_offset < 0 || rdv<uintptr_t>(s) != game::g.vt_hud || !rdv<uintptr_t>(s + hud_element_offset + UI_ENGINE_OBJECT) || !ui_alive(s + hud_element_offset)) continue;
         int n = ui.children_count(s + hud_element_offset);
         if (n > most) most = n, best = s + hud_element_offset;
     }

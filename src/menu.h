@@ -171,6 +171,8 @@ inline float card_reveal(int index) {
     return brand::ease_out((now() - g_page_at - delay) / (m >= 1 ? 0.5f : 0.25f));
 }
 
+const ImGuiWindowFlags CARD_FLAGS = ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar;
+
 inline void begin_card(const char* id, const char* title = nullptr) {
     float a = card_reveal(g_card++);
     float offset = (1 - a) * S(18) * motion();
@@ -181,7 +183,7 @@ inline void begin_card(const char* id, const char* title = nullptr) {
     ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
-    ImGui::BeginChild(id, {0, 0}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
+    ImGui::BeginChild(id, {0, 0}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, CARD_FLAGS);
     if (title) {
         caps(title);
         ImGui::Dummy({0, S(2)});
@@ -272,7 +274,7 @@ inline void stat_tile(const char* id, const char* name, float value, float full,
     ImGui::PushStyleColor(ImGuiCol_Border, V(T.line_soft));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(18), S(16)});
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
-    ImGui::BeginChild(id, {width, S(112)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
+    ImGui::BeginChild(id, {width, S(112)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, CARD_FLAGS);
     caps(name);
     ImGui::Dummy({0, S(2)});
     ImGui::PushFont(f_tile);
@@ -461,7 +463,7 @@ inline void stat_cell(const EditRow& r, float v, float width) {
     ImGui::PushStyleColor(ImGuiCol_Border, changed ? V(T.accent, 0.55f) : V(T.line_soft));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {S(14), S(12)});
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
-    ImGui::BeginChild("cell", {width, 0}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+    ImGui::BeginChild("cell", {width, 0}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY, CARD_FLAGS);
     float top = ImGui::GetCursorPosY();
     caps(r.name, changed ? T.accent : 0);
     float original = game_value(r.stat);
@@ -1807,7 +1809,7 @@ inline Preview preview;
 const DWORD PREVIEW_MS = 3500;
 inline const char* SAMPLE_NAMES[] = {"Jade", "Rahim", "Brecken"};
 
-inline bool previewing() { return GetTickCount() < preview.until || GetTickCount() < visuals::preview_until; }
+inline bool previewing() { return GetTickCount() < preview.until; }
 
 inline std::string with_names(const std::string& text);
 
@@ -1826,12 +1828,6 @@ inline void preview_lines(const std::vector<std::string>& lines) {
 }
 
 inline void preview_text(const std::string& text) { preview_lines({text}); }
-
-inline void preview_part(const std::string& key) {
-    for (int p = 0; p < visuals::HUD_PART_COUNT; p++)
-        if (key == visuals::HUD_PARTS[p].key) visuals::preview_part = p, visuals::preview_until = GetTickCount() + PREVIEW_MS;
-    if (key == "killfeed" && visuals::game_messages()) preview_lines({"%s killed %s"});
-}
 
 inline bool part_row(const char* label, const std::string& key, std::map<std::string, config::HudColor>& colors, bool can_hide) {
     auto& c = config::cfg;
@@ -1853,12 +1849,7 @@ inline bool part_row(const char* label, const std::string& key, std::map<std::st
     if (color_field(color_key.c_str(), shown)) memcpy(colors[key].color, shown, sizeof shown), changed = true;
     ImGui::EndDisabled();
     bool hidden = it != colors.end() && it->second.hidden;
-    if (can_hide) {
-        ImGui::SameLine(0, S(10));
-        if (chip("Show##preview", false)) preview_part(key);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hides the menu for a few seconds, makes this part of the HUD flash and frames where it sits");
-        ImGui::SameLine(0, S(6));
-    }
+    if (can_hide) ImGui::SameLine(0, S(10));
     if (can_hide && chip(hidden ? "Hidden##hide" : "Hide##hide", hidden)) {
         auto& h = colors[key];
         if (it == colors.end()) memcpy(h.color, c.accent, sizeof h.color);
@@ -2067,23 +2058,7 @@ inline float draw_rich(ImDrawList* dl, ImFont* font, float size, ImVec2 at, cons
     return x - at.x;
 }
 
-inline void draw_part_frame() {
-    float r[4];
-    if (!visuals::preview_rect(r)) return;
-    auto* dl = ImGui::GetForegroundDrawList();
-    float pulse = 0.55f + 0.45f * std::sin(GetTickCount() / 1000.0f * visuals::PULSE_HZ * 6.2831853f), pad = S(8);
-    ImVec2 a{r[0] - pad, r[1] - pad}, b{r[2] + pad, r[3] + pad};
-    dl->AddRect(a, b, C(T.accent, pulse), R(8), 0, S(2.5f));
-    const char* label = visuals::HUD_PARTS[visuals::preview_part].label;
-    float fs = font_size(f_label);
-    ImVec2 t = f_label->CalcTextSizeA(fs, FLT_MAX, 0, label);
-    ImVec2 at{a.x, a.y - t.y - S(10) < 0 ? b.y + S(4) : a.y - t.y - S(10)};
-    dl->AddRectFilled(at, {at.x + t.x + S(16), at.y + t.y + S(6)}, IM_COL32(12, 11, 10, 220), R(6));
-    dl->AddText(f_label, fs, {at.x + S(8), at.y + S(3)}, C(T.accent), label);
-}
-
 inline void draw_preview() {
-    draw_part_frame();
     if (GetTickCount() >= preview.until || preview.text.empty()) return;
     ImVec2 size = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();
@@ -3168,7 +3143,9 @@ inline void draw(float shown_raw, bool open) {
         float line = motion() > 0 ? brand::ease_expo((since - 0.15f) / 0.6f) : 1;
         dl->AddRectFilled({up.x, up.y + S(4)}, {up.x + S(48) * line, up.y + S(6)}, C(T.accent), S(1));
         ImGui::Dummy({0, S(14)});
+        float header_wheel = ImGui::IsWindowHovered() ? ImGui::GetIO().MouseWheel : 0;
         ImGui::BeginChild(page->id, {0, 0});
+        if (header_wheel != 0) ImGui::SetScrollY(ImGui::GetScrollY() - header_wheel * ImGui::GetFontSize() * 5);
         static const char* preview_scroll = getenv("DLT_SCROLL");
         if (preview_scroll && ImGui::GetFrameCount() > 5 && ImGui::GetFrameCount() < 30) ImGui::SetScrollY((float)atof(preview_scroll));
         g_card = 0;

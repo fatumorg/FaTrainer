@@ -6,6 +6,7 @@
 #include <vector>
 #include "cheats.h"
 #include "game.h"
+#include "input.h"
 
 namespace probe {
 
@@ -163,16 +164,6 @@ inline std::string run(const std::string& line) {
         h.on = on != 0, h.hidden = hidden != 0, h.color[0] = r, h.color[1] = g, h.color[2] = bl;
         return out + "  set\n";
     }
-    if (c == "show") {
-        char key[64] = {};
-        sscanf(p.s, "%63s", key);
-        for (int i = 0; i < visuals::HUD_PART_COUNT; i++)
-            if (!strcmp(key, visuals::HUD_PARTS[i].key)) visuals::preview_part = i, visuals::preview_until = GetTickCount() + 6000;
-        float r[4] = {};
-        bool rect = visuals::preview_rect(r);
-        snprintf(b, sizeof b, "  rect %d %.1f %.1f %.1f %.1f\n", rect, r[0], r[1], r[2], r[3]);
-        return out + b;
-    }
     if (c == "ui") {
         char key[64] = {};
         sscanf(p.s, "%63s", key);
@@ -184,10 +175,8 @@ inline std::string run(const std::string& line) {
             if (!e || depth > 40) continue;
             std::string name = visuals::ui.name_of(e);
             if (name == key) {
-                float lo[3] = {}, hi[3] = {};
-                if (visuals::element_bounds) visuals::element_bounds(e, lo, hi);
-                snprintf(b, sizeof b, "  %llx visible %d shown %d opacity %.2f children %d bounds %.0f,%.0f %.0f,%.0f\n", (unsigned long long)e, visuals::ui.visible(e), visuals::ui.shown(e),
-                         visuals::ui.get_opacity(e), visuals::ui.children_count(e), lo[0], lo[1], hi[0], hi[1]);
+                snprintf(b, sizeof b, "  %llx visible %d shown %d opacity %.2f children %d\n", (unsigned long long)e, visuals::ui.visible(e), visuals::ui.shown(e),
+                         visuals::ui.get_opacity(e), visuals::ui.children_count(e));
                 out += b, shown++;
                 for (int i = 0; i < visuals::ui.children_count(e) && i < 12; i++) {
                     uintptr_t ch = visuals::ui.child(e, i);
@@ -198,6 +187,23 @@ inline std::string run(const std::string& line) {
             for (int i = 0, n = visuals::ui.children_count(e); i < n && i < 400; i++) stack.push_back({visuals::ui.child(e, i), depth + 1});
         }
         return out + (shown ? "" : "  not found\n");
+    }
+    if (c == "near") {
+        float radius = (float)atof(p.s);
+        uintptr_t level = cheats::current_level();
+        cheats::Vec3 me{};
+        bool at = game::g.player_control >= 0 && cheats::position_of(cheats::player + game::g.player_control, &me);
+        cheats::EngineVector found{};
+        bool ok = level && at && cheats::find_in_radius && cheats::find_in_radius(level, &found, &me, radius > 0 ? radius : 8, 0, false, nullptr);
+        snprintf(b, sizeof b, "  level %llx at %d (%.1f %.1f %.1f) returned %d, %u objects\n", (unsigned long long)level, at, me.x, me.y, me.z, ok, found.size);
+        out += b;
+        for (uint32_t i = 0; i < found.size && i < 30 && found.data; i++) {
+            uintptr_t control = found.data[i], vt = rdv<uintptr_t>(control);
+            uintptr_t whole = vt ? control - rdv<uint32_t>(rdv<uintptr_t>(vt - 8) + 4) : 0;
+            snprintf(b, sizeof b, "    %llx %s\n", (unsigned long long)whole, game::class_name(whole).c_str());
+            out += b;
+        }
+        return out;
     }
     if (c == "scan") {
         uintptr_t vt = p.expr();
