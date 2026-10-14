@@ -613,8 +613,8 @@ inline void refresh() {
     std::lock_guard<std::mutex> l(mx);
     int calibrated = 0;
     for (int s = 0; s < ST_COUNT; s++) {
-        if (stats[s].off < 0 && g.stats[s].off >= 0) stats[s] = g.stats[s];
-        for (auto& [vt, f] : g.class_stats[s]) class_stats[s].emplace(vt, f);
+        if (g.stats[s].off >= 0) stats[s] = g.stats[s];
+        for (auto& [vt, f] : g.class_stats[s]) class_stats[s][vt] = f;
         calibrated += stats[s].off >= 0 || !class_stats[s].empty();
     }
     g.players = found[2 + N_INV_CLASSES];

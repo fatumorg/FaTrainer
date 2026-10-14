@@ -138,6 +138,67 @@ inline std::string run(const std::string& line) {
         snprintf(b, sizeof b, "  returned %llx\n", (unsigned long long)r);
         return out + b;
     }
+    if (c == "cheat") {
+        char key[64] = {};
+        int on = 0;
+        sscanf(p.s, "%63s %d", key, &on);
+        cheats::Cheat* ch = cheats::find(key);
+        if (ch) ch->on = on != 0;
+        return out + (ch ? "  set\n" : "  no such cheat\n");
+    }
+    if (c == "tweak") {
+        char key[64] = {};
+        float f = 1;
+        sscanf(p.s, "%63s %f", key, &f);
+        cheats::Tweak* t = cheats::find_tweak(key);
+        if (t) t->factor = f;
+        return out + (t ? "  set\n" : "  no such tweak\n");
+    }
+    if (c == "hud") {
+        char key[64] = {};
+        int on = 0, hidden = 0;
+        float r = 1, g = 1, bl = 1;
+        sscanf(p.s, "%63s %d %f %f %f %d", key, &on, &r, &g, &bl, &hidden);
+        auto& h = config::cfg.hud_parts[key];
+        h.on = on != 0, h.hidden = hidden != 0, h.color[0] = r, h.color[1] = g, h.color[2] = bl;
+        return out + "  set\n";
+    }
+    if (c == "show") {
+        char key[64] = {};
+        sscanf(p.s, "%63s", key);
+        for (int i = 0; i < visuals::HUD_PART_COUNT; i++)
+            if (!strcmp(key, visuals::HUD_PARTS[i].key)) visuals::preview_part = i, visuals::preview_until = GetTickCount() + 6000;
+        float r[4] = {};
+        bool rect = visuals::preview_rect(r);
+        snprintf(b, sizeof b, "  rect %d %.1f %.1f %.1f %.1f\n", rect, r[0], r[1], r[2], r[3]);
+        return out + b;
+    }
+    if (c == "ui") {
+        char key[64] = {};
+        sscanf(p.s, "%63s", key);
+        std::vector<std::pair<uintptr_t, int>> stack{{visuals::hud_root, 0}};
+        int shown = 0;
+        while (!stack.empty() && shown < 20) {
+            auto [e, depth] = stack.back();
+            stack.pop_back();
+            if (!e || depth > 40) continue;
+            std::string name = visuals::ui.name_of(e);
+            if (name == key) {
+                float lo[3] = {}, hi[3] = {};
+                if (visuals::element_bounds) visuals::element_bounds(e, lo, hi);
+                snprintf(b, sizeof b, "  %llx visible %d shown %d opacity %.2f children %d bounds %.0f,%.0f %.0f,%.0f\n", (unsigned long long)e, visuals::ui.visible(e), visuals::ui.shown(e),
+                         visuals::ui.get_opacity(e), visuals::ui.children_count(e), lo[0], lo[1], hi[0], hi[1]);
+                out += b, shown++;
+                for (int i = 0; i < visuals::ui.children_count(e) && i < 12; i++) {
+                    uintptr_t ch = visuals::ui.child(e, i);
+                    snprintf(b, sizeof b, "    %s visible %d opacity %.2f\n", visuals::ui.name_of(ch).c_str(), visuals::ui.visible(ch), visuals::ui.get_opacity(ch));
+                    out += b;
+                }
+            }
+            for (int i = 0, n = visuals::ui.children_count(e); i < n && i < 400; i++) stack.push_back({visuals::ui.child(e, i), depth + 1});
+        }
+        return out + (shown ? "" : "  not found\n");
+    }
     if (c == "scan") {
         uintptr_t vt = p.expr();
         auto found = game::scan({vt});

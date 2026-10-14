@@ -59,6 +59,7 @@ struct FakeElement {
     uintptr_t vt = 1;
     const char* id;
     int kind;
+    uintptr_t engine = 0;
     float color[3] = {1, 1, 1}, original[3] = {1, 1, 1};
     std::vector<FakeElement*> children;
     float alpha = 1, written_alpha = -1, opacity = 1;
@@ -82,7 +83,11 @@ static std::string fake_name_of(uintptr_t e) { return as_element(e)->id; }
 static int fake_kind_of(uintptr_t e, uintptr_t* at) { *at = e; return as_element(e)->kind; }
 static uintptr_t fake_vtable_of(uintptr_t e) { return as_element(e)->vt; }
 static float __fastcall fake_get_opacity(uintptr_t e) { return as_element(e)->opacity; }
-static void __fastcall fake_set_opacity(uintptr_t e, float v) { as_element(e)->opacity = v; }
+static void __fastcall fake_engine_opacity(uintptr_t engine, float v) { as_element(engine)->opacity = v; }
+static void __fastcall fake_set_opacity(uintptr_t e, float v) {
+    if (visuals::opacity_original && as_element(e)->engine) visuals::opacity_hook(as_element(e)->engine, v);
+    else as_element(e)->opacity = v;
+}
 static bool __fastcall fake_shown(uintptr_t e) { return as_element(e)->visible; }
 
 static std::list<std::wstring> fake_text_storage;
@@ -449,6 +454,18 @@ int main(int argc, char** argv) {
         visuals::forced_voice = "Pl";
         VirtualFree(locale_code, 0, MEM_RELEASE);
         visuals::locale_fallback = nullptr, visuals::voice_locale[0] = 0;
+        auto saved_steam = visuals::steam_language, saved_game = visuals::startup_game_setting;
+        visuals::steam_language = "Pl", visuals::startup_game_setting = "En", visuals::forced_voice = "Pl";
+        CHECK(visuals::engine_language() == "Pl" && visuals::game_wanted() == "En");
+        visuals::forced_voice = visuals::FOLLOW_GAME;
+        CHECK(visuals::engine_language() == "En");
+        visuals::startup_game_setting.clear(), visuals::forced_voice = config::STEAM_LANGUAGE;
+        CHECK(visuals::engine_language().empty());
+        visuals::startup_game_setting = "Cs", visuals::forced_voice = visuals::FOLLOW_GAME;
+        CHECK(visuals::engine_language() == "Cs");
+        visuals::forced_voice = "De";
+        CHECK(visuals::engine_language() == "De");
+        visuals::steam_language = saved_steam, visuals::startup_game_setting = saved_game;
         visuals::speech_original = saved_original, visuals::forced_voice = saved_voice, visuals::started_voice.clear(), visuals::speech_asked.clear();
         VirtualFree(code, 0, MEM_RELEASE);
     }
@@ -738,35 +755,29 @@ int main(int argc, char** argv) {
         uintptr_t hand = cheats::player + cheats::PLAYER_HANDS + cheats::HAND_SIZE;
         game::wr<uintptr_t>(hand, 1);
         game::wr<uintptr_t>(hand + cheats::HAND_ITEM, (uintptr_t)item);
-        static uintptr_t controller_vtable[cheats::MELEE_SLOTS + 2] = {};
-        static float clock_time = 10.0f;
-        controller_vtable[1 + cheats::SLOT_CONTROLLER_CLOCK] = (uintptr_t)(float (*)(uintptr_t))[](uintptr_t) -> float { return clock_time; };
-        static uint8_t controller[0x200] = {};
+        static uintptr_t controller_vtable[4] = {};
+        static uint8_t controller[0x500] = {};
         *(uintptr_t*)controller = (uintptr_t)&controller_vtable[1];
         *(int*)(controller + cheats::MELEE_ATTACK) = 2;
+        float* duration = (float*)(controller + cheats::MELEE_DURATIONS + 2 * 4);
+        *duration = 0.8f;
         auto saved_controller_vt = cheats::vt_melee_controller;
         cheats::vt_melee_controller = (uintptr_t)&controller_vtable[1];
         uintptr_t saved_controller = game::rdv<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER);
         game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, (uintptr_t)controller);
-        auto clock = [] { return ((float (*)(uintptr_t))(*(uintptr_t**)controller)[cheats::SLOT_CONTROLLER_CLOCK])((uintptr_t)controller); };
         auto speed = [](int i) { return *(float*)(anims[i] + cheats::ANIM_SPEED); };
         cheats::find_tweak("melee_speed")->factor = 2.0f;
         cheats::speed_melee_anims();
         cheats::speed_melee_anims();
         CHECK(speed(0) == 2.0f && speed(1) == 1.0f);
-        CHECK(*(uintptr_t*)controller == (uintptr_t)&cheats::melee_vtable[1] && clock() == 10.0f);
-        clock_time = 10.5f;
-        CHECK(clock() == 11.0f);
+        CHECK(*duration == 0.4f && cheats::melee_durations.size() == 1);
         *(float*)(anims[1] + cheats::ANIM_SPEED) = 0.75f;
         cheats::speed_melee_anims();
-        CHECK(speed(1) == 1.5f);
+        CHECK(speed(1) == 1.5f && *duration == 0.4f);
         game::wr<uintptr_t>(hand, 0);
         cheats::speed_melee_anims();
         CHECK(speed(0) == 1.0f && speed(1) == 0.75f && cheats::anim_speeds.empty());
-        CHECK(*(uintptr_t*)controller == (uintptr_t)&cheats::melee_vtable[1]);
-        *(int*)(controller + cheats::MELEE_ATTACK) = cheats::NO_ATTACK;
-        cheats::speed_melee_anims();
-        CHECK(*(uintptr_t*)controller == (uintptr_t)&controller_vtable[1]);
+        CHECK(*duration == 0.8f && cheats::melee_durations.empty());
         game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, saved_controller);
         cheats::vt_melee_controller = saved_controller_vt;
         cheats::anim_bind_of = saved_bind, cheats::vt_melee_desc = saved_desc;
@@ -1475,10 +1486,14 @@ int main(int argc, char** argv) {
         config::cfg.hud_tint.on = true;
         visuals::apply_hud();
         CHECK(dead_writes == 0 && fabsf(stamina_bar.color[0] - 0.45f) < 1e-6f);
+        auto saved_opacity = visuals::opacity_original;
+        visuals::opacity_original = fake_engine_opacity;
+        radar.engine = (uintptr_t)&radar;
+        CHECK(offsetof(FakeElement, engine) == visuals::UI_ENGINE_OBJECT);
         config::cfg.hud_parts["radar"].hidden = true;
         visuals::apply_hud();
         CHECK(radar.opacity == 0 && radar_icon.opacity == 1);
-        radar.opacity = 0.7f;
+        fake_set_opacity((uintptr_t)&radar, 0.7f);
         visuals::apply_hud();
         CHECK(radar.opacity == 0);
         config::cfg.hud_parts["radar"].hidden = false;
@@ -1489,6 +1504,12 @@ int main(int argc, char** argv) {
         CHECK(radar.opacity == 0);
         visuals::forget_hud();
         CHECK(!visuals::hud_found() && stamina_bar.color[0] == 0.9f && dead_writes == 0 && radar.opacity == 0.7f);
+        visuals::opacity_original = saved_opacity;
+        {
+            float out[3] = {0, 0, 0};
+            visuals::pulse_color(out);
+            CHECK(out[0] >= std::min(1.0f, config::cfg.accent[0]) - 1e-5f && out[0] <= 1.0f + 1e-5f);
+        }
         config::cfg.hud_parts.erase("radar");
         CHECK(visuals::looks_missing());
         config::cfg.hud_tint.on = false;

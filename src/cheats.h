@@ -614,6 +614,19 @@ inline bool holding_melee(uintptr_t p) {
     return false;
 }
 
+const size_t ITEM_LOADED = 0x40;
+
+inline void fill_magazines(uintptr_t p) {
+    for (int h = 0; h < HANDS; h++) {
+        uintptr_t at = p + PLAYER_HANDS + h * HAND_SIZE;
+        uintptr_t item = rdv<uintptr_t>(at) ? rdv<uintptr_t>(at + HAND_ITEM) : 0;
+        uintptr_t desc = item ? rdv<uintptr_t>(item + ITEM_DESC) : 0;
+        if (!game::firearm_desc(desc) || !game::desc_alive(desc)) continue;
+        int magazine = (int)game::get_stat(desc, ST_AmmoCount), loaded = rdv<int>(item + ITEM_LOADED, -1);
+        if (magazine > 0 && loaded >= 0 && loaded < magazine) wr<int>(item + ITEM_LOADED, magazine);
+    }
+}
+
 inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
     std::vector<uintptr_t> out, stack;
     if (uintptr_t root = rdv<uintptr_t>(bind + ANIMS_PLAYING)) stack.push_back(root);
@@ -627,38 +640,34 @@ inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
     return out;
 }
 
-const size_t MELEE_CONTROLLER = 0xc10, MELEE_ATTACK = 0x11c;
-const int SLOT_CONTROLLER_CLOCK = 6, NO_ATTACK = -1;
-inline uintptr_t melee_vtable_original = 0;
-const int MELEE_SLOTS = 128;
-inline uintptr_t melee_vtable[MELEE_SLOTS + 1];
-inline std::atomic<float> melee_clock_factor{1.0f};
-inline float melee_clock_now = 0, melee_clock_last = 0;
-inline bool melee_clock_started = false;
+const size_t MELEE_CONTROLLER = 0xc10, MELEE_ATTACK = 0x11c, MELEE_DURATIONS = 0x388;
+const int NO_ATTACK = -1, MELEE_ATTACK_TYPES = 64;
+struct MeleeDuration { uintptr_t controller; int type; float original, written; };
+inline std::vector<MeleeDuration> melee_durations;
 
-inline float __fastcall melee_clock(uintptr_t controller) {
-    float real = ((float(__fastcall*)(uintptr_t))rdv<uintptr_t>(melee_vtable_original + SLOT_CONTROLLER_CLOCK * 8))(controller);
-    float f = melee_clock_factor;
-    bool idle = rdv<int>(controller + MELEE_ATTACK) == NO_ATTACK;
-    if (!melee_clock_started || real < melee_clock_last || (f == 1.0f && idle)) melee_clock_now = real, melee_clock_started = true;
-    else melee_clock_now += (real - melee_clock_last) * f;
-    melee_clock_last = real;
-    return melee_clock_now;
+inline void restore_melee_durations() {
+    for (auto& d : melee_durations)
+        if (rdv<uintptr_t>(d.controller) == vt_melee_controller && rdv<float>(d.controller + MELEE_DURATIONS + d.type * 4) == d.written)
+            wr<float>(d.controller + MELEE_DURATIONS + d.type * 4, d.original);
+    melee_durations.clear();
 }
 
-inline void keep_melee_clock(uintptr_t p, float f) {
-    melee_clock_factor = f;
+inline void keep_melee_durations(uintptr_t p, float f) {
     uintptr_t controller = p ? rdv<uintptr_t>(p + MELEE_CONTROLLER) : 0;
-    uintptr_t current = controller ? rdv<uintptr_t>(controller) : 0, ours = (uintptr_t)&melee_vtable[1];
-    if (!current || (current != ours && current != vt_melee_controller)) return;
-    if (f != 1.0f && current == vt_melee_controller) {
-        if (!rd(current - 8, melee_vtable, sizeof melee_vtable)) return;
-        melee_vtable_original = current, melee_clock_started = false;
-        melee_vtable[1 + SLOT_CONTROLLER_CLOCK] = (uintptr_t)&melee_clock;
-        wr<uintptr_t>(controller, ours);
-    } else if (f == 1.0f && current == ours && rdv<int>(controller + MELEE_ATTACK) == NO_ATTACK) {
-        wr<uintptr_t>(controller, melee_vtable_original);
+    if (f == 1.0f || !controller || rdv<uintptr_t>(controller) != vt_melee_controller) return restore_melee_durations();
+    int type = rdv<int>(controller + MELEE_ATTACK, NO_ATTACK);
+    if (type < 0 || type >= MELEE_ATTACK_TYPES) return;
+    uintptr_t at = controller + MELEE_DURATIONS + type * 4;
+    float now = rdv<float>(at);
+    auto it = std::find_if(melee_durations.begin(), melee_durations.end(), [&](auto& d) { return d.controller == controller && d.type == type; });
+    if (it == melee_durations.end()) {
+        if (!(now > 0 && now < 60)) return;
+        it = melee_durations.insert(melee_durations.end(), {controller, type, now, now});
+    } else if (now != it->written) {
+        it->original = now;
     }
+    float want = it->original / f;
+    if (now != want && wr<float>(at, want)) it->written = want;
 }
 
 inline void speed_melee_anims() {
@@ -666,7 +675,7 @@ inline void speed_melee_anims() {
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
     uintptr_t bind = p && anim_bind_of ? anim_bind_of(p) : 0;
     bool on = f != 1.0f && bind && holding_melee(p);
-    keep_melee_clock(p, on ? f : 1.0f);
+    keep_melee_durations(p, on ? f : 1.0f);
     if (!on && anim_speeds.empty()) return;
     std::unordered_map<uintptr_t, AnimSpeed> next;
     for (uintptr_t a : bind ? playing_anims(bind) : std::vector<uintptr_t>{}) {
@@ -2089,8 +2098,11 @@ inline bool holds_pointer(uintptr_t object, uintptr_t a, uintptr_t b) {
     return false;
 }
 
+inline std::string near_classes;
+
 inline std::vector<uintptr_t> scan_dropped_near() {
     std::vector<uintptr_t> out;
+    near_classes.clear();
     uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
     uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
     Vec3 me;
@@ -2100,6 +2112,8 @@ inline std::vector<uintptr_t> scan_dropped_near() {
     for (uint32_t i = 0; i < dropped_scan.size && dropped_scan.data; i++) {
         uintptr_t control = dropped_scan.data[i], vt = rdv<uintptr_t>(control);
         if (!vt) continue;
+        uintptr_t whole = control - rdv<uint32_t>(rdv<uintptr_t>(vt - 8) + 4);
+        if (near_classes.size() < 600) near_classes += " " + game::class_name(whole);
         auto known = dropped_classes.find(vt);
         if (known == dropped_classes.end()) known = dropped_classes.emplace(vt, game::base_offset(g.base, vt, "DroppedItem") >= 0).first;
         if (!known->second) continue;
@@ -2130,6 +2144,7 @@ inline void dupe_drops(bool on) {
         if (!whole && rdv<int>(addr + ITEM_DATA + DATA_COUNT) >= had) continue;
         if (whole && elsewhere[desc] > held_elsewhere[desc]) continue;
         pending_drops.push_back({addr, desc, held, dropped_seen, now, whole});
+        logf_hook("dupe: %s left the backpack (%s), waiting for a dropped item", desc_id(desc), whole ? "whole" : "part of a stack");
     }
     auto close_by = dropped_near ? dropped_near() : scan_dropped_near();
     std::set<uintptr_t> close_set(close_by.begin(), close_by.end());
@@ -2141,6 +2156,9 @@ inline void dupe_drops(bool on) {
         memcpy(&had, it->held.data.data() + DATA_COUNT, sizeof had);
         bool kept = found && (it->whole ? duplicate_into(backpack, it->held) : present.count(it->item) && wr<int>(it->item + ITEM_DATA + DATA_COUNT, had));
         if (kept) dupes++, logf_hook("dupe: %s dropped, a copy stays in the backpack", desc_id(it->desc));
+        if (!found && now - it->at > DROP_WAIT_MS)
+            logf_hook("dupe: no dropped item with %s within %.0f m:%s", desc_id(it->desc), DROP_RADIUS, near_classes.empty() ? " nothing" : near_classes.c_str());
+        else if (found && !kept) logf_hook("dupe: %s dropped, but the copy failed", desc_id(it->desc));
         if (found || now - it->at > DROP_WAIT_MS) it = pending_drops.erase(it);
         else ++it;
     }
@@ -2380,6 +2398,7 @@ inline void tick() {
     if (alive(player)) {
         keep_stacks(is_on("ammo"), is_on("supplies"));
         keep_durability(is_on("durability"));
+        if (is_on("no_reload") && rdv<uintptr_t>(player) == g.vt_player) fill_magazines(player);
         dupe_drops(is_on("item_dupe"));
         if (is_on("one_hit")) weaken_enemies();
         if (is_on("one_hit_hunter")) weaken_hunter();

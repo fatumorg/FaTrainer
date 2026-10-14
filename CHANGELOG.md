@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5 b18
+
+Survivor Update
+
+- Fixed: No reload kept showing [R] Reload although the bolt was loaded, and in invasions the crossbow needed R before the next shot. The weapon in your hands now always stays fully loaded, so R switches bolts right away.
+- Fixed: Melee speed made some hits miss, more often the faster it was set. Only the end of each attack is sped up now, the rest of the game's attack timing is left alone.
+- Fixed: the voices stayed English with Polish voices and English as the game language. The game loads its voice files in the language it starts in, so it now starts in your voice language and the trainer shows every text in your game language.
+- Fixed: Hide on HUD pieces did nothing, because the game sets the opacity of most pieces again every frame. Hidden pieces now stay hidden.
+- Changed: Show no longer forces a piece visible (that made the health bar flicker and drew every crosshair at once). The piece flashes in your accent color with a frame around where it sits, also when the game hides it at that moment.
+- Fixed: the Health bar color also colored the medkit counter; it belongs to Medkits now.
+- Fixed: callout colors showed as %COLOR(...) text in XP popups like Hunter Down +240XP. Every HUD text now understands the color codes.
+- New: more Be The Zombie callouts: every way to kill in the killfeed (sliced, shot, burned, bludgeoned, blown up, run over and more), self destruct and bled out.
+- Item Dupe writes what it sees to the log when an item leaves your backpack, to find out why drops are not copied yet.
+
 ## 2.5 b17
 
 Survivor Update

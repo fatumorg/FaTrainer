@@ -157,7 +157,7 @@ inline const HudPart HUD_PARTS[] = {
     {"health", "Health bar", "HEALTH AND STAMINA", {"HudHealthIndicator"}},
     {"level", "Legend level bar", "HEALTH AND STAMINA", {"HudLegendXp"}},
     {"boosters", "Boosters", "HEALTH AND STAMINA", {"HudBoosters"}},
-    {"medkits", "Medkits", "HEALTH AND STAMINA", {"HudMedkit"}},
+    {"medkits", "Medkits", "HEALTH AND STAMINA", {"HudMedkit", "G_Medkits"}},
     {"stamina", "Stamina", "HEALTH AND STAMINA", {"HudStamina"}},
     {"crosshair", "Crosshair", "AIM AND WEAPONS", {"HudCrosshair"}},
     {"rope", "Grappling hook reticle", "AIM AND WEAPONS", {"HudRopeReticle"}},
@@ -203,11 +203,13 @@ struct HudNode {
 struct HudRoot {
     uintptr_t element, vtable;
     int part;
-    float game_opacity;
+    uintptr_t engine;
     bool hid;
 };
 
-const int UI_ENGINE_OBJECT = 0x18, ENGINE_NAME = 0x8, NAME_LIMIT = 64, TEXT_COLOR = 0x384;
+const int UI_ENGINE_OBJECT = 0x18, ENGINE_NAME = 0x8, NAME_LIMIT = 64, TEXT_COLOR = 0x384, TEXT_FLAGS = 0x403;
+const uint8_t TEXT_COLOR_CODES = 0x20;
+inline const char COLOR_OPEN[] = "%COLOR(", COLOR_RESET[] = "%COLOR(reset)";
 const DWORD HUD_REWALK_MS = 2000;
 inline std::vector<HudNode> hud_nodes;
 inline std::vector<HudRoot> hud_roots;
@@ -237,7 +239,7 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
             auto r = hud_known_roots.find(c);
             if (r == hud_known_roots.end() || hud_roots[r->second].vtable != ui.vtable_of(c)) {
                 hud_known_roots[c] = hud_roots.size();
-                hud_roots.push_back({c, ui.vtable_of(c), named, 1.0f, false});
+                hud_roots.push_back({c, ui.vtable_of(c), named, 0, false});
             }
         }
         auto known = hud_known.find(c);
@@ -248,6 +250,10 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
                 uintptr_t engine = rdv<uintptr_t>(at + UI_ENGINE_OBJECT);
                 HudNode node{c, ui.vtable_of(c), at, engine, engine ? rdv<uintptr_t>(engine) : 0, kind, p, {}, {}, false, false};
                 (kind == UI_TEXT ? ui.get_text_color : ui.get_color)(at, node.original);
+                if (kind == UI_TEXT && engine) {
+                    uint8_t flags = rdv<uint8_t>(engine + TEXT_FLAGS);
+                    if (!(flags & TEXT_COLOR_CODES)) game::wr<uint8_t>(engine + TEXT_FLAGS, flags | TEXT_COLOR_CODES);
+                }
                 if (known != hud_known.end()) hud_nodes[known->second].dead = true;
                 hud_known[c] = hud_nodes.size();
                 if (engine) hud_engines[engine] = hud_nodes.size();
@@ -268,15 +274,49 @@ inline void write_color(const HudNode& n, const float rgb[3]) {
     trainer_writing = false;
 }
 
-inline void release_forced();
+using OpacityFn = void(__fastcall*)(uintptr_t engine, float opacity);
+inline OpacityFn opacity_original = nullptr;
+inline std::mutex hidden_mx;
+inline std::unordered_map<uintptr_t, float> hidden_engines;
+
+inline void __fastcall opacity_hook(uintptr_t engine, float opacity) {
+    {
+        std::lock_guard<std::mutex> l(hidden_mx);
+        auto it = hidden_engines.find(engine);
+        if (it != hidden_engines.end()) it->second = opacity, opacity = 0;
+    }
+    opacity_original(engine, opacity);
+}
+
+inline const uint8_t OPACITY_EXPORT[] = {0x48, 0x8B, 0x49, 0x18, 0x48, 0x85, 0xC9, 0x0F, 0x85};
+inline const uint8_t OPACITY_PROLOGUE[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x8B, 0x81, 0x58, 0x01, 0x00, 0x00};
+
+inline bool install_opacity_hook(HMODULE engine) {
+    if (opacity_original) return true;
+    auto fn = engine ? (const uint8_t*)GetProcAddress(engine, "?SetOpacity@IUIElement@@UEAAXM@Z") : nullptr;
+    if (!fn || memcmp(fn, OPACITY_EXPORT, sizeof OPACITY_EXPORT)) return false;
+    uintptr_t internal = (uintptr_t)fn + sizeof OPACITY_EXPORT + 4 + *(const int32_t*)(fn + sizeof OPACITY_EXPORT);
+    if (uintptr_t t = game::detour(internal, OPACITY_PROLOGUE, sizeof OPACITY_PROLOGUE, (void*)opacity_hook)) opacity_original = (OpacityFn)t;
+    return opacity_original != nullptr;
+}
+
+inline void unhide(HudRoot& r) {
+    float game_opacity = 1.0f;
+    {
+        std::lock_guard<std::mutex> l(hidden_mx);
+        auto it = hidden_engines.find(r.engine);
+        if (it != hidden_engines.end()) game_opacity = it->second, hidden_engines.erase(it);
+    }
+    r.hid = false;
+    if (ui.set_opacity && ui.vtable_of(r.element) == r.vtable) ui.set_opacity(r.element, game_opacity);
+}
 
 inline void forget_hud() {
     std::lock_guard<std::mutex> l(hud_mx);
-    release_forced();
     for (auto& n : hud_nodes)
         if (n.wrote && node_alive(n)) write_color(n, n.original);
     for (auto& r : hud_roots)
-        if (r.hid && ui.set_opacity && ui.vtable_of(r.element) == r.vtable) ui.set_opacity(r.element, r.game_opacity);
+        if (r.hid) unhide(r);
     hud_nodes.clear(), hud_roots.clear(), hud_known.clear(), hud_engines.clear(), hud_known_roots.clear(), hud_root = 0;
 }
 
@@ -304,65 +344,72 @@ inline bool part_hidden(int part) {
 
 inline int preview_part = -1;
 inline DWORD preview_until = 0;
-
-struct Forced { uintptr_t element, vtable; float opacity; bool visible; };
-const size_t FORCED_LIMIT = 4000;
-const int FORCED_CHILDREN = 512;
-inline std::vector<Forced> forced;
-inline int forced_part = -1;
+const float PULSE_HZ = 2.0f;
 
 inline bool previewing_part() { return GetTickCount() < preview_until && preview_part >= 0; }
 
-inline void release_forced() {
-    for (auto& f : forced) {
-        if (ui.vtable_of(f.element) != f.vtable) continue;
-        ui.set_opacity(f.element, f.opacity);
-        if (!f.visible && ui.set_visible) ui.set_visible(f.element, false);
-    }
-    forced.clear(), forced_part = -1;
-}
-
-inline void force_preview() {
-    if (!ui.get_opacity || !ui.set_opacity || !ui.visible || !ui.set_visible) return;
-    if (!previewing_part() || forced_part != preview_part) release_forced();
-    if (!previewing_part()) return;
-    if (forced_part != preview_part) {
-        forced_part = preview_part;
-        std::vector<uintptr_t> stack;
-        for (auto& r : hud_roots)
-            if (r.part == preview_part && ui.vtable_of(r.element) == r.vtable) stack.push_back(r.element);
-        while (!stack.empty() && forced.size() < FORCED_LIMIT) {
-            uintptr_t e = stack.back();
-            stack.pop_back();
-            forced.push_back({e, ui.vtable_of(e), ui.get_opacity(e), ui.visible(e)});
-            for (int i = 0, n = std::min(ui.children_count(e), FORCED_CHILDREN); i < n; i++)
-                if (uintptr_t c = ui.child(e, i)) stack.push_back(c);
+inline void hide_parts() {
+    if (!opacity_original || !ui.get_opacity || !ui.set_opacity) return;
+    for (auto& r : hud_roots) {
+        if (ui.vtable_of(r.element) != r.vtable) continue;
+        uintptr_t engine = rdv<uintptr_t>(r.element + UI_ENGINE_OBJECT);
+        bool hide = part_hidden(r.part) && engine;
+        if (hide && !r.hid) {
+            {
+                std::lock_guard<std::mutex> l(hidden_mx);
+                hidden_engines[engine] = ui.get_opacity(r.element);
+            }
+            r.hid = true, r.engine = engine;
+            opacity_original(engine, 0);
+        } else if (!hide && r.hid) {
+            unhide(r);
         }
     }
-    for (auto& f : forced) {
-        if (ui.vtable_of(f.element) != f.vtable) continue;
-        if (!ui.visible(f.element)) ui.set_visible(f.element, true);
-        if (ui.get_opacity(f.element) < 1) ui.set_opacity(f.element, 1);
-    }
 }
 
-inline void hide_parts() {
-    if (!ui.get_opacity || !ui.set_opacity) return;
-    for (auto& r : hud_roots) {
-        if (ui.vtable_of(r.element) != r.vtable || (previewing_part() && r.part == preview_part)) continue;
-        float now = ui.get_opacity(r.element);
-        bool hide = part_hidden(r.part);
-        if (hide && now != 0) r.game_opacity = now, r.hid = true, ui.set_opacity(r.element, 0);
-        else if (!hide && r.hid) r.hid = false, ui.set_opacity(r.element, r.game_opacity);
-    }
-    force_preview();
+inline void pulse_color(float out[3]) {
+    float wave = 0.5f + 0.5f * std::sin(GetTickCount() / 1000.0f * PULSE_HZ * 6.2831853f);
+    for (int k = 0; k < 3; k++) out[k] = 1.0f + (config::cfg.accent[k] - 1.0f) * wave;
 }
 
 inline void wanted_color(const HudNode& n, const float from[3], float out[3]) {
     memcpy(out, from, 3 * sizeof(float));
+    if (previewing_part() && n.part == preview_part) return pulse_color(out);
     const config::HudColor* own = part_color(n.part);
     const auto& tint = config::cfg.hud_tint;
     if (own || tint.on) visuals::tint(out, own ? own->color : tint.color, 1.0f);
+}
+
+using BoundsFn = void(__fastcall*)(uintptr_t element, float* min, float* max);
+using ToScreenFn = void(__fastcall*)(uintptr_t element, const float* in, float* out);
+inline BoundsFn element_bounds = nullptr;
+inline ToScreenFn element_to_screen = nullptr;
+
+inline bool element_rect(uintptr_t element, float out[4]) {
+    float lo[3] = {}, hi[3] = {}, a[3] = {}, b[3] = {};
+    element_bounds(element, lo, hi);
+    element_to_screen(element, lo, a);
+    element_to_screen(element, hi, b);
+    out[0] = std::min(a[0], b[0]), out[1] = std::min(a[1], b[1]), out[2] = std::max(a[0], b[0]), out[3] = std::max(a[1], b[1]);
+    for (int k = 0; k < 4; k++)
+        if (!std::isfinite(out[k])) return false;
+    return out[2] > out[0] && out[3] > out[1];
+}
+
+inline bool preview_rect(float rect[4]) {
+    if (!previewing_part() || !element_bounds || !element_to_screen) return false;
+    std::lock_guard<std::mutex> l(hud_mx);
+    for (bool only_shown : {true, false}) {
+        bool any = false;
+        for (auto& n : hud_nodes) {
+            float r[4];
+            if (n.part != preview_part || !node_alive(n) || !n.engine || (only_shown && ui.shown && !ui.shown(n.element)) || !element_rect(n.element, r)) continue;
+            if (!any) memcpy(rect, r, sizeof r), any = true;
+            else rect[0] = std::min(rect[0], r[0]), rect[1] = std::min(rect[1], r[1]), rect[2] = std::max(rect[2], r[2]), rect[3] = std::max(rect[3], r[3]);
+        }
+        if (any) return true;
+    }
+    return false;
 }
 
 inline bool adopt_game_color(uintptr_t engine, float rgb[3]) {
@@ -548,6 +595,8 @@ inline bool locate_engine(HMODULE engine) {
     ui.shown = (decltype(ui.shown))get("?IsActuallyVisible@IUIElement@@QEBA_NXZ");
     ui.visible = (decltype(ui.visible))get("?IsVisible@IUIElement@@QEBA_NXZ");
     ui.set_visible = (decltype(ui.set_visible))get("?SetVisible@IUIElement@@QEAAX_N@Z");
+    element_bounds = (BoundsFn)get("?GetBoundingBox@IUIElement@@UEAAXAEAVvec3@@0@Z");
+    element_to_screen = (ToScreenFn)get("?PointToScreenSpace@IUIElement@@QEAAXAEBVvec3@@AEAV2@@Z");
     ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
@@ -599,10 +648,16 @@ inline uintptr_t live_hud_root() {
     return best;
 }
 
+inline bool colored_texts() {
+    for (auto& [key, text] : config::cfg.texts)
+        if (text.find(COLOR_OPEN) != std::string::npos) return true;
+    return false;
+}
+
 inline void keep_hud(void (*log)(const char*, ...)) {
     static bool was_on = false;
     static DWORD walked_at = 0;
-    bool on = hud_colors_on();
+    bool colors = hud_colors_on(), on = colors || colored_texts();
     if ((!on && !was_on) || !ui.children_count) return;
     if (!hud_root || rdv<uintptr_t>(hud_root) != hud_root_vtable) {
         uintptr_t root = live_hud_root();
@@ -615,8 +670,8 @@ inline void keep_hud(void (*log)(const char*, ...)) {
     }
     std::lock_guard<std::mutex> l(hud_mx);
     if (hud_root && GetTickCount() - walked_at > HUD_REWALK_MS) walked_at = GetTickCount(), walk_hud(hud_root, -1, 0);
-    apply_hud();
-    was_on = on;
+    if (colors || was_on) apply_hud();
+    was_on = colors;
 }
 
 struct TextEntry { const char* key; const wchar_t* text; };
@@ -705,7 +760,7 @@ inline const char* game_language_name(const std::string& code) {
     return nullptr;
 }
 
-inline std::string forced_language, forced_voice, steam_language, started_language, started_voice, startup_game_setting, startup_voice_setting;
+inline std::string forced_language, forced_voice, steam_language, started_language, started_voice, startup_game_setting, startup_voice_setting, text_language;
 inline std::string command_line;
 using ForceLangFn = TtlText*(__fastcall*)(TtlText* out, TtlText* fallback);
 using SpeechFn = bool(__fastcall*)(uintptr_t inner_game, const char* id, bool force);
@@ -722,14 +777,33 @@ inline std::string styled_like(const std::string& code, const std::string& examp
 }
 
 inline LPSTR WINAPI command_line_hook() {
+    if (forced_language.empty()) return command_line_original();
     command_line = std::string(command_line_original()) + " forcelang=" + forced_language;
     return (LPSTR)command_line.c_str();
+}
+
+inline bool has_voices(const std::string& code) {
+    for (auto& l : GAME_LANGUAGES)
+        if (language_code(code) == l.code) return l.voice;
+    return false;
+}
+
+inline std::string wanted_voice(const std::string& setting);
+
+inline std::string game_wanted() { return startup_game_setting.size() == 2 ? language_code(startup_game_setting) : steam_language; }
+
+inline std::string engine_language() {
+    std::string game = game_wanted(), voice = wanted_voice(forced_voice);
+    voice = voice.empty() ? game : language_code(voice);
+    return voice.size() == 2 && has_voices(voice) && voice != game ? voice : startup_game_setting.size() == 2 ? game : "";
 }
 
 inline TtlText* __fastcall force_lang_hook(TtlText* out, TtlText* fallback) {
     std::string given = fallback && fallback->text ? std::string(fallback->text, fallback->size) : "";
     if (steam_language.empty()) steam_language = language_code(given);
-    if (!forced_language.empty()) forced_language = styled_like(forced_language, given);
+    std::string engine = engine_language();
+    forced_language = engine.empty() ? "" : styled_like(engine, given);
+    text_language = !engine.empty() && engine != game_wanted() ? game_wanted() : "";
     TtlText* r = force_lang_original(out, fallback);
     started_language = r && r->text ? language_code(std::string(r->text, r->size)) : steam_language;
     return r;
@@ -826,8 +900,8 @@ inline void install_language_hooks(const std::string& game_language, const std::
     forced_voice = voice_language;
     force_lang_original = (ForceLangFn)game::hook_import(exe, ENGINE_DLL, "?CheckForceLangParameter@IGame@@SA?AV?$string_base@D@ttl@@AEAV23@@Z", (void*)force_lang_hook);
     if (!force_lang_original) return;
-    if (!forced_language.empty()) command_line_original = (CommandLineFn)game::hook_import(engine, "KERNEL32.dll", "GetCommandLineA", (void*)command_line_hook);
     if (!forced_language.empty() || (!voice_language.empty() && voice_language != config::STEAM_LANGUAGE)) {
+        command_line_original = (CommandLineFn)game::hook_import(engine, "KERNEL32.dll", "GetCommandLineA", (void*)command_line_hook);
         speech_original = hook_speech_export((uint8_t*)GetProcAddress(engine, "?SetSpeechID@IGame@@QEBA_NPEBD_N@Z"));
         hook_voice_locale((uint8_t*)GetProcAddress(engine, "?GetVoiceLocaleID@IGame@@UEAAPEBDXZ"));
     }
@@ -838,7 +912,7 @@ inline std::string language_report() {
            (forced_language.empty() ? "" : " (forced " + forced_language + (command_line_original ? "" : ", command line not hooked") + ")") + ", voices " +
            (started_voice.empty() ? (speech_original ? "not set yet" : "game default") : started_voice) +
            (speech_asked.empty() || speech_asked == started_voice ? "" : " (the game asked for " + speech_asked + ")") +
-           (locale_fallback ? std::string(", voice files ") + (*voice_locale ? voice_locale : "not read yet") : "");
+           (text_language.empty() ? "" : ", texts shown in " + text_language);
 }
 
 struct GameText { std::string key; std::wstring text; int kind; };
@@ -922,8 +996,8 @@ struct WrittenText { const wchar_t* at; std::string from; };
 inline std::map<std::string, std::wstring> text_originals;
 inline std::unordered_map<std::string, WrittenText> text_written;
 inline std::set<std::string> user_written;
-inline std::shared_ptr<const TextLibrary> applied_library;
-inline std::string applied_language;
+inline std::shared_ptr<const TextLibrary> applied_library, applied_written_library;
+inline std::string applied_language, applied_written;
 inline std::vector<const wchar_t*> sentinels;
 inline std::atomic<unsigned> texts_generation{0};
 
@@ -1038,9 +1112,11 @@ inline bool ensure_text(const std::string& key, const std::wstring& text, const 
 
 inline std::string subtitle_code() {
     const std::string& setting = config::cfg.subtitle_language;
-    std::string code = setting == config::STEAM_LANGUAGE ? steam_language : setting;
+    std::string code = setting == config::STEAM_LANGUAGE ? steam_language : setting.empty() ? text_language : setting;
     return code.size() == 2 && language_code(code) != started_language ? language_code(code) : "";
 }
+
+inline std::string written_code() { return text_language.size() == 2 && language_code(text_language) != started_language ? language_code(text_language) : ""; }
 
 inline uint64_t texts_fingerprint() {
     uint64_t h = 0;
@@ -1068,11 +1144,13 @@ inline const wchar_t* shown_text(const std::string& key) {
 inline void keep_texts() {
     if (!texts_ready() || !texts_settled()) return;
     const auto& c = config::cfg;
-    std::string code = subtitle_code();
+    std::string code = subtitle_code(), written = written_code();
     auto lib = code.empty() ? nullptr : library(code);
-    bool full = code != applied_language || lib != applied_library;
-    for (size_t i = 0; lib && !full && i < lib->size() && i < sentinels.size(); i++)
-        if (!(*lib)[i].texts.empty() && shown_text((*lib)[i].texts[0].key) != sentinels[i]) full = true;
+    auto written_lib = written.empty() ? nullptr : library(written);
+    auto sentinel_lib = lib ? lib : written_lib;
+    bool full = code != applied_language || lib != applied_library || written != applied_written || written_lib != applied_written_library;
+    for (size_t i = 0; sentinel_lib && !full && i < sentinel_lib->size() && i < sentinels.size(); i++)
+        if (!(*sentinel_lib)[i].texts.empty() && shown_text((*sentinel_lib)[i].texts[0].key) != sentinels[i]) full = true;
     bool wrote = false;
     for (auto it = user_written.begin(); it != user_written.end();)
         if (c.texts.count(*it)) ++it;
@@ -1090,6 +1168,10 @@ inline void keep_texts() {
             for (auto& file : *lib)
                 for (auto& t : file.texts)
                     if (!c.texts.count(t.key) && t.kind == TEXT_SPOKEN && wanted.insert(t.key).second) wrote |= ensure_text(t.key, t.text, "language " + code);
+        if (written_lib)
+            for (auto& file : *written_lib)
+                for (auto& t : file.texts)
+                    if (!c.texts.count(t.key) && t.kind != TEXT_SPOKEN && wanted.insert(t.key).second) wrote |= ensure_text(t.key, t.text, "language " + written);
         for (auto it = text_originals.begin(); it != text_originals.end();) {
             if (c.texts.count(it->first) || wanted.count(it->first)) {
                 ++it;
@@ -1101,8 +1183,9 @@ inline void keep_texts() {
             texts_generation++;
         }
         sentinels.clear();
-        for (size_t i = 0; lib && i < lib->size(); i++) sentinels.push_back((*lib)[i].texts.empty() ? nullptr : shown_text((*lib)[i].texts[0].key));
-        applied_language = code, applied_library = lib;
+        for (size_t i = 0; sentinel_lib && i < sentinel_lib->size(); i++)
+            sentinels.push_back((*sentinel_lib)[i].texts.empty() ? nullptr : shown_text((*sentinel_lib)[i].texts[0].key));
+        applied_language = code, applied_library = lib, applied_written = written, applied_written_library = written_lib;
     }
     if (wrote) texts_written();
 }
@@ -1196,13 +1279,69 @@ inline const Callout CALLOUTS[] = {
     {"HUDMessage_BTZDeath_Killer_Spike", "", "Spiked:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Observer_Spike", "%s ", "Spiked:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Victim_Spike", "%s ", "Spiked:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Cut", "", "Sliced:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Cut", "%s ", "Sliced:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Cut", "%s ", "Sliced:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Blunt", "", "Bludgeoned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Blunt", "%s ", "Bludgeoned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Blunt", "%s ", "Bludgeoned:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Bullet", "", "Shot:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Bullet", "%s ", "Shot:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Bullet", "%s ", "Shot:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Arrow", "", "Arrow:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Arrow", "%s ", "Arrow:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Arrow", "%s ", "Arrow:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Blast", "", "Blown Up:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Blast", "%s ", "Blown Up:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Blast", "%s ", "Blown Up:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Fire", "", "Burned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Fire", "%s ", "Burned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Fire", "%s ", "Burned:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Electric", "", "Shocked:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Electric", "%s ", "Shocked:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Electric", "%s ", "Shocked:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Poison", "", "Poisoned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Poison", "%s ", "Poisoned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Poison", "%s ", "Poisoned:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Toxic", "", "Poisoned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Toxic", "%s ", "Poisoned:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Toxic", "%s ", "Poisoned:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Cold", "", "Frozen:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Cold", "%s ", "Frozen:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Cold", "%s ", "Frozen:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Punch1", "", "Punched:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Punch1", "%s ", "Punched:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Punch1", "%s ", "Punched:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Ram", "", "Rammed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Ram", "%s ", "Rammed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Ram", "%s ", "Rammed:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_ThrownWeapon", "", "Thrown Weapon:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_ThrownWeapon", "%s ", "Thrown Weapon:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_ThrownWeapon", "%s ", "Thrown Weapon:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Bleeding", "", "Bled:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Bleeding", "%s ", "Bled:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Bleeding", "%s ", "Bled:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_buggy_attack", "", "Smashed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_buggy_attack", "%s ", "Smashed:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_buggy_attack", "%s ", "Smashed:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Buggy_Ram", "", "Run Over:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Buggy_Ram", "%s ", "Run Over:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Buggy_Ram", "%s ", "Run Over:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Buggy_Knock_Off", "", "Knocked Off:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Buggy_Knock_Off", "%s ", "Knocked Off:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Buggy_Knock_Off", "%s ", "Knocked Off:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Hunter_Self_Destruct", "", "Self Destruct:", " %s", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Observer_Hunter_Self_Destruct", "%s ", "Self Destruct:", " %s", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Victim_Hunter_Self_Destruct", "%s ", "Self Destruct:", " You", POUNCE_TONE},
+    {"HUDMessage_BTZDeath_Killer_Bled_Out", "%s ", "Bled Out", "", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Bled_Out", "%s ", "Bled Out", "", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Bled_Out", "", "Bled Out", "", KILL_TONE},
     {"BtzHuman_ZombiePlayerKilled_AwardReason", "", "Hunter Down", "", SAVE_TONE},
     {"HUDMessage_BTZHiveDestroyed_Attacker", "", "Nest Down", "", SAVE_TONE},
     {"HUDMessage_BTZHiveDestroyed_Observer", "%s ", "Nest Down", "", SAVE_TONE},
     {"BtzHuman_HiveDestroyed_AwardReason", "", "Nest Down", "", SAVE_TONE},
 };
 
-inline const char COLOR_OPEN[] = "%COLOR(", COLOR_RESET[] = "%COLOR(reset)";
 
 inline std::string colored(const std::string& text, const std::string& tone) {
     return COLOR_OPEN + (!tone.empty() && tone[0] == '#' ? tone.substr(1) : tone) + ")" + text + COLOR_RESET;

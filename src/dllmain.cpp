@@ -639,7 +639,7 @@ static void main_thread() {
     menu::startup();
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     visuals::locate((uintptr_t)gamedll);
-    logf("hud colors: %s, color hooks %d/5", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll));
+    logf("hud colors: %s, color hooks %d/5, hide hook %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll), visuals::install_opacity_hook(engine) ? "ok" : "missing");
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
     visuals::locate_texts((uintptr_t)gamedll, engine);
     logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",
@@ -688,7 +688,7 @@ static void main_thread() {
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     cheats::locate_engine(engine);
     visuals::locate((uintptr_t)gamedll);
-    logf("hud colors: %s, color hooks %d/5", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll));
+    logf("hud colors: %s, color hooks %d/5, hide hook %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll), visuals::install_opacity_hook(engine) ? "ok" : "missing");
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
     visuals::locate_texts((uintptr_t)gamedll, engine);
     logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",

@@ -1856,7 +1856,7 @@ inline bool part_row(const char* label, const std::string& key, std::map<std::st
     if (can_hide) {
         ImGui::SameLine(0, S(10));
         if (chip("Show##preview", false)) preview_part(key);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hides the menu for a few seconds and shows this part of the HUD");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hides the menu for a few seconds, makes this part of the HUD flash and frames where it sits");
         ImGui::SameLine(0, S(6));
     }
     if (can_hide && chip(hidden ? "Hidden##hide" : "Hide##hide", hidden)) {
@@ -2067,7 +2067,23 @@ inline float draw_rich(ImDrawList* dl, ImFont* font, float size, ImVec2 at, cons
     return x - at.x;
 }
 
+inline void draw_part_frame() {
+    float r[4];
+    if (!visuals::preview_rect(r)) return;
+    auto* dl = ImGui::GetForegroundDrawList();
+    float pulse = 0.55f + 0.45f * std::sin(GetTickCount() / 1000.0f * visuals::PULSE_HZ * 6.2831853f), pad = S(8);
+    ImVec2 a{r[0] - pad, r[1] - pad}, b{r[2] + pad, r[3] + pad};
+    dl->AddRect(a, b, C(T.accent, pulse), R(8), 0, S(2.5f));
+    const char* label = visuals::HUD_PARTS[visuals::preview_part].label;
+    float fs = font_size(f_label);
+    ImVec2 t = f_label->CalcTextSizeA(fs, FLT_MAX, 0, label);
+    ImVec2 at{a.x, a.y - t.y - S(10) < 0 ? b.y + S(4) : a.y - t.y - S(10)};
+    dl->AddRectFilled(at, {at.x + t.x + S(16), at.y + t.y + S(6)}, IM_COL32(12, 11, 10, 220), R(6));
+    dl->AddText(f_label, fs, {at.x + S(8), at.y + S(3)}, C(T.accent), label);
+}
+
 inline void draw_preview() {
+    draw_part_frame();
     if (GetTickCount() >= preview.until || preview.text.empty()) return;
     ImVec2 size = ImGui::GetIO().DisplaySize;
     auto* dl = ImGui::GetForegroundDrawList();
@@ -2170,9 +2186,10 @@ inline bool language_card() {
     if (restart) caps("START THE GAME AGAIN TO CHANGE THE GAME LANGUAGE AND VOICES", T.accent);
     else if (!code.empty() && !visuals::library(code)) caps("LOADING THE SUBTITLES");
     else if (!visuals::started_language.empty()) {
-        const char* g = visuals::game_language_name(visuals::started_language);
+        const std::string& shown_game = visuals::text_language.empty() ? visuals::started_language : visuals::text_language;
+        const char* g = visuals::game_language_name(shown_game);
         const char* v = visuals::game_language_name(visuals::started_voice);
-        std::string now = std::string("NOW: GAME ") + (g ? g : visuals::started_language.c_str()) + (v ? std::string(", VOICES ") + v : std::string());
+        std::string now = std::string("NOW: GAME ") + (g ? g : shown_game.c_str()) + (v ? std::string(", VOICES ") + v : std::string());
         for (auto& ch : now) ch = (char)toupper((unsigned char)ch);
         caps(now.c_str());
     }
