@@ -28,7 +28,7 @@
 
 ### Install
 
-Download FaTrainer, the launcher (Fatum Version), from the [launcher release](https://github.com/ifatum/DyingLightFaTrainer/releases/tag/installer):
+Download FaTrainer, the launcher (Fatum Version), from the [launcher release](https://github.com/fatumorg/DyingLightFaTrainer/releases/tag/installer):
 
 - **Windows**: `FaTrainer.exe`
 - **Linux**: `FaTrainer-Linux.tar.gz`, unpack it and run `FaTrainer` (works on any distribution with glibc 2.27 or newer and `curl` or `wget`). On NixOS start it with `steam-run ./FaTrainer`
@@ -60,4 +60,4 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 <div align="center"><sub>MIT License</sub></div>
 
-Questions and ideas go to the [forum](https://github.com/ifatum/DyingLightFaTrainer/discussions); its rules are in section 4 of [Privacy, contact and forum rules](https://fatrainer.fatum.cc/legal.html#forum).
+Questions and ideas go to the [forum](https://github.com/fatumorg/DyingLightFaTrainer/discussions); its rules are in section 4 of [Privacy, contact and forum rules](https://fatrainer.fatum.cc/legal.html#forum).

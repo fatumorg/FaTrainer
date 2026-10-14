@@ -20,12 +20,12 @@
 inline const char EDITION_TAG[] = "FaTrainer-edition:" FATRAINER_EDITION_KEY;
 inline const char VERSION_TAG[] = "FaTrainer-version:" FATRAINER_VERSION;
 inline const char* VERSION = VERSION_TAG + sizeof "FaTrainer-version:" - 1;
-inline const char* RELEASE_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/latest/download/";
-inline const char* RELEASE_TAG_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/";
-inline const char* RELEASES_API = "https://api.github.com/repos/ifatum/DyingLightFaTrainer/releases?per_page=100";
-inline const char* BETA_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/beta/";
-inline const char* INSTALLER_DOWNLOADS = "https://github.com/ifatum/DyingLightFaTrainer/releases/download/installer/";
-inline const char* ANNOUNCEMENT_URL = "https://raw.githubusercontent.com/ifatum/DyingLightFaTrainer/main/announcement.txt";
+inline const char* RELEASE_DOWNLOADS = "https://github.com/fatumorg/DyingLightFaTrainer/releases/latest/download/";
+inline const char* RELEASE_TAG_DOWNLOADS = "https://github.com/fatumorg/DyingLightFaTrainer/releases/download/";
+inline const char* RELEASES_API = "https://api.github.com/repos/fatumorg/DyingLightFaTrainer/releases?per_page=100";
+inline const char* BETA_DOWNLOADS = "https://github.com/fatumorg/DyingLightFaTrainer/releases/download/beta/";
+inline const char* INSTALLER_DOWNLOADS = "https://github.com/fatumorg/DyingLightFaTrainer/releases/download/installer/";
+inline const char* ANNOUNCEMENT_URL = "https://raw.githubusercontent.com/fatumorg/DyingLightFaTrainer/main/announcement.txt";
 inline const char* LAUNCH_FILE = "fatrainer.launch";
 inline const char* FIRST_ARMED_VERSION = "2.3";
 const long long LAUNCH_MAX_AGE = 180, LAUNCH_MAX_AHEAD = 30;

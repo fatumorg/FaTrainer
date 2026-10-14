@@ -18,7 +18,7 @@ BEGIN
       VALUE "FileDescription", VER_DESCRIPTION
       VALUE "FileVersion", VER_STRING
       VALUE "InternalName", VER_INTERNAL
-      VALUE "LegalCopyright", "MIT License, github.com/ifatum/DyingLightFaTrainer"
+      VALUE "LegalCopyright", "MIT License, github.com/fatumorg/DyingLightFaTrainer"
       VALUE "OriginalFilename", VER_FILENAME
       VALUE "ProductName", "FaTrainer"
       VALUE "ProductVersion", VER_STRING
