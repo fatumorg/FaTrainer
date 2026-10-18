@@ -765,6 +765,8 @@ int main(int argc, char** argv) {
         *(int*)(controller + cheats::MELEE_ATTACK) = 2;
         float* duration = (float*)(controller + cheats::MELEE_DURATIONS + 2 * 4);
         *duration = 0.8f;
+        float* phase_times = (float*)(controller + cheats::MELEE_PHASE_TIMES + cheats::MELEE_TABLE_PHASE_FIRST * 4);
+        phase_times[0] = 1.6f, phase_times[2] = 0.5f;
         auto saved_controller_vt = cheats::vt_melee_controller;
         cheats::vt_melee_controller = (uintptr_t)&controller_vtable[1];
         uintptr_t saved_controller = game::rdv<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER);
@@ -775,6 +777,10 @@ int main(int argc, char** argv) {
         cheats::speed_melee_anims();
         CHECK(speed(0) == 2.0f && speed(1) == 1.0f);
         CHECK(*duration == 0.4f && cheats::melee_durations.size() == 1);
+        CHECK(phase_times[0] == 0.8f && phase_times[1] == 0 && phase_times[2] == 0.25f);
+        phase_times[2] = 0.75f;
+        cheats::speed_melee_anims();
+        CHECK(phase_times[0] == 0.8f && phase_times[2] == 0.375f);
         *(float*)(anims[1] + cheats::ANIM_SPEED) = 0.75f;
         cheats::speed_melee_anims();
         CHECK(speed(1) == 1.5f && *duration == 0.4f);
@@ -782,6 +788,7 @@ int main(int argc, char** argv) {
         cheats::speed_melee_anims();
         CHECK(speed(0) == 1.0f && speed(1) == 0.75f && cheats::anim_speeds.empty());
         CHECK(*duration == 0.8f && cheats::melee_durations.empty());
+        CHECK(phase_times[0] == 1.6f && phase_times[2] == 0.75f);
         game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, saved_controller);
         cheats::vt_melee_controller = saved_controller_vt;
         cheats::anim_bind_of = saved_bind, cheats::vt_melee_desc = saved_desc;

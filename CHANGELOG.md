@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5 b21
+
+Survivor Update
+
+- Fixed: Melee speed still left a wait before or after some swings. Heavy and charged attacks (the long recovery after a held swing) ignored the speed; they now take their normal time divided by your melee speed, at every speed above x1.
+- Fixed: No reload could stop after one crossbow bolt when a Night Hunter was in the session. The weapon in your hand now always gets the endless magazine, also when the game uses a copy of the weapon the trainer had not patched. The log now explains it when a weapon still has a small magazine.
+
 ## 2.5 b20
 
 Survivor Update

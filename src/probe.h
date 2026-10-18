@@ -48,14 +48,10 @@ struct Parser {
             else ok = false;
             return rdv<uintptr_t>(v);
         }
-        if (isxdigit((unsigned char)*s) && !(isalpha((unsigned char)*s) && isalpha((unsigned char)s[1]))) {
-            char* end;
-            uintptr_t v = strtoull(s, &end, 16);
-            s = end;
-            return v;
-        }
         std::string name;
         while (isalnum((unsigned char)*s) || *s == '_' || *s == ':' || *s == '@' || *s == '?' || *s == '$') name += *s++;
+        bool hex = !name.empty() && name.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+        if (hex && name != "g") return strtoull(name.c_str(), nullptr, 16);
         return symbol(name);
     }
     uintptr_t expr() {
@@ -159,6 +155,8 @@ inline std::string run(const std::string& line) {
             if (!*p.s) break;
             args[i] = p.expr();
         }
+        uintptr_t gamedll = (uintptr_t)GetModuleHandleA("gamedll_x64_rwdi.dll");
+        if (!p.ok || !fn || fn == gamedll) return out + "  bad address\n";
         auto f = (uintptr_t(__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t))fn;
         uintptr_t r = f(args[0], args[1], args[2], args[3]);
         snprintf(b, sizeof b, "  returned %llx\n", (unsigned long long)r);
