@@ -852,9 +852,17 @@ inline bool own_provider(uintptr_t provider) {
     return provider && (provider == local_provider() || (from_profile && provider == rdv<uintptr_t>(from_profile + PARAM_PROVIDER)));
 }
 
+inline std::atomic<int> probe_provider_id{-1};
+inline std::mutex probe_provider_mx;
+inline std::map<uintptr_t, int> probe_provider_counts;
+
 inline uintptr_t cache_get_hook(uintptr_t provider, int id) {
     uintptr_t param = cache_get_original(provider, id);
     if (id < 0 || id >= PARAM_SLOTS || !param) return param;
+    if (probe_provider_id.load() == -2 || id == probe_provider_id.load()) {
+        std::lock_guard<std::mutex> l(probe_provider_mx);
+        probe_provider_counts[provider]++;
+    }
     auto& c = cached[id];
     uint8_t kind = c.kind;
     bool mine = provider == player_provider.load();

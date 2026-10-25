@@ -262,6 +262,59 @@ inline std::string run(const std::string& line) {
         snprintf(b, sizeof b, "  gave into %d\n", into);
         return out + b;
     }
+    if (c == "cheat") {
+        char key[64] = {};
+        int on = 1;
+        sscanf(p.s, "%63s %d", key, &on);
+        auto* ch = cheats::find(key);
+        if (!ch) return out + "  no such cheat\n";
+        ch->on = on != 0;
+        return out + "  set\n";
+    }
+    if (c == "tweak") {
+        char key[64] = {};
+        float f = 1;
+        sscanf(p.s, "%63s %f", key, &f);
+        auto* t = cheats::find_tweak(key);
+        if (!t) return out + "  no such tweak\n";
+        t->factor = f;
+        return out + "  set\n";
+    }
+    if (c == "level") {
+        int tree = 0, level = -1;
+        sscanf(p.s, "%d %d", &tree, &level);
+        if (level >= 0) cheats::set_tree_level(tree, level);
+        snprintf(b, sizeof b, "  tree %d level %d xp %u start %u span %u\n", tree, cheats::tree_level(tree), cheats::tree_xp(tree), cheats::tree_level_start(tree), cheats::tree_span(tree));
+        return out + b;
+    }
+    if (c == "providers") {
+        if (p.s[0] == 0) {
+            cheats::probe_provider_id = -1;
+            std::lock_guard<std::mutex> l(cheats::probe_provider_mx);
+            for (auto& [provider, count] : cheats::probe_provider_counts) {
+                snprintf(b, sizeof b, "  provider %llx reads %d\n", (unsigned long long)provider, count);
+                out += b;
+                uintptr_t holders[2] = {cheats::player, cheats::profile_player()};
+                for (uintptr_t holder : holders)
+                    for (size_t off = 0; holder && off < 0x2000; off += 8)
+                        if (rdv<uintptr_t>(holder + off) == provider) {
+                            snprintf(b, sizeof b, "    held by %llx +%zx\n", (unsigned long long)holder, off);
+                            out += b;
+                        }
+            }
+            return out;
+        }
+        char name[96] = {};
+        sscanf(p.s, "%95s", name);
+        auto it = cheats::param_ids.find(name);
+        if (it == cheats::param_ids.end() && strcmp(name, "*")) return out + "  no such param\n";
+        {
+            std::lock_guard<std::mutex> l(cheats::probe_provider_mx);
+            cheats::probe_provider_counts.clear();
+        }
+        cheats::probe_provider_id = it == cheats::param_ids.end() ? -2 : it->second + 1;
+        return out + "  counting\n";
+    }
     if (c == "pos") {
         cheats::Vec3 at = cheats::player_position();
         snprintf(b, sizeof b, "  %.2f %.2f %.2f\n", at.x, at.y, at.z);
