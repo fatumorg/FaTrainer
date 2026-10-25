@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5 b24
+
+Survivor Update
+
+- Fixed: the game crashed when you quit to the menu after changing a Survivor level (2.5 b23). The trainer no longer writes into the profile; it makes the game's Survivor XP check on load keep your lowered level instead.
+- Changed: Melee reach now changes the reach the game uses for every swing (targets and hit lines), for every weapon, instead of the weapon's damage range. Only your own swings are changed.
+
 ## 2.5 b23
 
 Survivor Update

@@ -221,7 +221,7 @@ inline const char* SIDE_NAMES[] = {"pending", "unknown", "survivor", "night hunt
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, melee_reach_fn = 0, survivor_raise_check = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, vt_player_bool = 0, var_root = 0, xp_award_site = 0;
 inline uintptr_t skill_manager = 0, add_skill_fn = 0, remove_skill_fn = 0;
 inline std::map<std::string, int> param_ids;
@@ -330,6 +330,9 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "8B ? C0 09 00 00 BA ? ? ? ? E8"); !hits.empty()) cache_get_fn = game::rip_target(hits[0] + 11, 1, 5);
     if (auto hits = game::find_code(base, "45 85 FF 0F 8E ? ? ? ? 48 8B 9E E8 13 00 00 0F 29 7C 24 60"); hits.size() == 1) xp_award_site = hits[0];
     if (auto hits = game::find_code(base, GRAB_FILTER_CODE); hits.size() == 1) grab_filter_fn = hits[0];
+    if (auto hits = game::find_code(base, "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 50 48 8B 01 48 8B F2 0F 29 74 24 40 48 8B F9"); hits.size() == 1)
+        melee_reach_fn = hits[0];
+    if (auto hits = game::find_code(base, "48 8B 47 40 44 8B 40 68 41 3B D8 0F 86 ? ? ? ? 48 8B 05"); hits.size() == 1) survivor_raise_check = hits[0];
     if (auto hits = game::find_code(base, "40 57 41 57 48 83 EC 28 48 89 6C 24 50 45 33 FF 48 89 74 24 58 0F B7 FA 4C 89 74 24 20 48 8B E9");
         hits.size() == 1)
         remove_skill_fn = hits[0];
@@ -567,13 +570,6 @@ inline bool human_targeting_set() {
 
 inline bool human_targeting_widened() { return side != SIDE_HUNTER && human_targeting_set(); }
 
-inline void scale_desc_stat(uintptr_t desc, int stat, float factor, std::set<uintptr_t>& touched) {
-    auto& f = game::stat_field(desc, stat);
-    if (factor == 1.0f || f.off < 0 || !f.is_float) return;
-    float base = original_float(desc + f.off);
-    if (base > 0 && base < 1000) set_desc_stat(desc, stat, base * factor, touched);
-}
-
 inline float tweak_factor(const char* key) {
     Tweak* t = find_tweak(key);
     return tweak_applies(*t) ? t->factor.load() : 1.0f;
@@ -588,13 +584,11 @@ inline void no_reload_desc(uintptr_t desc, std::set<uintptr_t>& touched) {
 
 inline void item_overrides(std::set<uintptr_t>& touched) {
     bool uv = is_on("uv"), no_reload = is_on("no_reload");
-    float reach = tweak_factor("h_melee");
-    if (!uv && !no_reload && reach == 1.0f) return;
+    if (!uv && !no_reload) return;
     for (int i = 0; i < ITEM_COUNT; i++) {
         const ItemInfo& info = ITEMS[i];
         auto d = g.descs.find(info.id);
         if (d == g.descs.end()) continue;
-        if (info.melee) scale_desc_stat(d->second, ST_DamageRange, reach, touched);
         if (uv && info.st[ST_DepletionTime] < 1e6f) set_desc_stat(d->second, ST_DepletionTime, 1e7f, touched);
         if (no_reload && info.st[ST_AmmoCount] > 0 && game::firearm_desc(d->second)) no_reload_desc(d->second, touched);
     }
@@ -630,28 +624,6 @@ inline void held_firearm_overrides(std::set<uintptr_t>& touched) {
     for (int h = 0; h < HANDS; h++) {
         uintptr_t desc = hand_desc(player, h);
         if (game::firearm_desc(desc) && game::desc_alive(desc) && game::get_stat(desc, ST_AmmoCount) > 0) no_reload_desc(desc, touched);
-    }
-}
-
-inline void log_reach_state(uintptr_t desc, float reach) {
-    static DWORD logged_at = 0;
-    static int lines = 0;
-    if (GetTickCount() - logged_at < 3000 || lines >= 100) return;
-    bool known = std::any_of(g.descs.begin(), g.descs.end(), [&](auto& kv) { return kv.second == desc; });
-    logged_at = GetTickCount(), lines++;
-    const ItemInfo* info = game::str_at(rdv<uintptr_t>(desc + g.desc_name));
-    logf_hook("reach: %s desc %s, damage range %.2f, factor %.2f, side %s", info ? info->id : "unknown item", known ? "known" : "NOT in the item table", game::get_stat(desc, ST_DamageRange), reach, SIDE_NAMES[side.load()]);
-}
-
-inline void held_melee_overrides(std::set<uintptr_t>& touched) {
-    float reach = tweak_factor("h_melee");
-    if (reach == 1.0f || !vt_melee_desc || !player || rdv<uintptr_t>(player) != g.vt_player) return;
-    for (int h = 0; h < HANDS; h++) {
-        uintptr_t desc = hand_desc(player, h);
-        if (desc && rdv<uintptr_t>(desc) == vt_melee_desc && game::desc_alive(desc)) {
-            scale_desc_stat(desc, ST_DamageRange, reach, touched);
-            log_reach_state(desc, reach);
-        }
     }
 }
 
@@ -788,6 +760,32 @@ inline void keep_melee_phases(uintptr_t controller, float f) {
 inline bool melee_busy(uintptr_t controller) {
     return controller && rdv<uintptr_t>(controller) == vt_melee_controller &&
            (rdv<int>(controller + MELEE_PHASE, NO_ATTACK) != NO_ATTACK || rdv<int>(controller + MELEE_ATTACK, NO_ATTACK) != NO_ATTACK);
+}
+
+using MeleeReachFn = float(__fastcall*)(uintptr_t controller, uintptr_t item);
+inline MeleeReachFn melee_reach_original = nullptr;
+inline std::atomic<uintptr_t> reach_controller{0}, reach_caller{0};
+inline std::atomic<float> reach_factor{1.0f}, reach_seen{0.0f};
+
+inline float __fastcall melee_reach_hook(uintptr_t controller, uintptr_t item) {
+    float reach = melee_reach_original(controller, item);
+    if (!controller || controller != reach_controller.load()) return reach;
+    reach_seen = reach;
+    reach_caller = (uintptr_t)__builtin_return_address(0);
+    return reach * reach_factor.load();
+}
+
+inline void keep_melee_reach() {
+    uintptr_t controller = player && rdv<uintptr_t>(player) == g.vt_player ? rdv<uintptr_t>(player + MELEE_CONTROLLER) : 0;
+    reach_controller = controller && rdv<uintptr_t>(controller) == vt_melee_controller ? controller : 0;
+    reach_factor = tweak_factor("h_melee");
+    static DWORD logged_at = 0;
+    static int lines = 0;
+    float seen = reach_seen.exchange(0.0f);
+    if (reach_factor == 1.0f || seen == 0.0f || GetTickCount() - logged_at < 3000 || lines >= 100) return;
+    logged_at = GetTickCount(), lines++;
+    logf_hook("reach: the game asked for %.2f m, made it %.2f m (gamedll+%llx), side %s, players %zu", seen, seen * reach_factor.load(),
+              (unsigned long long)(reach_caller.load() - g.base), SIDE_NAMES[side.load()], g.players.size());
 }
 
 inline void speed_melee_anims() {
@@ -1033,7 +1031,7 @@ inline void apply_overrides() {
     }
     item_overrides(touched);
     held_firearm_overrides(touched);
-    held_melee_overrides(touched);
+    keep_melee_reach();
     for (auto it = saved_bytes.begin(); it != saved_bytes.end();) {
         if (touched.count(it->first)) { ++it; continue; }
         auto& saved = it->second;
@@ -1189,27 +1187,7 @@ inline uint32_t tree_xp(int type) { return tree_record(type) ? rdv<uint32_t>(tre
 inline uint32_t tree_level_start(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_LEVEL_START) : 0; }
 inline uint32_t tree_span(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_SPAN) : 0; }
 
-const int NODE_KEY = -0x10, NODE_LEVEL = -0xa, NODE_VALUE = -8, NODE_LEFT = 0, NODE_RIGHT = 0x10, MAX_GAME_SKILLS = 2048;
-const size_t PROFILE_PROGRESS = 0x2d28, PROGRESS_MAP = 0x50, PROGRESS_VALUE = 0x28;
-const int SURVIVOR_TREE = 3, SURVIVOR_XP_FLOOR = 5;
-
-inline uintptr_t progress_value(int key) {
-    uintptr_t profile = game_profile(), progress = profile ? rdv<uintptr_t>(profile + PROFILE_PROGRESS) : 0;
-    uintptr_t node = progress ? rdv<uintptr_t>(progress + PROGRESS_MAP) : 0, found = 0;
-    for (int depth = 0; node && depth < 64; depth++)
-        if (rdv<int>(node + NODE_KEY) >= key) found = node, node = rdv<uintptr_t>(node + NODE_LEFT);
-        else node = rdv<uintptr_t>(node + NODE_RIGHT);
-    uintptr_t value = found && rdv<int>(found + NODE_KEY) == key ? rdv<uintptr_t>(found + NODE_VALUE) : 0;
-    return value ? value + PROGRESS_VALUE : 0;
-}
-
-inline void lower_xp_floor(int type) {
-    uintptr_t floor = type == SURVIVOR_TREE ? progress_value(SURVIVOR_XP_FLOOR) : 0;
-    uint32_t xp = tree_xp(type);
-    if (!floor || rdv<uint32_t>(floor) <= xp) return;
-    logf_hook("skills: survivor xp floor %u -> %u", rdv<uint32_t>(floor), xp);
-    wr<uint32_t>(floor, xp);
-}
+const int NODE_KEY = -0x10, NODE_LEVEL = -0xa, NODE_LEFT = 0, NODE_RIGHT = 0x10, MAX_GAME_SKILLS = 2048;
 
 inline void set_tree_progress(int type, float frac) {
     uintptr_t r = tree_record(type);
@@ -1218,7 +1196,6 @@ inline void set_tree_progress(int type, float frac) {
     uint32_t xp = tree_level_start(type) + std::min(span - 1, (uint32_t)(std::clamp(frac, 0.0f, 1.0f) * span));
     logf_hook("skills: tree %d xp %u -> %u", type, rdv<uint32_t>(r + TREE_XP), xp);
     wr<uint32_t>(r + TREE_XP, xp);
-    lower_xp_floor(type);
     xp_seen.clear();
 }
 
@@ -1337,7 +1314,6 @@ inline void set_tree_level(int type, int level) {
     logf_hook("skills: tree %d level %d -> %d", type, tree_level(type), level);
     ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
     wr<uint32_t>(tree_record(type) + TREE_XP, tree_level_start(type));
-    lower_xp_floor(type);
     xp_seen.clear();
 }
 
@@ -1986,18 +1962,44 @@ inline bool __fastcall grab_filter_hook(uintptr_t self, uintptr_t target) {
     return passed;
 }
 
-inline bool install_grab_filter_hook() {
-    if (grab_filter_original) return true;
-    if (!grab_filter_fn) return false;
+inline uintptr_t detour(uintptr_t fn, size_t prologue, uintptr_t hook) {
     auto* trampoline = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!trampoline) return false;
-    memcpy(trampoline, (const void*)grab_filter_fn, GRAB_FILTER_PROLOGUE);
-    absolute_jump(trampoline + GRAB_FILTER_PROLOGUE, grab_filter_fn + GRAB_FILTER_PROLOGUE);
-    grab_filter_original = (GrabFilterFn)trampoline;
-    uint8_t patch[GRAB_FILTER_PROLOGUE];
-    memset(patch, 0x90, sizeof patch);
-    absolute_jump(patch, (uintptr_t)&grab_filter_hook);
-    write_code(grab_filter_fn, patch, sizeof patch);
+    if (!trampoline) return 0;
+    memcpy(trampoline, (const void*)fn, prologue);
+    absolute_jump(trampoline + prologue, fn + prologue);
+    uint8_t patch[32];
+    memset(patch, 0x90, prologue);
+    absolute_jump(patch, hook);
+    write_code(fn, patch, prologue);
+    return (uintptr_t)trampoline;
+}
+
+inline bool install_grab_filter_hook() {
+    if (!grab_filter_original && grab_filter_fn) grab_filter_original = (GrabFilterFn)detour(grab_filter_fn, GRAB_FILTER_PROLOGUE, (uintptr_t)&grab_filter_hook);
+    return grab_filter_original;
+}
+
+const size_t MELEE_REACH_PROLOGUE = 15;
+
+inline bool install_melee_reach_hook() {
+    if (!melee_reach_original && melee_reach_fn) melee_reach_original = (MeleeReachFn)detour(melee_reach_fn, MELEE_REACH_PROLOGUE, (uintptr_t)&melee_reach_hook);
+    return melee_reach_original;
+}
+
+const uint8_t SHORT_JAE = 0x73, NEAR_JMP = 0xE9, NOP = 0x90;
+const int RAISE_JBE = 0xb, RAISE_SITE = 0x11, RAISE_SITE_SIZE = 7;
+
+inline bool keep_lowered_survivor() {
+    if (!survivor_raise_check) return false;
+    uintptr_t site = survivor_raise_check + RAISE_SITE;
+    if (rdv<uint8_t>(site) == NEAR_JMP) return true;
+    uintptr_t even = game::rip_target(survivor_raise_check + RAISE_JBE, 2, 6);
+    if (rdv<uint8_t>(even) != SHORT_JAE) return false;
+    uintptr_t done = even + 2 + rdv<int8_t>(even + 1);
+    uint8_t patch[RAISE_SITE_SIZE] = {NEAR_JMP, 0, 0, 0, 0, NOP, NOP};
+    int32_t rel = (int32_t)(done - (site + 5));
+    memcpy(patch + 1, &rel, 4);
+    write_code(site, patch, sizeof patch);
     return true;
 }
 

@@ -683,6 +683,8 @@ static void main_thread() {
     cheats::install_update_hooks();
     logf("settings cache hook: %s", cheats::install_cache_hook() ? "ok" : cheats::cache_get_fn ? "unexpected code, skipped" : "not found");
     logf("kick filter hook: %s", cheats::install_grab_filter_hook() ? "ok" : "not found");
+    logf("melee reach hook: %s", cheats::install_melee_reach_hook() ? "ok" : "not found");
+    logf("survivor level: %s", cheats::keep_lowered_survivor() ? "kept when a save loads" : "raise check not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     cheats::locate_engine(engine);

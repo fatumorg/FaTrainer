@@ -636,7 +636,7 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<float>(param("RangeMeleeMul")) == 1.0f && game::rdv<float>(param("BestTargetMeleeRange")) == 3.0f);
     CHECK(game::rdv<float>(param("MeeleAttackSpeedMul")) == 0.0f && game::rdv<float>(param("BluntAttackSpeedMul")) == 0.25f);
     CHECK(game::g.stats[ST_SwingSpeed].off == fake::SWING_OFF && game::g.stats[ST_DamageRange].off == fake::MELEE_RANGE_OFF);
-    CHECK(game::rdv<float>(w.desc["Melee_Fists"] + fake::SWING_OFF) == 0.9f && game::rdv<float>(w.desc["Melee_Fists"] + fake::MELEE_RANGE_OFF) == 1.15f * 2.0f);
+    CHECK(game::rdv<float>(w.desc["Melee_Fists"] + fake::SWING_OFF) == 0.9f && game::rdv<float>(w.desc["Melee_Fists"] + fake::MELEE_RANGE_OFF) == 1.15f);
     CHECK(game::rdv<float>(w.desc["Throwable_LightDisable_Spit"] + fake::MELEE_RANGE_OFF) == 5.0f);
     CHECK(game::g.stats[ST_AmmoCount].off == fake::AMMO_OFF && game::g.stats[ST_DepletionTime].off == fake::DEPLETION_OFF);
     CHECK(game::rdv<int>(w.desc["Firearm_PistolAGen"] + fake::AMMO_OFF) == 999 && game::rdv<float>(w.desc["Firearm_PistolAGen"] + fake::RELOAD_OFF) == 0.05f);
@@ -735,24 +735,6 @@ int main(int argc, char** argv) {
         CHECK(cheats::tree_xp(2) == 5000 && cheats::tree_level(2) == 5);
         cheats::set_tree_level(2, cheats::tree_max(2));
         CHECK(cheats::tree_xp(2) == 25 * 1000);
-        static uint8_t nodes[2][0x40] = {}, floor_value[0x40] = {}, progress[0x60] = {}, floor_profile[0x2e00] = {}, floor_game[0x600] = {};
-        uint8_t *low = nodes[0] + 0x10, *survivor = nodes[1] + 0x10;
-        *(int*)(low + cheats::NODE_KEY) = 2, *(int*)(survivor + cheats::NODE_KEY) = cheats::SURVIVOR_XP_FLOOR;
-        *(uintptr_t*)(low + cheats::NODE_RIGHT) = (uintptr_t)survivor;
-        *(uintptr_t*)(survivor + cheats::NODE_VALUE) = (uintptr_t)floor_value;
-        *(uint32_t*)(floor_value + cheats::PROGRESS_VALUE) = 2000000;
-        *(uintptr_t*)(progress + cheats::PROGRESS_MAP) = (uintptr_t)low;
-        *(uintptr_t*)(floor_profile + cheats::PROFILE_PROGRESS) = (uintptr_t)progress;
-        *(uintptr_t*)(floor_game + cheats::GAME_PROFILE) = (uintptr_t)floor_profile;
-        static uintptr_t floor_root = (uintptr_t)floor_game;
-        auto saved_profile_root = std::exchange(cheats::profile_root, (uintptr_t)&floor_root);
-        game::wr<uint16_t>(cheats::tree_record(3) + 0x16, 25);
-        game::wr<uint32_t>(cheats::tree_record(3) + cheats::TREE_XP, 30000);
-        cheats::set_tree_level(3, 5);
-        CHECK(cheats::tree_xp(3) == 5000 && *(uint32_t*)(floor_value + cheats::PROGRESS_VALUE) == 5000);
-        cheats::set_tree_level(2, 5);
-        CHECK(*(uint32_t*)(floor_value + cheats::PROGRESS_VALUE) == 5000);
-        cheats::profile_root = saved_profile_root;
         cheats::set_level_fn = saved_set_level;
     }
     game::wr<float>(w.enemy_health + 0x78, 300);
@@ -957,6 +939,17 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
     CHECK(cheats::grab_filter_fn && cheats::grab_filter_fn == game::g.base + 0xd61b50);
+    CHECK(cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
+    {
+        const uintptr_t FN = 0x4ae0c0, SIZE = 0x164;
+        auto* copy = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        memcpy(copy, (const void*)(game::g.base + FN), SIZE);
+        uintptr_t real_check = cheats::survivor_raise_check;
+        cheats::survivor_raise_check = (uintptr_t)copy + 0x4ae135 - FN;
+        CHECK(cheats::keep_lowered_survivor() && cheats::keep_lowered_survivor());
+        CHECK(copy[0x86] == 0xE9 && (uintptr_t)copy + 0x8b + *(int32_t*)(copy + 0x87) == (uintptr_t)copy + 0x155 && copy[0x8b] == 0x90 && copy[0x8c] == 0x90);
+        cheats::survivor_raise_check = real_check;
+    }
     {
         static uintptr_t target_vt[0x900 / 8] = {};
         for (auto& f : target_vt) f = (uintptr_t)&fake_no;
@@ -1872,32 +1865,25 @@ int main(int argc, char** argv) {
     }
 
     {
-        const int RANGE_OFF = 0x300;
-        auto saved_range = game::g.stats[ST_DamageRange];
-        auto saved_melee_vt = cheats::vt_melee_desc;
-        game::g.stats[ST_DamageRange].off = RANGE_OFF, game::g.stats[ST_DamageRange].is_float = true;
-        uintptr_t held = game::g.descs["ZZZZZ_Throwable_Camo_Spit"];
-        w.put<float>(held + RANGE_OFF, 1.7f);
-        static uint8_t held_item[0x80] = {};
-        *(uintptr_t*)(held_item + cheats::ITEM_DESC) = held;
-        uintptr_t hand = cheats::player + cheats::PLAYER_HANDS;
-        uintptr_t saved_hand = game::rdv<uintptr_t>(hand), saved_hand_item = game::rdv<uintptr_t>(hand + cheats::HAND_ITEM);
-        game::wr<uintptr_t>(hand, 1);
-        game::wr<uintptr_t>(hand + cheats::HAND_ITEM, (uintptr_t)held_item);
-        cheats::vt_melee_desc = game::rdv<uintptr_t>(held);
+        static uint8_t controller[0x400] = {};
+        auto saved_controller_vt = std::exchange(cheats::vt_melee_controller, (uintptr_t)&fake_yes);
+        *(uintptr_t*)controller = cheats::vt_melee_controller;
+        uintptr_t saved_controller = game::rdv<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER);
+        game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, (uintptr_t)controller);
+        auto saved_reach = cheats::melee_reach_original;
+        cheats::melee_reach_original = [](uintptr_t, uintptr_t) { return 1.7f; };
         DWORD settle = cheats::side_settle_ms;
         cheats::side_settle_ms = 0;
         cheats::find_tweak("h_melee")->factor = 10.0f;
         cheats::tick();
-        CHECK(game::rdv<float>(held + RANGE_OFF) == 17.0f);
+        CHECK(cheats::melee_reach_hook((uintptr_t)controller, 0) == 17.0f && cheats::melee_reach_hook(1, 0) == 1.7f);
         cheats::find_tweak("h_melee")->factor = 1.0f;
         cheats::tick();
-        CHECK(game::rdv<float>(held + RANGE_OFF) == 1.7f);
-        game::wr<uintptr_t>(hand, saved_hand);
-        game::wr<uintptr_t>(hand + cheats::HAND_ITEM, saved_hand_item);
-        cheats::vt_melee_desc = saved_melee_vt;
+        CHECK(cheats::melee_reach_hook((uintptr_t)controller, 0) == 1.7f);
+        game::wr<uintptr_t>(cheats::player + cheats::MELEE_CONTROLLER, saved_controller);
+        cheats::melee_reach_original = saved_reach;
+        cheats::vt_melee_controller = saved_controller_vt;
         cheats::side_settle_ms = settle;
-        game::g.stats[ST_DamageRange] = saved_range;
     }
 
     CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");
