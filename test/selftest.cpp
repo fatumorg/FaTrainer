@@ -145,6 +145,12 @@ static int fake_level_calls = 0;
 static int ownership_requests = 0;
 static void fake_request_ownership(uintptr_t repl) { ownership_requests++; *(uint8_t*)(repl + 0x28) = 1; }
 static void __fastcall fake_level_from_xp(uintptr_t, int) { fake_level_calls++; }
+static void __fastcall fake_set_level(uintptr_t container, int16_t level, int type) {
+    uintptr_t record = game::rdv<uintptr_t>(container + 0x40) + type * 0x20;
+    game::wr<uint16_t>(record + 0x14, (uint16_t)level);
+    game::wr<uint32_t>(record + 0xc, level * 1000);
+    game::wr<uint32_t>(record + 0x10, 1000);
+}
 
 static std::map<int, int> fake_learned;
 static std::vector<std::vector<uint8_t>> fake_nodes;
@@ -720,6 +726,17 @@ int main(int argc, char** argv) {
         game::wr<uintptr_t>(w.player + cheats::PARAM_CONTAINER, global_container);
         cheats::params_root = 0;
     }
+    {
+        auto saved_set_level = cheats::set_level_fn;
+        cheats::set_level_fn = (uintptr_t)&fake_set_level;
+        uintptr_t record = cheats::tree_record(2);
+        game::wr<uint32_t>(record + cheats::TREE_XP, 20000);
+        cheats::set_tree_level(2, 5);
+        CHECK(cheats::tree_xp(2) == 5000 && cheats::tree_level(2) == 5);
+        cheats::set_tree_level(2, cheats::tree_max(2));
+        CHECK(cheats::tree_xp(2) == 25 * 1000);
+        cheats::set_level_fn = saved_set_level;
+    }
     game::wr<float>(w.enemy_health + 0x78, 300);
     fatrainer_module_update(w.enemy_health);
     CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
@@ -784,6 +801,13 @@ int main(int argc, char** argv) {
         *(float*)(anims[1] + cheats::ANIM_SPEED) = 0.75f;
         cheats::speed_melee_anims();
         CHECK(speed(1) == 1.5f && *duration == 0.4f);
+        *(int*)(controller + cheats::MELEE_PHASE) = -1;
+        *(int*)(controller + cheats::MELEE_ATTACK) = -1;
+        cheats::speed_melee_anims();
+        CHECK(speed(0) == 1.0f && speed(1) == 0.75f && cheats::anim_speeds.empty());
+        *(int*)(controller + cheats::MELEE_ATTACK) = 2;
+        cheats::speed_melee_anims();
+        CHECK(speed(0) == 2.0f && speed(1) == 1.5f);
         game::wr<uintptr_t>(hand, 0);
         cheats::speed_melee_anims();
         CHECK(speed(0) == 1.0f && speed(1) == 0.75f && cheats::anim_speeds.empty());
@@ -1815,6 +1839,35 @@ int main(int argc, char** argv) {
         game::wr<uintptr_t>(w.player + cheats::LOGICAL_PLAYER, saved_logical);
         game::g.stats[ST_DamageRange] = saved_range;
         cheats::spit_radius_originals.clear();
+    }
+
+    {
+        const int RANGE_OFF = 0x300;
+        auto saved_range = game::g.stats[ST_DamageRange];
+        auto saved_melee_vt = cheats::vt_melee_desc;
+        game::g.stats[ST_DamageRange].off = RANGE_OFF, game::g.stats[ST_DamageRange].is_float = true;
+        uintptr_t held = game::g.descs["ZZZZZ_Throwable_Camo_Spit"];
+        w.put<float>(held + RANGE_OFF, 1.7f);
+        static uint8_t held_item[0x80] = {};
+        *(uintptr_t*)(held_item + cheats::ITEM_DESC) = held;
+        uintptr_t hand = cheats::player + cheats::PLAYER_HANDS;
+        uintptr_t saved_hand = game::rdv<uintptr_t>(hand), saved_hand_item = game::rdv<uintptr_t>(hand + cheats::HAND_ITEM);
+        game::wr<uintptr_t>(hand, 1);
+        game::wr<uintptr_t>(hand + cheats::HAND_ITEM, (uintptr_t)held_item);
+        cheats::vt_melee_desc = game::rdv<uintptr_t>(held);
+        DWORD settle = cheats::side_settle_ms;
+        cheats::side_settle_ms = 0;
+        cheats::find_tweak("h_melee")->factor = 10.0f;
+        cheats::tick();
+        CHECK(game::rdv<float>(held + RANGE_OFF) == 17.0f);
+        cheats::find_tweak("h_melee")->factor = 1.0f;
+        cheats::tick();
+        CHECK(game::rdv<float>(held + RANGE_OFF) == 1.7f);
+        game::wr<uintptr_t>(hand, saved_hand);
+        game::wr<uintptr_t>(hand + cheats::HAND_ITEM, saved_hand_item);
+        cheats::vt_melee_desc = saved_melee_vt;
+        cheats::side_settle_ms = settle;
+        game::g.stats[ST_DamageRange] = saved_range;
     }
 
     CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");

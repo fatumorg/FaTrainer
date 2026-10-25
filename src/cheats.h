@@ -633,6 +633,28 @@ inline void held_firearm_overrides(std::set<uintptr_t>& touched) {
     }
 }
 
+inline void log_reach_state(uintptr_t desc, float reach) {
+    static DWORD logged_at = 0;
+    static int lines = 0;
+    if (GetTickCount() - logged_at < 3000 || lines >= 100) return;
+    bool known = std::any_of(g.descs.begin(), g.descs.end(), [&](auto& kv) { return kv.second == desc; });
+    logged_at = GetTickCount(), lines++;
+    const ItemInfo* info = game::str_at(rdv<uintptr_t>(desc + g.desc_name));
+    logf_hook("reach: %s desc %s, damage range %.2f, factor %.2f, side %s", info ? info->id : "unknown item", known ? "known" : "NOT in the item table", game::get_stat(desc, ST_DamageRange), reach, SIDE_NAMES[side.load()]);
+}
+
+inline void held_melee_overrides(std::set<uintptr_t>& touched) {
+    float reach = tweak_factor("h_melee");
+    if (reach == 1.0f || !vt_melee_desc || !player || rdv<uintptr_t>(player) != g.vt_player) return;
+    for (int h = 0; h < HANDS; h++) {
+        uintptr_t desc = hand_desc(player, h);
+        if (desc && rdv<uintptr_t>(desc) == vt_melee_desc && game::desc_alive(desc)) {
+            scale_desc_stat(desc, ST_DamageRange, reach, touched);
+            log_reach_state(desc, reach);
+        }
+    }
+}
+
 inline void log_reload_state(uintptr_t desc, int magazine, int loaded) {
     static DWORD logged_at = 0;
     static int lines = 0;
@@ -682,7 +704,7 @@ inline std::vector<uintptr_t> playing_anims(uintptr_t bind) {
     return out;
 }
 
-const size_t MELEE_CONTROLLER = 0xc10, MELEE_ATTACK = 0x11c, MELEE_DURATIONS = 0x388, MELEE_PHASE_SCALES = 0x2fc;
+const size_t MELEE_CONTROLLER = 0xc10, MELEE_PHASE = 0x110, MELEE_ATTACK = 0x11c, MELEE_DURATIONS = 0x388, MELEE_PHASE_SCALES = 0x2fc;
 const int MELEE_PHASE_SCALE_COUNT = 2;
 const size_t MELEE_PHASE_TIMES = 0x32c;
 const int MELEE_TABLE_PHASE_FIRST = 10, MELEE_TABLE_PHASE_COUNT = 6;
@@ -763,23 +785,29 @@ inline void keep_melee_phases(uintptr_t controller, float f) {
     if (f != 1.0f) melee_scaled_controller = controller;
 }
 
+inline bool melee_busy(uintptr_t controller) {
+    return controller && rdv<uintptr_t>(controller) == vt_melee_controller &&
+           (rdv<int>(controller + MELEE_PHASE, NO_ATTACK) != NO_ATTACK || rdv<int>(controller + MELEE_ATTACK, NO_ATTACK) != NO_ATTACK);
+}
+
 inline void speed_melee_anims() {
     float f = tweak_factor("melee_speed");
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
     if (p) hold_last_round(p);
     uintptr_t bind = p && anim_bind_of ? anim_bind_of(p) : 0;
     bool on = f != 1.0f && bind && holding_melee(p);
-    keep_melee_durations(p, on ? f : 1.0f);
     uintptr_t controller = p ? rdv<uintptr_t>(p + MELEE_CONTROLLER) : 0;
+    bool animate = on && melee_busy(controller);
+    keep_melee_durations(p, on ? f : 1.0f);
     keep_melee_phases(controller, on ? f : 1.0f);
     keep_melee_phase_times(controller, on ? f : 1.0f);
-    if (!on && anim_speeds.empty()) return;
+    if (!animate && anim_speeds.empty()) return;
     std::unordered_map<uintptr_t, AnimSpeed> next;
     for (uintptr_t a : bind ? playing_anims(bind) : std::vector<uintptr_t>{}) {
         float now = rdv<float>(a + ANIM_SPEED);
         auto it = anim_speeds.find(a);
         bool ours = it != anim_speeds.end() && now == it->second.written;
-        if (!on) {
+        if (!animate) {
             if (ours) game::wr<float>(a + ANIM_SPEED, it->second.original);
             continue;
         }
@@ -957,8 +985,6 @@ inline bool float_value(uintptr_t at) {
     return vt && (vt == vt_param_float || vt == vt_player_float);
 }
 
-inline const char MELEE_REST[] = "MinTimeInRestToPerformAttack";
-
 inline void apply_overrides() {
     if (!alive(player)) return;
     auto containers = param_containers();
@@ -983,11 +1009,6 @@ inline void apply_overrides() {
             if (it == want.end() || v > it->second.first) want[name] = {v, false};
         }
     }
-    float melee = tweak_factor("melee_speed");
-    if (melee > 0 && melee != 1.0f && !containers.empty()) {
-        float rest = original_float(param_value(containers[0], MELEE_REST));
-        if (rest > 0) want[MELEE_REST] = {rest / melee, false};
-    }
     for (int type = 0; type < 8 && !containers.empty(); type++) {
         int extra = extra_skill_points[type];
         uintptr_t at = param_value(containers[0], SKILL_POINT_PARAMS[type]);
@@ -1004,6 +1025,7 @@ inline void apply_overrides() {
     }
     item_overrides(touched);
     held_firearm_overrides(touched);
+    held_melee_overrides(touched);
     for (auto it = saved_bytes.begin(); it != saved_bytes.end();) {
         if (touched.count(it->first)) { ++it; continue; }
         auto& saved = it->second;
@@ -1283,6 +1305,7 @@ inline void set_tree_level(int type, int level) {
     level = std::clamp(level, 0, tree_max(type));
     logf_hook("skills: tree %d level %d -> %d", type, tree_level(type), level);
     ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
+    wr<uint32_t>(tree_record(type) + TREE_XP, tree_level_start(type));
     xp_seen.clear();
 }
 
