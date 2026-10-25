@@ -2159,11 +2159,22 @@ inline bool language_card() {
     changed |= choice_row("game", "Game language", "Menus, HUD, items, quests, Night Hunter info, everything you read", c.game_language, game);
     changed |= choice_row("voices", "Voices", "The language the characters speak", c.voice_language, voices);
     changed |= choice_row("subtitles", "Subtitles", "What the characters say, as text", c.subtitle_language, subtitles);
+    std::vector<Choice> same{{"", "Same as the game language"}};
+    for (auto& l : visuals::LANGUAGES) same.push_back({l.code, l.name});
+    for (int k = 1; k < visuals::TEXT_KINDS; k++) {
+        std::string& code = c.kind_languages[visuals::TEXT_KIND_INFO[k].key];
+        changed |= choice_row(visuals::TEXT_KIND_INFO[k].key, visuals::TEXT_KIND_INFO[k].label, visuals::TEXT_KIND_INFO[k].hint, code, same);
+    }
+    for (auto it = c.kind_languages.begin(); it != c.kind_languages.end();) it = it->second.empty() ? c.kind_languages.erase(it) : std::next(it);
+    bool loading = false;
+    for (int k = 0; k < visuals::TEXT_KINDS; k++) {
+        std::string kind_code = visuals::kind_code(k);
+        loading |= !kind_code.empty() && !visuals::library(kind_code);
+    }
     bool restart = c.game_language != visuals::startup_game_setting || c.voice_language != visuals::startup_voice_setting;
-    std::string code = visuals::subtitle_code();
     ImGui::Dummy({0, S(4)});
     if (restart) caps("START THE GAME AGAIN TO CHANGE THE GAME LANGUAGE AND VOICES", T.accent);
-    else if (!code.empty() && !visuals::library(code)) caps("LOADING THE SUBTITLES");
+    else if (loading) caps("LOADING TEXTS");
     else if (!visuals::started_language.empty()) {
         const std::string& shown_game = visuals::text_language.empty() ? visuals::started_language : visuals::text_language;
         const char* g = visuals::game_language_name(shown_game);
@@ -2172,7 +2183,7 @@ inline bool language_card() {
         for (auto& ch : now) ch = (char)toupper((unsigned char)ch);
         caps(now.c_str());
     }
-    note("The game language and voices change the next time you start the game. Subtitles change right away; lines already on screen change the next time the game shows them.");
+    note("The game language and voices change the next time you start the game. Subtitles and the text categories change right away; lines already on screen change the next time the game shows them.");
     end_card();
     return changed;
 }

@@ -1604,6 +1604,12 @@ int main(int argc, char** argv) {
         config::cfg.subtitle_language.clear();
         visuals::keep_texts();
         CHECK(shown("Melee_Fists_N") == fists_pl && shown("Shopkeeper_X_DLG01") == hello_pl && visuals::text_originals.empty());
+        config::cfg.kind_languages["items"] = "Xx";
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == L"Fists" && shown("Shopkeeper_X_DLG01") == hello_pl && visuals::kind_code(visuals::TEXT_HUD).empty());
+        config::cfg.kind_languages.clear();
+        visuals::keep_texts();
+        CHECK(shown("Melee_Fists_N") == fists_pl && visuals::text_originals.empty());
         visuals::steam_language = "Xx";
         config::cfg.subtitle_language = config::STEAM_LANGUAGE;
         visuals::keep_texts();
@@ -1652,6 +1658,12 @@ int main(int argc, char** argv) {
     config::load(path);
     CHECK(config::cfg.game_language == "En" && config::cfg.voice_language == "game" && config::cfg.subtitle_language == "steam" && config::cfg.fov == 1.25f);
     CHECK(config::peek(path, "game_language") == "En" && config::peek(path, "text_language").empty());
+    config::cfg.kind_languages = {{"hud", "En"}, {"items", "De"}};
+    config::save(path);
+    config::cfg.kind_languages.clear();
+    config::load(path);
+    CHECK(config::cfg.kind_languages.size() == 2 && config::cfg.kind_languages["hud"] == "En" && config::cfg.kind_languages["items"] == "De" && config::cfg.game_language == "En");
+    config::cfg.kind_languages.clear();
     {
         std::string log = "--- FaTrainer | Dying Light 2.5 b10, Fatum Version loaded (x)\nold\n--- FaTrainer | Dying Light 2.5 b11, Fatum Version loaded (x) at 1000\nplayed\n"
                           "--- FaTrainer | Dying Light 2.5 b11, Fatum Version loaded (x) at 2000\nnow\n";

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5 b22
+
+Survivor Update
+
+- Fixed: levels you lowered in the Skills page (for example Survivor from 25 to 21) went back to the maximum with the next XP you earned, and the extra XP landed in Legend. Setting a level now also sets the XP to the start of that level.
+- Fixed: Melee speed also sped up climbing, the grappling hook and picking up items. Animations are now only sped up while your melee weapon is swinging.
+- Fixed: Melee reach did nothing for some weapons, like the Egyptian Khopesh and DLC weapons, because the game used a copy of the weapon the trainer had not changed. It now changes the weapon in your hand.
+- New: a language for every text category on the Texts page. Next to Subtitles, Weapons and items, Skills, Quests and objectives, Tutorials and hints, HUD and messages and Menus can each have their own language, changing right away.
+
 ## 2.5 b21
 
 Survivor Update

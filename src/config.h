@@ -96,6 +96,7 @@ struct Config {
     std::map<std::string, std::string> texts;
     std::map<std::string, std::map<std::string, float>> weapon_edits;
     std::string game_language, voice_language, subtitle_language;
+    std::map<std::string, std::string> kind_languages;
     float fov = 1.0f;
     Look look;
 };
@@ -329,7 +330,7 @@ inline void load(const std::string& path) {
     cfg.survivor_glow.clear();
     cfg.rainbow.clear();
     cfg.texts.clear();
-    cfg.game_language.clear(), cfg.voice_language.clear(), cfg.subtitle_language.clear();
+    cfg.game_language.clear(), cfg.voice_language.clear(), cfg.subtitle_language.clear(), cfg.kind_languages.clear();
     cfg.fov = 1.0f;
     std::string old_language;
     bool old_spoken_kept = false;
@@ -380,7 +381,11 @@ inline void load(const std::string& path) {
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
         else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
-        else if (k == "text_language") old_language = v;
+        else if (k == "text_language") {
+            size_t c = v.find(',');
+            if (c == std::string::npos) old_language = v;
+            else if (c + 1 < v.size()) cfg.kind_languages[v.substr(0, c)] = v.substr(c + 1);
+        }
         else if (k == "text_keep") old_spoken_kept = ("," + v + ",").find(",spoken,") != std::string::npos;
         else if (k == "game_language") cfg.game_language = v;
         else if (k == "voice_language") cfg.voice_language = v;
@@ -473,6 +478,7 @@ inline bool save(const std::string& path) {
     if (!cfg.game_language.empty()) fprintf(f, "game_language=%s\n", cfg.game_language.c_str());
     if (!cfg.voice_language.empty()) fprintf(f, "voice_language=%s\n", cfg.voice_language.c_str());
     if (!cfg.subtitle_language.empty()) fprintf(f, "subtitle_language=%s\n", cfg.subtitle_language.c_str());
+    for (auto& [kind, code] : cfg.kind_languages) fprintf(f, "text_language=%s,%s\n", kind.c_str(), code.c_str());
     if (cfg.fov != 1.0f) fprintf(f, "fov=%.2f\n", cfg.fov);
     for (auto& [id, stats] : cfg.weapon_edits)
         for (auto& [stat, value] : stats) fprintf(f, "weapon_edit=%s,%s,%g\n", id.c_str(), stat.c_str(), value);

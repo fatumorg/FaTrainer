@@ -980,8 +980,8 @@ struct WrittenText { const wchar_t* at; std::string from; };
 inline std::map<std::string, std::wstring> text_originals;
 inline std::unordered_map<std::string, WrittenText> text_written;
 inline std::set<std::string> user_written;
-inline std::shared_ptr<const TextLibrary> applied_library, applied_written_library;
-inline std::string applied_language, applied_written;
+inline std::array<std::shared_ptr<const TextLibrary>, TEXT_KINDS> applied_libraries;
+inline std::array<std::string, TEXT_KINDS> applied_codes;
 inline std::vector<const wchar_t*> sentinels;
 inline std::atomic<unsigned> texts_generation{0};
 
@@ -1102,6 +1102,13 @@ inline std::string subtitle_code() {
 
 inline std::string written_code() { return text_language.size() == 2 && language_code(text_language) != started_language ? language_code(text_language) : ""; }
 
+inline std::string kind_code(int kind) {
+    if (kind == TEXT_SPOKEN) return subtitle_code();
+    auto it = config::cfg.kind_languages.find(TEXT_KIND_INFO[kind].key);
+    if (it == config::cfg.kind_languages.end() || it->second.empty()) return written_code();
+    return it->second.size() == 2 && language_code(it->second) != started_language ? language_code(it->second) : "";
+}
+
 inline uint64_t texts_fingerprint() {
     uint64_t h = 0;
     for (int i = 0; texts_api.table && i < TEXT_BUCKETS; i++)
@@ -1151,13 +1158,19 @@ inline int relocalize_shown_texts() {
 inline void keep_texts() {
     if (!texts_ready() || !texts_settled()) return;
     const auto& c = config::cfg;
-    std::string code = subtitle_code(), written = written_code();
-    auto lib = code.empty() ? nullptr : library(code);
-    auto written_lib = written.empty() ? nullptr : library(written);
-    auto sentinel_lib = lib ? lib : written_lib;
-    bool full = code != applied_language || lib != applied_library || written != applied_written || written_lib != applied_written_library;
-    for (size_t i = 0; sentinel_lib && !full && i < sentinel_lib->size() && i < sentinels.size(); i++)
-        if (!(*sentinel_lib)[i].texts.empty() && shown_text((*sentinel_lib)[i].texts[0].key) != sentinels[i]) full = true;
+    std::array<std::string, TEXT_KINDS> codes;
+    std::array<std::shared_ptr<const TextLibrary>, TEXT_KINDS> libs;
+    std::map<std::string, std::shared_ptr<const TextLibrary>> in_use;
+    for (int k = 0; k < TEXT_KINDS; k++) {
+        codes[k] = kind_code(k);
+        if (codes[k].empty()) continue;
+        libs[k] = library(codes[k]);
+        if (libs[k]) in_use[codes[k]] = libs[k];
+    }
+    bool full = codes != applied_codes || libs != applied_libraries;
+    for (auto& [code, lib] : in_use)
+        for (size_t i = 0; !full && i < lib->size() && i < sentinels.size(); i++)
+            if (!(*lib)[i].texts.empty() && shown_text((*lib)[i].texts[0].key) != sentinels[i]) full = true;
     bool wrote = false;
     for (auto it = user_written.begin(); it != user_written.end();)
         if (c.texts.count(*it)) ++it;
@@ -1171,14 +1184,10 @@ inline void keep_texts() {
     }
     if (full) {
         std::set<std::string> wanted;
-        if (lib)
+        for (auto& [code, lib] : in_use)
             for (auto& file : *lib)
                 for (auto& t : file.texts)
-                    if (!c.texts.count(t.key) && t.kind == TEXT_SPOKEN && wanted.insert(t.key).second) wrote |= ensure_text(t.key, t.text, "language " + code);
-        if (written_lib)
-            for (auto& file : *written_lib)
-                for (auto& t : file.texts)
-                    if (!c.texts.count(t.key) && t.kind != TEXT_SPOKEN && wanted.insert(t.key).second) wrote |= ensure_text(t.key, t.text, "language " + written);
+                    if (!c.texts.count(t.key) && codes[t.kind] == code && wanted.insert(t.key).second) wrote |= ensure_text(t.key, t.text, "language " + code);
         for (auto it = text_originals.begin(); it != text_originals.end();) {
             if (c.texts.count(it->first) || wanted.count(it->first)) {
                 ++it;
@@ -1190,9 +1199,9 @@ inline void keep_texts() {
             texts_generation++;
         }
         sentinels.clear();
-        for (size_t i = 0; sentinel_lib && i < sentinel_lib->size(); i++)
-            sentinels.push_back((*sentinel_lib)[i].texts.empty() ? nullptr : shown_text((*sentinel_lib)[i].texts[0].key));
-        applied_language = code, applied_library = lib, applied_written = written, applied_written_library = written_lib;
+        for (auto& [code, lib] : in_use)
+            for (size_t i = 0; i < lib->size(); i++) sentinels.push_back((*lib)[i].texts.empty() ? nullptr : shown_text((*lib)[i].texts[0].key));
+        applied_codes = codes, applied_libraries = libs;
         if (wrote) find_shown_texts();
     }
     if (wrote) texts_written();
