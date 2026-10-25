@@ -1189,6 +1189,28 @@ inline uint32_t tree_xp(int type) { return tree_record(type) ? rdv<uint32_t>(tre
 inline uint32_t tree_level_start(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_LEVEL_START) : 0; }
 inline uint32_t tree_span(int type) { return tree_record(type) ? rdv<uint32_t>(tree_record(type) + TREE_SPAN) : 0; }
 
+const int NODE_KEY = -0x10, NODE_LEVEL = -0xa, NODE_VALUE = -8, NODE_LEFT = 0, NODE_RIGHT = 0x10, MAX_GAME_SKILLS = 2048;
+const size_t PROFILE_PROGRESS = 0x2d28, PROGRESS_MAP = 0x50, PROGRESS_VALUE = 0x28;
+const int SURVIVOR_TREE = 3, SURVIVOR_XP_FLOOR = 5;
+
+inline uintptr_t progress_value(int key) {
+    uintptr_t profile = game_profile(), progress = profile ? rdv<uintptr_t>(profile + PROFILE_PROGRESS) : 0;
+    uintptr_t node = progress ? rdv<uintptr_t>(progress + PROGRESS_MAP) : 0, found = 0;
+    for (int depth = 0; node && depth < 64; depth++)
+        if (rdv<int>(node + NODE_KEY) >= key) found = node, node = rdv<uintptr_t>(node + NODE_LEFT);
+        else node = rdv<uintptr_t>(node + NODE_RIGHT);
+    uintptr_t value = found && rdv<int>(found + NODE_KEY) == key ? rdv<uintptr_t>(found + NODE_VALUE) : 0;
+    return value ? value + PROGRESS_VALUE : 0;
+}
+
+inline void lower_xp_floor(int type) {
+    uintptr_t floor = type == SURVIVOR_TREE ? progress_value(SURVIVOR_XP_FLOOR) : 0;
+    uint32_t xp = tree_xp(type);
+    if (!floor || rdv<uint32_t>(floor) <= xp) return;
+    logf_hook("skills: survivor xp floor %u -> %u", rdv<uint32_t>(floor), xp);
+    wr<uint32_t>(floor, xp);
+}
+
 inline void set_tree_progress(int type, float frac) {
     uintptr_t r = tree_record(type);
     if (!r || tree_level(type) >= tree_max(type) || !tree_span(type)) return;
@@ -1196,6 +1218,7 @@ inline void set_tree_progress(int type, float frac) {
     uint32_t xp = tree_level_start(type) + std::min(span - 1, (uint32_t)(std::clamp(frac, 0.0f, 1.0f) * span));
     logf_hook("skills: tree %d xp %u -> %u", type, rdv<uint32_t>(r + TREE_XP), xp);
     wr<uint32_t>(r + TREE_XP, xp);
+    lower_xp_floor(type);
     xp_seen.clear();
 }
 
@@ -1314,11 +1337,11 @@ inline void set_tree_level(int type, int level) {
     logf_hook("skills: tree %d level %d -> %d", type, tree_level(type), level);
     ((void(__fastcall*)(uintptr_t, int16_t, int))set_level_fn)(container, (int16_t)level, type);
     wr<uint32_t>(tree_record(type) + TREE_XP, tree_level_start(type));
+    lower_xp_floor(type);
     xp_seen.clear();
 }
 
 const int SKILL_NAME = 0x08, SKILL_MAX_LEVEL = 0x1c, SKILL_LIST = 0x30, SKILL_COUNT = 0x38, LEARNED_SKILLS = 0xd8;
-const int NODE_KEY = -0x10, NODE_LEVEL = -0xa, NODE_LEFT = 0, NODE_RIGHT = 0x10, MAX_GAME_SKILLS = 2048;
 inline std::vector<int> skill_slots;
 inline std::mutex skills_mx;
 inline std::vector<int> skill_levels;

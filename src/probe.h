@@ -10,6 +10,59 @@
 
 namespace probe {
 
+using SetLevelFn = void(__fastcall*)(uintptr_t, int16_t, int);
+inline SetLevelFn set_level_original = nullptr;
+
+inline void __fastcall traced_set_level(uintptr_t container, int16_t level, int tree) {
+    uintptr_t from = (uintptr_t)__builtin_return_address(0) - game::g.base;
+    uint16_t before = tree >= 0 && tree < 8 ? game::rdv<uint16_t>(game::rdv<uintptr_t>(container + 0x40) + tree * 0x20 + 0x14) : 0;
+    cheats::logf_hook("trace: SetLevel tree %d %u -> %d from gamedll+%llx container %llx", tree, before, level, (unsigned long long)from, (unsigned long long)container);
+    set_level_original(container, level, tree);
+}
+
+using RestoreFn = void(__fastcall*)(uintptr_t, uintptr_t);
+inline RestoreFn restore_original = nullptr;
+
+inline void __fastcall traced_restore(uintptr_t container, uintptr_t src) {
+    char line[256];
+    int n = snprintf(line, sizeof line, "trace: restore from gamedll+%llx src %llx levels", (unsigned long long)((uintptr_t)__builtin_return_address(0) - game::g.base), (unsigned long long)src);
+    for (int t = 0; t < 8; t++) n += snprintf(line + n, sizeof line - n, " %u/%u", game::rdv<uint16_t>(src + 0x890 + t * 2), game::rdv<uint32_t>(src + 0xa0c + t * 4));
+    cheats::logf_hook("%s", line);
+    restore_original(container, src);
+}
+
+inline bool trace_restore() {
+    const uint8_t prologue[14] = {0x48, 0x8B, 0xC4, 0x48, 0x89, 0x50, 0x10, 0x48, 0x89, 0x48, 0x08, 0x56, 0x41, 0x54};
+    uintptr_t fn = game::g.base + 0xc41950;
+    if (restore_original) return true;
+    if (memcmp((const void*)fn, prologue, sizeof prologue)) return false;
+    auto* trampoline = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(trampoline, prologue, sizeof prologue);
+    cheats::absolute_jump(trampoline + sizeof prologue, fn + sizeof prologue);
+    restore_original = (RestoreFn)trampoline;
+    uint8_t patch[sizeof prologue];
+    cheats::absolute_jump(patch, (uintptr_t)&traced_restore);
+    cheats::write_code(fn, patch, sizeof patch);
+    return true;
+}
+
+inline bool trace_set_level() {
+    const uint8_t prologue[15] = {0x48, 0x89, 0x5C, 0x24, 0x18, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x20};
+    uintptr_t fn = cheats::set_level_fn;
+    if (set_level_original) return true;
+    if (!fn || memcmp((const void*)fn, prologue, sizeof prologue)) return false;
+    auto* trampoline = (uint8_t*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    memcpy(trampoline, prologue, sizeof prologue);
+    cheats::absolute_jump(trampoline + sizeof prologue, fn + sizeof prologue);
+    set_level_original = (SetLevelFn)trampoline;
+    cheats::set_level_fn = (uintptr_t)trampoline;
+    uint8_t patch[sizeof prologue];
+    cheats::absolute_jump(patch, (uintptr_t)&traced_set_level);
+    patch[14] = 0x90;
+    cheats::write_code(fn, patch, sizeof patch);
+    return true;
+}
+
 using game::rd;
 using game::rdv;
 
@@ -315,6 +368,7 @@ inline std::string run(const std::string& line) {
         cheats::probe_provider_id = it == cheats::param_ids.end() ? -2 : it->second + 1;
         return out + "  counting\n";
     }
+    if (c == "tracelevel") return out + (trace_set_level() && trace_restore() ? "  tracing\n" : "  failed\n");
     if (c == "pos") {
         cheats::Vec3 at = cheats::player_position();
         snprintf(b, sizeof b, "  %.2f %.2f %.2f\n", at.x, at.y, at.z);
@@ -415,6 +469,20 @@ inline std::string run(const std::string& line) {
         snprintf(b, sizeof b, "  %zu objects\n", found[0].size());
         out += b;
         for (size_t i = 0; i < found[0].size() && i < 40; i++) snprintf(b, sizeof b, "  %llx\n", (unsigned long long)found[0][i]), out += b;
+        return out;
+    }
+    if (c == "find32") {
+        uint32_t target = (uint32_t)strtoul(p.s, nullptr, 10);
+        size_t n = 0;
+        game::each_heap_chunk([&](const uint64_t* q, uintptr_t at, size_t len) {
+            const uint32_t* d = (const uint32_t*)q;
+            for (size_t i = 0; i < len / 4 && n < 60; i++)
+                if (d[i] == target) {
+                    char l[64];
+                    snprintf(l, sizeof l, "  %llx\n", (unsigned long long)(at + i * 4));
+                    out += l, n++;
+                }
+        });
         return out;
     }
     if (c == "refs") {

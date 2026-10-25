@@ -735,6 +735,24 @@ int main(int argc, char** argv) {
         CHECK(cheats::tree_xp(2) == 5000 && cheats::tree_level(2) == 5);
         cheats::set_tree_level(2, cheats::tree_max(2));
         CHECK(cheats::tree_xp(2) == 25 * 1000);
+        static uint8_t nodes[2][0x40] = {}, floor_value[0x40] = {}, progress[0x60] = {}, floor_profile[0x2e00] = {}, floor_game[0x600] = {};
+        uint8_t *low = nodes[0] + 0x10, *survivor = nodes[1] + 0x10;
+        *(int*)(low + cheats::NODE_KEY) = 2, *(int*)(survivor + cheats::NODE_KEY) = cheats::SURVIVOR_XP_FLOOR;
+        *(uintptr_t*)(low + cheats::NODE_RIGHT) = (uintptr_t)survivor;
+        *(uintptr_t*)(survivor + cheats::NODE_VALUE) = (uintptr_t)floor_value;
+        *(uint32_t*)(floor_value + cheats::PROGRESS_VALUE) = 2000000;
+        *(uintptr_t*)(progress + cheats::PROGRESS_MAP) = (uintptr_t)low;
+        *(uintptr_t*)(floor_profile + cheats::PROFILE_PROGRESS) = (uintptr_t)progress;
+        *(uintptr_t*)(floor_game + cheats::GAME_PROFILE) = (uintptr_t)floor_profile;
+        static uintptr_t floor_root = (uintptr_t)floor_game;
+        auto saved_profile_root = std::exchange(cheats::profile_root, (uintptr_t)&floor_root);
+        game::wr<uint16_t>(cheats::tree_record(3) + 0x16, 25);
+        game::wr<uint32_t>(cheats::tree_record(3) + cheats::TREE_XP, 30000);
+        cheats::set_tree_level(3, 5);
+        CHECK(cheats::tree_xp(3) == 5000 && *(uint32_t*)(floor_value + cheats::PROGRESS_VALUE) == 5000);
+        cheats::set_tree_level(2, 5);
+        CHECK(*(uint32_t*)(floor_value + cheats::PROGRESS_VALUE) == 5000);
+        cheats::profile_root = saved_profile_root;
         cheats::set_level_fn = saved_set_level;
     }
     game::wr<float>(w.enemy_health + 0x78, 300);

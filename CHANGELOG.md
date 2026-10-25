@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5 b23
+
+Survivor Update
+
+- Fixed: a Survivor level you lowered went back to 25 after leaving and loading the game again. The game keeps a separate Survivor XP record and raises your Survivor XP back to it on every load; lowering the level or the XP bar now lowers that record too.
+
 ## 2.5 b22
 
 Survivor Update
