@@ -1,0 +1,15 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum/mod">Moderation</a></p>
+  <h1>Moderation log</h1>
+  <p class="meta">Every moderation and admin action. Entries cannot be changed or deleted.</p>
+</div>
+<div class="table-wrap">
+<table class="log">
+  <thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Reason</th><th scope="col">Details</th></tr></thead>
+  <tbody>
+<% for (const l of it.log.items) { %>    <tr><td><time datetime="<%= it.iso(l.at) %>"><%= it.iso(l.at).slice(0, 16).replace('T', ' ') %></time></td><td><%= l.actor || (l.actor_id ? 'Deleted account' : 'System') %></td><td><%= l.action %></td><td><%= l.target_type %><%= l.target_id ? ' #' + l.target_id : '' %></td><td><%= l.reason || '' %></td><td class="num"><%= JSON.stringify(l.meta) %></td></tr>
+<% } %>  </tbody>
+</table>
+</div>
+<%~ include('/_pager', { page: it.log.page, pages: it.log.pages, href: it.href }) %>

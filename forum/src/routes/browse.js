@@ -3,6 +3,7 @@ const { listThreads, getThread, profile, SORTS, POSTS_PER_PAGE } = require("../t
 const { searchForum } = require("../search.js");
 const { ForumError } = require("../compose.js");
 const { viewerState } = require("../engagement.js");
+const { RULES } = require("../moderation.js");
 
 const SORT_LABELS = { activity: "Latest activity", new: "Newest", helpful: "Most helpful", unanswered: "Unanswered" };
 
@@ -82,7 +83,8 @@ function browseRoutes({ pool, render }) {
     const pageChanged = req.query.page !== undefined && String(data.page) !== String(req.query.page);
     if (req.params.slug !== data.thread.slug || pageChanged) return res.redirect(301, href(data.page));
     const viewer = await viewerState(pool, req.session?.user?.id, data.thread.id, data.posts.map((p) => p.id));
-    render(req, res, "thread", { title: data.thread.title, ...data, viewer, href, canonical: href(data.page), scripts: req.session?.user ? ["/forum/static/js/editor.js"] : [] });
+    const categories = req.perms.has("thread.move") ? (await pool.query("SELECT slug, name FROM categories ORDER BY position, id")).rows : [];
+    render(req, res, "thread", { title: data.thread.title, ...data, viewer, rules: RULES, categories, href, canonical: href(data.page), scripts: req.session?.user ? ["/forum/static/js/editor.js"] : [] });
   });
 
   r.get("/search", async (req, res) => {

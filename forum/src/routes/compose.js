@@ -1,6 +1,7 @@
 const express = require("express");
 const { permissionsFor } = require("../permissions.js");
 const c = require("../compose.js");
+const { moderate } = require("../moderation.js");
 
 function composeRoutes({ pool, render, auth }) {
   const r = express.Router();
@@ -150,6 +151,11 @@ function composeRoutes({ pool, render, auth }) {
 
   r.post("/p/:id/delete", signIn((req) => "/forum"), auth.csrf.verify, async (req, res) => {
     try {
+      const post = (await pool.query("SELECT p.author_id, p.thread_id, t.slug FROM posts p JOIN threads t ON t.id = p.thread_id WHERE p.id = $1", [Number(req.params.id) || 0])).rows[0];
+      if (post && post.author_id !== req.session.user.id && req.perms.has("post.delete.any")) {
+        await moderate(pool, req.session.user, { targetType: "post", targetId: Number(req.params.id), action: "remove", rule: req.body.rule, reason: req.body.reason });
+        return res.redirect(303, `/forum/t/${post.thread_id}/${post.slug}#p${Number(req.params.id)}`);
+      }
       const d = await c.deletePost(pool, req.session.user, req.params.id, req.body.reason);
       res.redirect(303, `/forum/t/${d.threadId}/${d.slug}#p${d.id}`);
     } catch (err) {

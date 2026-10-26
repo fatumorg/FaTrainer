@@ -1,0 +1,28 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1>Report content</h1>
+  <p>Moderators read every report. You get a notification with the decision.</p>
+</div>
+<% if (it.target) { %><blockquote class="report-target"><p class="meta">Reporting a <%= it.target.type %> in <a href="/forum/t/<%= it.target.thread_id %>/<%= it.target.slug %>"><%= it.target.title %></a></p><p><%= it.target.excerpt %></p></blockquote>
+<% } %><% if (it.error && !it.error.field) { %><p class="alert" role="alert"><%= it.error.message %></p>
+<% } %><% if (it.user && it.target) { %>
+<form method="post" action="/forum/report" class="compose">
+  <input type="hidden" name="_csrf" value="<%= it.csrf %>">
+  <input type="hidden" name="target_type" value="<%= it.target.type %>">
+  <input type="hidden" name="target_id" value="<%= it.target.id %>">
+  <fieldset<% if (it.error && it.error.field === 'reason') { %> aria-describedby="reason-error"<% } %>>
+    <legend>Reason</legend>
+<% for (const [key, label] of Object.entries(it.reasons)) { %>    <label><input type="radio" name="reason" value="<%= key %>" required<% if (it.values.reason === key) { %> checked<% } %>> <%= label %></label>
+<% } %>  </fieldset>
+  <%~ include('/_field_error', { name: 'reason', error: it.error }) %>
+  <label for="details">Details (optional)</label>
+  <textarea id="details" name="details" rows="5" maxlength="2000"><%= it.values.details || '' %></textarea>
+  <%~ include('/_field_error', { name: 'details', error: it.error }) %>
+  <p class="actions"><button type="submit" class="button">Send report</button></p>
+</form>
+<% } else if (!it.user) { %>
+<p><a class="button" href="<%= it.loginHref %>">Sign in with Fatum Aura to report</a></p>
+<% } %>
+<h2>Report without an account</h2>
+<p>Write to <a href="mailto:contact@fatum.cc">contact@fatum.cc</a> with the link to the content, why it is illegal or breaks the <a href="/forum/guidelines">guidelines</a>, your name and e-mail address, and a statement that you report in good faith. You get an answer with the decision.</p>

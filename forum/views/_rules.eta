@@ -1,0 +1,4 @@
+<label for="<%= it.id %>">Rule</label>
+<select id="<%= it.id %>" name="rule" required>
+<% for (const [key, text] of Object.entries(it.rules)) { %>  <option value="<%= key %>"><%= text %></option>
+<% } %></select>

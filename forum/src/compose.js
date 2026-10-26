@@ -194,4 +194,4 @@ async function editThreadMeta(pool, user, threadId, { title, tags }) {
   return { id: thread.id, slug };
 }
 
-module.exports = { createThread, createPost, editPost, deletePost, editThreadMeta, editablePost, renderPost, slugify, checkTitle, checkBody, ForumError, MAX_BODY, MAX_TAGS };
+module.exports = { createThread, createPost, editPost, deletePost, editThreadMeta, editablePost, renderPost, slugify, checkTitle, checkBody, tx, ForumError, MAX_BODY, MAX_TAGS };

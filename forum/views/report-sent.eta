@@ -1,0 +1,6 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <h1>Report sent</h1>
+  <p role="status">Thanks, your report reached the moderators. You get a notification when they decide.</p>
+  <p><a class="button" href="/forum">Back to the forum</a></p>
+</div>

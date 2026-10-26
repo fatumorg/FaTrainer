@@ -8,6 +8,7 @@ const { composeRoutes } = require("./routes/compose.js");
 const { mediaRoutes } = require("./routes/media.js");
 const { engagementRoutes } = require("./routes/engagement.js");
 const { notificationRoutes } = require("./routes/notifications.js");
+const { moderationRoutes } = require("./routes/moderation.js");
 const { unreadCount } = require("./notifications.js");
 
 function createApp({ config, pool, auth }) {
@@ -35,6 +36,7 @@ function createApp({ config, pool, auth }) {
   forum.use(mediaRoutes({ pool, config, auth }));
   forum.use(engagementRoutes({ pool, render, auth }));
   forum.use(notificationRoutes({ pool, render, auth, config }));
+  forum.use(moderationRoutes({ pool, render, auth }));
 
   forum.use("/api", (req, res) => res.status(404).json({ error: "NOT_FOUND" }));
   forum.use((req, res) => render(req, res, "error", { title: "Page not found", status: 404, noindex: true }, 404));

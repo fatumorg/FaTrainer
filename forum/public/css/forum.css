@@ -73,6 +73,15 @@
 .snippet b { background: color-mix(in srgb, var(--accent) 25%, transparent); font-weight: 600; }
 .thread-actions { display: flex; gap: 8px; margin: 10px 0 0; }
 .link[aria-pressed=true] { color: var(--accent); font-weight: 600; }
+.mod-tools, .mod-remove { margin-top: 10px; }
+.mod-tools summary, .mod-remove summary { cursor: pointer; color: var(--soft); }
+.mod-item blockquote, .report-target { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.statement { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+.statement dt { font-weight: 600; }
+.statement dd { margin: 0; }
+.table-wrap { overflow-x: auto; }
+.log { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.log th, .log td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 @media (max-width: 720px) {
   .forum-nav .wrap { gap: 4px 12px; }
 }

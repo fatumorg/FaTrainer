@@ -13,6 +13,19 @@
     <form method="post" action="/forum/t/<%= it.thread.id %>/bookmark" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="button small secondary" aria-pressed="<%= it.viewer.saved %>"><%= it.viewer.saved ? 'Saved' : 'Save' %></button></form>
     <form method="post" action="/forum/t/<%= it.thread.id %>/watch" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="muted" value="<%= it.viewer.watching ? '1' : '0' %>"><button type="submit" class="button small secondary" aria-pressed="<%= it.viewer.watching %>"><%= it.viewer.watching ? 'Watching' : 'Watch' %></button></form>
   </div>
+<% } %><% if (it.perms.has('thread.pin') || it.perms.has('thread.lock') || it.perms.has('thread.move') || it.perms.has('thread.delete.any')) { %>  <details class="mod-tools"><summary>Moderate thread</summary>
+<% for (const [action, perm, label] of [[it.thread.pinned ? 'unpin' : 'pin', 'thread.pin', it.thread.pinned ? 'Unpin' : 'Pin'], [it.thread.locked ? 'unlock' : 'lock', 'thread.lock', it.thread.locked ? 'Unlock' : 'Lock']]) { %><% if (it.perms.has(perm)) { %>    <form method="post" action="/forum/mod/t/<%= it.thread.id %>/<%= action %>" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="button small secondary"><%= label %></button></form>
+<% } %><% } %><% if (it.perms.has('thread.move')) { %>    <form method="post" action="/forum/mod/t/<%= it.thread.id %>/move" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><label class="visually-hidden" for="move-to">Move to</label><select id="move-to" name="category">
+<% for (const cat of it.categories) { %>      <option value="<%= cat.slug %>"<% if (cat.slug === it.thread.category_slug) { %> selected<% } %>><%= cat.name %></option>
+<% } %>    </select> <button type="submit" class="button small secondary">Move</button></form>
+<% } %><% if (it.perms.has('thread.delete.any')) { %>    <form method="post" action="/forum/mod/t/<%= it.thread.id %>/delete" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+      <%~ include('/_rules', { id: 'thread-rule', rules: it.rules }) %>
+      <label for="thread-reason">Statement of reasons for removing the thread</label>
+      <textarea id="thread-reason" name="reason" rows="2" minlength="10" maxlength="1000" required></textarea>
+      <p class="actions"><button type="submit" class="button small">Remove thread</button></p>
+    </form>
+<% } %>  </details>
+<% } %><% if (it.user && it.thread.author_id !== it.user.id) { %>  <p class="meta"><a href="/forum/report?thread=<%= it.thread.id %>">Report thread</a></p>
 <% } %></div>
 <ol class="posts">
 <% for (const p of it.posts) { %>
@@ -31,7 +44,15 @@
 <% if (it.user && it.thread.category_slug === 'qa' && p.id !== it.thread.first_post_id && ((it.thread.author_id === it.user.id && it.perms.has('post.edit.own')) || it.perms.has('post.edit.any'))) { %>      <form method="post" action="/forum/t/<%= it.thread.id %>/accept" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="post" value="<%= p.id %>"><button type="submit" class="link"><%= p.id === it.thread.solved_post_id ? 'Unaccept answer' : 'Accept answer' %></button></form>
 <% } %><% if ((own && it.perms.has('post.edit.own')) || it.perms.has('post.edit.any')) { %>      <a href="/forum/p/<%= p.id %>/edit">Edit</a>
 <% } %><% if (own && it.perms.has('post.delete.own')) { %>      <form method="post" action="/forum/p/<%= p.id %>/delete" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="link">Delete</button></form>
-<% } else if (it.perms.has('post.delete.any')) { %>      <form method="post" action="/forum/p/<%= p.id %>/delete" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><label class="visually-hidden" for="reason-<%= p.id %>">Reason</label><input id="reason-<%= p.id %>" name="reason" type="text" required placeholder="Reason" maxlength="300"> <button type="submit" class="link">Remove</button></form>
+<% } else if (it.perms.has('post.delete.any')) { %>      <details class="mod-remove"><summary>Remove</summary>
+        <form method="post" action="/forum/p/<%= p.id %>/delete" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+          <%~ include('/_rules', { id: 'rule-' + p.id, rules: it.rules }) %>
+          <label for="reason-<%= p.id %>">Statement of reasons (shown to the author)</label>
+          <textarea id="reason-<%= p.id %>" name="reason" rows="2" minlength="10" maxlength="1000" required></textarea>
+          <p class="actions"><button type="submit" class="button small">Remove post</button></p>
+        </form>
+      </details>
+<% } %><% if (it.user && !own) { %>      <a href="/forum/report?post=<%= p.id %>">Report</a>
 <% } %>    </footer>
 <% } %>  </li>
 <% } %>

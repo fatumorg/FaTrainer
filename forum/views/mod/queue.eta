@@ -1,0 +1,55 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a> · <a href="/forum/mod/log">Moderation log</a></p>
+  <h1>Moderation</h1>
+</div>
+<h2>Open reports (oldest first)</h2>
+<% if (!it.q.reports.length) { %><p class="empty">No open reports.</p>
+<% } %><ul class="threads">
+<% for (const r of it.q.reports) { %>
+  <li class="thread-row mod-item">
+    <p class="meta"><%= it.reasons[r.reason] %> · <%= r.target_type %> #<%= r.target_id %> · reported by <%= r.reporter || 'a deleted account' %> on <time datetime="<%= it.iso(r.created_at) %>"><%= it.day(r.created_at) %></time><% if (r.thread_id) { %> · <a href="/forum/t/<%= r.thread_id %>?post=<%= r.target_type === 'post' ? r.target_id : '' %>">open</a><% } %></p>
+    <blockquote><%= (r.content || '(content no longer exists)').slice(0, 600) %></blockquote>
+<% if (r.details) { %>    <p>Reporter: <%= r.details %></p>
+<% } %>    <form method="post" action="/forum/mod/reports/<%= r.id %>/decide" class="compose">
+      <input type="hidden" name="_csrf" value="<%= it.csrf %>">
+      <label for="action-<%= r.id %>">Action</label>
+      <select id="action-<%= r.id %>" name="action">
+<% for (const a of it.actions) { %>        <option value="<%= a %>"><%= a %></option>
+<% } %>      </select>
+      <%~ include('/_rules', { id: 'rule-' + r.id, rules: it.rules }) %>
+      <label for="reason-<%= r.id %>">Statement of reasons (shown to the author)</label>
+      <textarea id="reason-<%= r.id %>" name="reason" rows="3" minlength="10" maxlength="1000" required></textarea>
+      <label for="until-<%= r.id %>">Suspend until (only for suspend)</label>
+      <input id="until-<%= r.id %>" name="until" type="date">
+      <p class="actions"><button type="submit" class="button small">Decide</button></p>
+    </form>
+  </li>
+<% } %>
+</ul>
+<h2>Held posts</h2>
+<% if (!it.q.held.length) { %><p class="empty">No held posts.</p>
+<% } %><ul class="threads">
+<% for (const p of it.q.held) { %>
+  <li class="thread-row mod-item">
+    <p class="meta"><%= p.author || 'Deleted account' %> in "<%= p.title %>" on <time datetime="<%= it.iso(p.created_at) %>"><%= it.day(p.created_at) %></time></p>
+    <blockquote><%= p.body_md.slice(0, 600) %></blockquote>
+    <form method="post" action="/forum/mod/posts/<%= p.id %>/approve" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="button small">Approve</button></form>
+  </li>
+<% } %>
+</ul>
+<h2>Open appeals</h2>
+<% if (!it.q.appeals.length) { %><p class="empty">No open appeals.</p>
+<% } %><ul class="threads">
+<% for (const a of it.q.appeals) { %>
+  <li class="thread-row mod-item">
+    <p class="meta"><%= a.appellant || 'Deleted account' %> appeals "<%= a.decision %>" on <%= a.target_type %> #<%= a.target_id %><%= a.decided_by === it.user.id ? ' (your decision: another moderator should review it)' : '' %></p>
+    <p>Statement: <%= a.statement %></p>
+    <blockquote><%= a.text %></blockquote>
+    <form method="post" action="/forum/mod/appeals/<%= a.id %>/decide" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+      <button type="submit" name="outcome" value="upheld" class="button small secondary">Keep decision</button>
+      <button type="submit" name="outcome" value="reversed" class="button small">Reverse decision</button>
+    </form>
+  </li>
+<% } %>
+</ul>

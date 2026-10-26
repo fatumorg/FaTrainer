@@ -1,0 +1,29 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum/notifications">Notifications</a></p>
+  <h1>Moderation decision</h1>
+</div>
+<% const v = it.view; %>
+<dl class="statement">
+  <dt>Content</dt><dd><%= v.report.target_type === 'post' ? 'Your post' : 'Your thread' %><% if (v.target) { %> in "<%= v.target.title %>"<% } %></dd>
+  <dt>Decision</dt><dd><%= { dismiss: 'No action', remove: 'Removed', edit: 'Edited by a moderator', lock: 'Thread locked', suspend: 'Account suspended from posting', ban: 'Account banned from posting' }[v.action] %></dd>
+<% if (v.rule) { %>  <dt>Rule</dt><dd><%= v.rule %> (<a href="/forum/guidelines">guidelines</a>)</dd>
+<% } %>  <dt>Statement of reasons</dt><dd><%= v.report.statement %></dd>
+  <dt>Decided on</dt><dd><time datetime="<%= it.iso(v.report.decided_at) %>"><%= it.day(v.report.decided_at) %></time>. Decisions are made by people, not by automated tools.</dd>
+</dl>
+<% if (v.isAuthor) { %>
+<h2>Appeal</h2>
+<% if (it.sent) { %><p class="alert" role="status">Your appeal was sent. A different moderator reviews it when one is available.</p>
+<% } %><% if (v.appeal) { %><p>Your appeal: <%= v.appeal.status === 'open' ? 'being reviewed' : (v.appeal.outcome === 'reversed' ? 'accepted, the decision was reversed' : 'rejected, the decision stays') %>.</p>
+<% } %><% if (it.error) { %><p class="alert" role="alert"><%= it.error.message %></p>
+<% } %><% if (v.canAppeal) { %>
+<p>You can appeal until <time datetime="<%= it.iso(v.closes) %>"><%= it.day(v.closes) %></time>.</p>
+<form method="post" action="/forum/appeal/<%= v.report.id %>" class="compose">
+  <input type="hidden" name="_csrf" value="<%= it.csrf %>">
+  <label for="text">Why should the decision change?</label>
+  <textarea id="text" name="text" rows="6" maxlength="2000" required></textarea>
+  <p class="actions"><button type="submit" class="button">Send appeal</button></p>
+</form>
+<% } else if (!v.appeal) { %><p>The appeal window has closed.</p>
+<% } %><p class="meta">You can also write to <a href="mailto:contact@fatum.cc">contact@fatum.cc</a> or use out-of-court dispute settlement or the courts.</p>
+<% } %>
