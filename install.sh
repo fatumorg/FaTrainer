@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-GAME="${1:-/mnt/data/Gaming/Steam/steamapps/common/Dying Light}"
+GAME="${1:-/data/Gaming/Steam/steamapps/common/Dying Light}"
 [ -f "$GAME/DyingLightGame.exe" ] || { echo "Dying Light not found at: $GAME (pass the folder as argument)"; exit 1; }
 [ -f xinput1_3.dll ] || ./build.sh
 cp xinput1_3.dll "$GAME/xinput1_3.dll.new"
