@@ -11,6 +11,8 @@
 <% for (const l of ['cpp', 'c', 'ini', 'json', 'bash', 'powershell', 'python', 'lua', 'diff', 'plaintext']) { %>      <option value="<%= l %>"><%= l %></option>
 <% } %>    </select>
     <button type="button" data-md="block" title="Code block">Code block</button>
+<% if (it.canUpload) { %>    <label class="upload-btn">Image<input type="file" accept="image/png,image/jpeg,image/webp" data-upload class="visually-hidden"></label>
+<% } %>
     <span class="spacer"></span>
     <button type="button" data-tab="write" aria-pressed="true">Write</button>
     <button type="button" data-tab="preview" aria-pressed="false">Preview</button>
@@ -19,5 +21,6 @@
   <textarea id="body" name="body" rows="12" maxlength="20000" required<% if (it.error && it.error.field === 'body') { %> aria-invalid="true" aria-describedby="body-error"<% } %>><%= it.body || '' %></textarea>
   <%~ include('/_field_error', { name: 'body', error: it.error }) %>
   <div class="preview body" data-preview hidden aria-live="polite"></div>
+  <p class="meta" data-upload-status aria-live="polite"></p>
   <p class="meta">Markdown: **bold**, *italic*, `code`, ```cpp for code blocks, @nickname to mention.</p>
 </div>

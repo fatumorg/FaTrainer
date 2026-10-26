@@ -5,6 +5,7 @@ const { createRenderer } = require("./views.js");
 const { permissionsFor, promoteOwner } = require("./permissions.js");
 const { browseRoutes } = require("./routes/browse.js");
 const { composeRoutes } = require("./routes/compose.js");
+const { mediaRoutes } = require("./routes/media.js");
 
 function createApp({ config, pool, auth }) {
   const app = express();
@@ -27,12 +28,14 @@ function createApp({ config, pool, auth }) {
 
   forum.use(browseRoutes({ pool, render }));
   forum.use(composeRoutes({ pool, render, auth }));
+  forum.use(mediaRoutes({ pool, config, auth }));
 
   forum.use("/api", (req, res) => res.status(404).json({ error: "NOT_FOUND" }));
   forum.use((req, res) => render(req, res, "error", { title: "Page not found", status: 404, noindex: true }, 404));
   forum.use((err, req, res, next) => {
     console.error("request failed:", err?.message);
     if (res.headersSent) return next(err);
+    if (err?.type === "entity.too.large") return res.status(413).json({ error: "too_large" });
     if (req.path.startsWith("/api/")) return res.status(500).json({ error: "SERVER_ERROR" });
     render(req, res, "error", { title: "Something went wrong", status: 500, noindex: true }, 500);
   });

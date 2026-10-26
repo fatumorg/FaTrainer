@@ -23,7 +23,7 @@
 <% } %>  </fieldset>
   <%~ include('/_field_error', { name: 'tags', error: it.error }) %>
 <% } %><% } %>
-  <%~ include('/_editor', { body: it.values.body, error: it.error }) %>
+  <%~ include('/_editor', { body: it.values.body, error: it.error, canUpload: it.perms.has('upload.create') }) %>
 <% if (it.needsReason) { %>
   <label for="reason">Reason shown to the author</label>
   <input id="reason" name="reason" type="text" maxlength="300" required value="<%= it.values.reason || '' %>"<% if (it.error && it.error.field === 'reason') { %> aria-invalid="true" aria-describedby="reason-error"<% } %>>

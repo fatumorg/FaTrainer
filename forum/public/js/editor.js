@@ -59,6 +59,28 @@
       save();
     };
 
+    const picker = bar.querySelector("[data-upload]");
+    const status = editor.querySelector("[data-upload-status]");
+    if (picker) picker.addEventListener("change", async () => {
+      const file = picker.files[0];
+      picker.value = "";
+      if (!file) return;
+      status.textContent = "Uploading " + file.name + "…";
+      try {
+        const res = await fetch("/forum/api/uploads", {
+          method: "POST",
+          headers: { "content-type": file.type, "x-csrf-token": form.querySelector("input[name=_csrf]").value },
+          body: file,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Upload failed.");
+        insert(["\n", data.markdown, "\n"]);
+        status.textContent = "Image added.";
+      } catch (err) {
+        status.textContent = err.message === "Failed to fetch" ? "Upload failed. Check your connection." : err.message;
+      }
+    });
+
     bar.addEventListener("click", async (e) => {
       const btn = e.target.closest("button");
       if (!btn) return;

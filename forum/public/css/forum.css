@@ -57,6 +57,9 @@
 .editor { display: grid; gap: 6px; }
 .editor-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .editor-bar button, .editor-bar select { min-height: 32px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--raised); color: var(--text); font: inherit; font-size: 0.9rem; cursor: pointer; }
+.upload-btn { min-height: 32px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--raised); font-size: 0.9rem; cursor: pointer; }
+.upload-btn:focus-within { outline: 2px solid var(--accent); }
+.post .body img { max-width: 100%; height: auto; border-radius: 4px; }
 .editor-bar [aria-pressed=true] { border-color: var(--accent); }
 .editor-bar .spacer { flex: 1; }
 .editor .preview { min-height: 14em; padding: 10px; border: 1px dashed var(--line); border-radius: 4px; }

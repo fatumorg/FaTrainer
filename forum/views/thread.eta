@@ -37,7 +37,7 @@
 <% } else if (!it.user) { %>  <p><a class="button" href="<%= it.loginHref %>">Sign in with Fatum Aura to reply</a></p>
 <% } else { %>  <form method="post" action="/forum/t/<%= it.thread.id %>/reply" class="compose" data-draft>
     <input type="hidden" name="_csrf" value="<%= it.csrf %>">
-    <%~ include('/_editor', { body: '' }) %>
+    <%~ include('/_editor', { body: '', canUpload: it.perms.has('upload.create') }) %>
     <p class="actions">
       <button type="submit" class="button">Post reply</button>
       <button type="submit" name="preview" value="1" class="button secondary" data-nojs-preview>Preview</button>

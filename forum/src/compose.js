@@ -1,6 +1,7 @@
 const { renderMarkdown, RENDERER_VERSION } = require("./markdown.js");
 const { permissionsFor } = require("./permissions.js");
 const { logAction } = require("./audit.js");
+const { attachUploads, checkImageCount, MAX_PER_POST } = require("./uploads.js");
 
 const MAX_BODY = 20000;
 const MAX_TAGS = 5;
@@ -29,6 +30,7 @@ function checkBody(body) {
   const b = String(body ?? "").replace(/\r\n?/g, "\n");
   if (!b.trim()) throw new ForumError(422, "Write something before posting.", "body");
   if (b.length > MAX_BODY) throw new ForumError(422, `Post is too long (${b.length}/${MAX_BODY} characters).`, "body");
+  if (!checkImageCount(b)) throw new ForumError(422, `Up to ${MAX_PER_POST} images per post.`, "body");
   return b;
 }
 
@@ -91,6 +93,7 @@ async function createThread(pool, user, { categoryId, title, body, tags }) {
     const id = t.rows[0].id;
     const p = await db.query("INSERT INTO posts (thread_id, author_id, body_md, body_html, renderer_version) VALUES ($1, $2, $3, $4, $5) RETURNING id", [id, user.id, md, rendered.html, RENDERER_VERSION]);
     for (const tag of ids) await db.query("INSERT INTO thread_tags (thread_id, tag_id) VALUES ($1, $2)", [id, tag]);
+    await attachUploads(db, user.id, p.rows[0].id, md);
     if (await joinForum(db, user.id)) await watch(db, user.id, id);
     return { id, slug, postId: p.rows[0].id, mentions: rendered.mentions };
   });
@@ -111,6 +114,7 @@ async function createPost(pool, user, threadId, body) {
   return tx(pool, async (db) => {
     const p = await db.query("INSERT INTO posts (thread_id, author_id, body_md, body_html, renderer_version) VALUES ($1, $2, $3, $4, $5) RETURNING id", [thread.id, user.id, md, rendered.html, RENDERER_VERSION]);
     await db.query("UPDATE threads SET last_post_at = now(), reply_count = reply_count + 1 WHERE id = $1", [thread.id]);
+    await attachUploads(db, user.id, p.rows[0].id, md);
     if (await joinForum(db, user.id)) await watch(db, user.id, thread.id);
     const position = (await db.query("SELECT count(*)::int AS n FROM posts WHERE thread_id = $1 AND NOT held AND id <= $2", [thread.id, p.rows[0].id])).rows[0].n;
     return { id: p.rows[0].id, threadId: thread.id, slug: thread.slug, page: Math.ceil(position / 20), mentions: rendered.mentions };
@@ -151,6 +155,7 @@ async function editPost(pool, user, postId, body, reason = null) {
   await tx(pool, async (db) => {
     await db.query("INSERT INTO post_revisions (post_id, body_md, edited_by) VALUES ($1, $2, $3)", [post.id, post.body_md, user.id]);
     await db.query("UPDATE posts SET body_md = $2, body_html = $3, renderer_version = $4, edited_at = now() WHERE id = $1", [post.id, md, rendered.html, RENDERER_VERSION]);
+    await attachUploads(db, user.id, post.id, md);
     if (!mine) await logAction(db, { actorId: user.id, action: "post.edit", targetType: "post", targetId: post.id, reason: reason.trim(), meta: { before: post.body_md.slice(0, 200), after: md.slice(0, 200) } });
   });
   return { id: post.id, threadId: post.thread_id, slug: post.slug, mentions: rendered.mentions };
