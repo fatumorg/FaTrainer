@@ -939,16 +939,48 @@ int main(int argc, char** argv) {
     CHECK(game::rdv<uintptr_t>(w.player + 0x8f8) == game::g.vt_human);
     printf("cheats: %s\n", cheats::describe().c_str());
     CHECK(cheats::grab_filter_fn && cheats::grab_filter_fn == game::g.base + 0xd61b50);
-    CHECK(cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
+    {
+        static uintptr_t fake_vt = 0;
+        alignas(16) static uint8_t thrower[0x100] = {};
+        uintptr_t saved_vt = cheats::vt_throw_controller;
+        cheats::vt_throw_controller = (uintptr_t)&fake_vt;
+        *(uintptr_t*)thrower = (uintptr_t)&fake_vt;
+        float times[cheats::THROW_PHASE_COUNT] = {0.5f, 0.2f, 0.4f, 0.1f, 0.3f, 0.6f};
+        memcpy(thrower + cheats::THROW_PHASE_TIMES, times, sizeof times);
+        CHECK(!cheats::throw_busy((uintptr_t)thrower));
+        *(int*)(thrower + cheats::THROW_STATE) = 3;
+        CHECK(cheats::throw_busy((uintptr_t)thrower));
+        cheats::keep_throw_phase_times((uintptr_t)thrower, 2.0f);
+        CHECK(*(float*)(thrower + cheats::THROW_PHASE_TIMES) == 0.25f && *(float*)(thrower + cheats::THROW_PHASE_TIMES + 20) == 0.3f);
+        cheats::keep_throw_phase_times((uintptr_t)thrower, 2.0f);
+        CHECK(*(float*)(thrower + cheats::THROW_PHASE_TIMES) == 0.25f);
+        cheats::keep_throw_phase_times((uintptr_t)thrower, 1.0f);
+        CHECK(!memcmp(thrower + cheats::THROW_PHASE_TIMES, times, sizeof times));
+        cheats::vt_throw_controller = saved_vt;
+    }
+    CHECK(cheats::vt_throw_controller && cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
     {
         const uintptr_t FN = 0x4ae0c0, SIZE = 0x164;
         auto* copy = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
         memcpy(copy, (const void*)(game::g.base + FN), SIZE);
-        uintptr_t real_check = cheats::survivor_raise_check;
+        const uintptr_t ADD_FN = 0x1677f0, ADD_SIZE = 0x25b, OVERFLOW_IMM = 0x16799c, TREE_ADD_FN = 0xbb2f70, TREE_ADD_SIZE = 0x40e, FLAG_IMM = 0xbb3153;
+        auto* add_copy = copy + 0x200;
+        auto* tree_copy = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        memcpy(tree_copy, (const void*)(game::g.base + TREE_ADD_FN), TREE_ADD_SIZE);
+        memcpy(add_copy, (const void*)(game::g.base + ADD_FN), ADD_SIZE);
+        uintptr_t real_check = cheats::survivor_raise_check, real_overflow = cheats::survivor_overflow_tree, real_flag = cheats::survivor_tree_flag;
+        CHECK(real_overflow == game::g.base + OVERFLOW_IMM && game::rdv<uint8_t>(real_overflow) == 5);
         cheats::survivor_raise_check = (uintptr_t)copy + 0x4ae135 - FN;
+        cheats::survivor_overflow_tree = (uintptr_t)add_copy + OVERFLOW_IMM - ADD_FN;
+        cheats::survivor_tree_flag = (uintptr_t)tree_copy + FLAG_IMM - TREE_ADD_FN;
+        CHECK(real_flag == game::g.base + FLAG_IMM && game::rdv<uint8_t>(real_flag) == 0);
         CHECK(cheats::keep_lowered_survivor() && cheats::keep_lowered_survivor());
         CHECK(copy[0x86] == 0xE9 && (uintptr_t)copy + 0x8b + *(int32_t*)(copy + 0x87) == (uintptr_t)copy + 0x155 && copy[0x8b] == 0x90 && copy[0x8c] == 0x90);
+        CHECK(add_copy[OVERFLOW_IMM - ADD_FN] == 3 && add_copy[OVERFLOW_IMM - ADD_FN - 2] == 0x41 && add_copy[OVERFLOW_IMM - ADD_FN + 1] == 0);
         cheats::survivor_raise_check = real_check;
+        CHECK(tree_copy[FLAG_IMM - TREE_ADD_FN] == 1);
+        cheats::survivor_overflow_tree = real_overflow;
+        cheats::survivor_tree_flag = real_flag;
     }
     {
         static uintptr_t target_vt[0x900 / 8] = {};

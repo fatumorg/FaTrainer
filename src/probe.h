@@ -202,16 +202,16 @@ inline std::string run(const std::string& line) {
     }
     if (c == "call") {
         uintptr_t fn = p.expr();
-        uintptr_t args[4] = {};
-        for (int i = 0; i < 4; i++) {
+        uintptr_t args[6] = {};
+        for (int i = 0; i < 6; i++) {
             p.skip();
             if (!*p.s) break;
             args[i] = p.expr();
         }
         uintptr_t gamedll = (uintptr_t)GetModuleHandleA("gamedll_x64_rwdi.dll");
         if (!p.ok || !fn || fn == gamedll) return out + "  bad address\n";
-        auto f = (uintptr_t(__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t))fn;
-        uintptr_t r = f(args[0], args[1], args[2], args[3]);
+        auto f = (uintptr_t(__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t))fn;
+        uintptr_t r = f(args[0], args[1], args[2], args[3], args[4], args[5]);
         snprintf(b, sizeof b, "  returned %llx\n", (unsigned long long)r);
         return out + b;
     }

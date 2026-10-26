@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5 b25
+
+Survivor Update
+
+- Fixed: Survivor XP went to Legend only after you lowered your Survivor level. The game keeps a separate Survivor XP record that stays at your old highest value, so new Survivor XP counted as overflow and went to Legend. It now goes to Survivor, and your level can climb again.
+- New: UV flare throw speed (Combat). Throws the UV flare up to x5 faster; other throwables are not changed.
+
 ## 2.5 b24
 
 Survivor Update

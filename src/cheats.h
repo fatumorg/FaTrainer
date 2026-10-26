@@ -35,6 +35,8 @@ const int STAMINA_CURRENT = 0x10, STAMINA_FULL = 0x14;
 const int ROPE_ENERGY = 0x40, ROPE_DEPLETED = 0x44;
 const int REPL_OWNED = 0x28;
 const int PARAM_SLOTS = 1100, CACHED_VALUE = 8, CACHED_FLAGS = 0x18, CACHED_VERSION = -8, PARAM_PROVIDER = 0x9c0;
+const uint8_t TREE_SURVIVOR = 3, TREE_LEGEND = 5;
+const int OVERFLOW_TREE_IMM = 0x15, TREE_FLAG_IMM = 0x10;
 const int SKILL_TREES = 0x40, TREE_RECORD = 0x20, TREE_XP = 8, TREE_LEVEL_START = 0xc, TREE_SPAN = 0x10, TREE_LEVEL = 0x14, TREE_MAX = 0x16;
 const int MODULE_OWNER = 0x40, MODULE_HEALTH = 0x78;
 const int SLOT_IS_IMMORTAL = 3, SLOT_SET_HEALTH = 4, HEALTH_VALUE = 0x964, SLOT_REFILL = 5, SLOT_HEALTH = 199, SLOT_MAX_HEALTH = 41, SLOT_MODULE_UPDATE = 245;
@@ -170,6 +172,7 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
+    {"flare_speed", "UV flare throw speed", "How fast you throw the UV flare. Other throwables stay the same.", G_WEAPONS, {}, {}, 5.0f},
     {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 5.0f},
 };
 
@@ -221,7 +224,7 @@ inline const char* SIDE_NAMES[] = {"pending", "unknown", "survivor", "night hunt
 inline uintptr_t dfa_fall_speed = 0;
 inline float dfa_fall_original = NAN;
 const float DFA_FALL_SPEED_AT_MAX = 0.5f;
-inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, melee_reach_fn = 0, survivor_raise_check = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
+inline uintptr_t local_player_root = 0, params_root = 0, unlimited_ammo_flag = 0, set_level_fn = 0, level_from_xp_fn = 0, cache_get_fn = 0, grab_filter_fn = 0, melee_reach_fn = 0, survivor_raise_check = 0, survivor_overflow_tree = 0, survivor_tree_flag = 0, lockpick_patch = 0, forced_damage_jump = 0, pound_exposure_check = 0, profile_root = 0;
 inline uintptr_t vt_param_float = 0, vt_player_float = 0, vt_param_bool = 0, vt_player_bool = 0, var_root = 0, xp_award_site = 0;
 inline uintptr_t skill_manager = 0, add_skill_fn = 0, remove_skill_fn = 0;
 inline std::map<std::string, int> param_ids;
@@ -304,11 +307,12 @@ inline void read_param_names() {
         if (is_case(entry(p), common)) param_ids[(const char*)game::rip_target(entry(p), 3, 7)] = (int)((p - start) / 4);
 }
 
-inline uintptr_t vt_melee_desc = 0, vt_melee_controller = 0;
+inline uintptr_t vt_melee_desc = 0, vt_melee_controller = 0, vt_throw_controller = 0;
 
 inline void locate(uintptr_t base) {
     vt_melee_desc = game::find_vtable(base, "ItemDescMelee");
     vt_melee_controller = game::find_vtable(base, "WeaponMeleeController");
+    vt_throw_controller = game::find_vtable(base, "WeaponThrowController");
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 88 80 07 00 00"); !hits.empty())
         local_player_root = game::rip_target(hits[0], 3, 7);
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 74 07 48 8B ? 58 0E 00 00"); !hits.empty())
@@ -333,6 +337,8 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 50 48 8B 01 48 8B F2 0F 29 74 24 40 48 8B F9"); hits.size() == 1)
         melee_reach_fn = hits[0];
     if (auto hits = game::find_code(base, "48 8B 47 40 44 8B 40 68 41 3B D8 0F 86 ? ? ? ? 48 8B 05"); hits.size() == 1) survivor_raise_check = hits[0];
+    if (auto hits = game::find_code(base, "44 88 7C 24 30 48 8D 44 24 40 44 88 7C 24 28 45 0F B6 CE 41 B8 05 00 00 00 48 89 44 24 20 8B D5 48 8B CE E8"); hits.size() == 1) survivor_overflow_tree = hits[0] + OVERFLOW_TREE_IMM;
+    if (auto hits = game::find_code(base, "4C 8D 8C 24 90 00 00 00 44 0F B6 C6 C6 44 24 20 00 41 8B D7 E8"); hits.size() == 1) survivor_tree_flag = hits[0] + TREE_FLAG_IMM;
     if (auto hits = game::find_code(base, "40 57 41 57 48 83 EC 28 48 89 6C 24 50 45 33 FF 48 89 74 24 58 0F B7 FA 4C 89 74 24 20 48 8B E9");
         hits.size() == 1)
         remove_skill_fn = hits[0];
@@ -788,6 +794,57 @@ inline void keep_melee_reach() {
               (unsigned long long)(reach_caller.load() - g.base), SIDE_NAMES[side.load()], g.players.size());
 }
 
+const size_t THROW_CONTROLLER = 0xc28, THROW_STATE = 0x38, THROW_PHASE_TIMES = 0x50;
+const int THROW_PHASE_COUNT = 6, THROW_IDLE = 0;
+inline const char UV_FLARE[] = "Throwable_Btz_Flare";
+
+inline bool holding_uv_flare(uintptr_t p) {
+    for (int h = 0; h < HANDS; h++) {
+        uintptr_t desc = hand_desc(p, h);
+        const ItemInfo* info = desc && game::desc_alive(desc) ? game::str_at(rdv<uintptr_t>(desc + g.desc_name)) : nullptr;
+        if (info && !strcmp(info->id, UV_FLARE)) return true;
+    }
+    return false;
+}
+
+inline bool throw_busy(uintptr_t controller) {
+    return controller && rdv<uintptr_t>(controller) == vt_throw_controller && rdv<int>(controller + THROW_STATE, THROW_IDLE) != THROW_IDLE;
+}
+
+struct ThrowPhaseTimes {
+    uintptr_t controller = 0;
+    float original[THROW_PHASE_COUNT] = {}, written[THROW_PHASE_COUNT] = {};
+};
+inline ThrowPhaseTimes throw_phase_times;
+
+inline uintptr_t throw_phase_time_at(uintptr_t controller, int i) { return controller + THROW_PHASE_TIMES + i * 4; }
+
+inline void restore_throw_phase_times() {
+    auto& t = throw_phase_times;
+    for (int i = 0; t.controller && rdv<uintptr_t>(t.controller) == vt_throw_controller && i < THROW_PHASE_COUNT; i++)
+        if (rdv<float>(throw_phase_time_at(t.controller, i)) == t.written[i]) wr<float>(throw_phase_time_at(t.controller, i), t.original[i]);
+    t = {};
+}
+
+inline void keep_throw_phase_times(uintptr_t controller, float f) {
+    if (f == 1.0f || !controller || rdv<uintptr_t>(controller) != vt_throw_controller) return restore_throw_phase_times();
+    auto& t = throw_phase_times;
+    if (t.controller != controller) {
+        restore_throw_phase_times();
+        t.controller = controller;
+        std::fill(std::begin(t.written), std::end(t.written), NAN);
+    }
+    for (int i = 0; i < THROW_PHASE_COUNT; i++) {
+        uintptr_t at = throw_phase_time_at(controller, i);
+        float now = rdv<float>(at);
+        if (now != t.written[i]) t.original[i] = now;
+        if (!(t.original[i] > 0 && t.original[i] < 60)) continue;
+        float want = t.original[i] / f;
+        if (now != want && !wr<float>(at, want)) continue;
+        t.written[i] = want;
+    }
+}
+
 inline void speed_melee_anims() {
     float f = tweak_factor("melee_speed");
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
@@ -795,7 +852,12 @@ inline void speed_melee_anims() {
     uintptr_t bind = p && anim_bind_of ? anim_bind_of(p) : 0;
     bool on = f != 1.0f && bind && holding_melee(p);
     uintptr_t controller = p ? rdv<uintptr_t>(p + MELEE_CONTROLLER) : 0;
-    bool animate = on && melee_busy(controller);
+    float flare_f = tweak_factor("flare_speed");
+    bool flare_on = !on && flare_f != 1.0f && bind && holding_uv_flare(p);
+    uintptr_t thrower = p ? rdv<uintptr_t>(p + THROW_CONTROLLER) : 0;
+    keep_throw_phase_times(thrower, flare_on ? flare_f : 1.0f);
+    bool animate = (on && melee_busy(controller)) || (flare_on && throw_busy(thrower));
+    float scale = on ? f : flare_f;
     keep_melee_durations(p, on ? f : 1.0f);
     keep_melee_phases(controller, on ? f : 1.0f);
     keep_melee_phase_times(controller, on ? f : 1.0f);
@@ -811,7 +873,7 @@ inline void speed_melee_anims() {
         }
         AnimSpeed s = ours ? it->second : AnimSpeed{now, now};
         if (!(s.original > 0 && s.original < ANIM_SPEED_MAX)) continue;
-        s.written = s.original * f;
+        s.written = s.original * scale;
         if (now != s.written) game::wr<float>(a + ANIM_SPEED, s.written);
         next[a] = s;
     }
@@ -819,7 +881,7 @@ inline void speed_melee_anims() {
     static DWORD logged_at = 0;
     static int lines = 0;
     if (next.size() != logged && GetTickCount() - logged_at > 2000 && lines < 200)
-        logged = next.size(), logged_at = GetTickCount(), lines++, logf_hook("melee speed: %zu animations at x%.2f", next.size(), f);
+        logged = next.size(), logged_at = GetTickCount(), lines++, logf_hook("%s speed: %zu animations at x%.2f", on ? "melee" : "flare", next.size(), scale);
     anim_speeds.swap(next);
 }
 
@@ -1989,8 +2051,16 @@ inline bool install_melee_reach_hook() {
 const uint8_t SHORT_JAE = 0x73, NEAR_JMP = 0xE9, NOP = 0x90;
 const int RAISE_JBE = 0xb, RAISE_SITE = 0x11, RAISE_SITE_SIZE = 7;
 
+inline bool send_survivor_overflow_to_survivor() {
+    if (!survivor_overflow_tree || !survivor_tree_flag) return false;
+    const uint8_t FROM_STAT = 1;
+    if (rdv<uint8_t>(survivor_overflow_tree) == TREE_LEGEND) write_code(survivor_overflow_tree, &TREE_SURVIVOR, 1);
+    if (rdv<uint8_t>(survivor_tree_flag) == 0) write_code(survivor_tree_flag, &FROM_STAT, 1);
+    return rdv<uint8_t>(survivor_overflow_tree) == TREE_SURVIVOR && rdv<uint8_t>(survivor_tree_flag) == FROM_STAT;
+}
+
 inline bool keep_lowered_survivor() {
-    if (!survivor_raise_check) return false;
+    if (!send_survivor_overflow_to_survivor() || !survivor_raise_check) return false;
     uintptr_t site = survivor_raise_check + RAISE_SITE;
     if (rdv<uint8_t>(site) == NEAR_JMP) return true;
     uintptr_t even = game::rip_target(survivor_raise_check + RAISE_JBE, 2, 6);
