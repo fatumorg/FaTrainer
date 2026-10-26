@@ -1,6 +1,7 @@
 const path = require("node:path");
 const express = require("express");
 const { securityHeaders, rateLimiter } = require("fatum-kit/security");
+const { sitemapRoutes } = require("./routes/sitemap.js");
 const { createRenderer } = require("./views.js");
 const { permissionsFor, promoteOwner } = require("./permissions.js");
 const { browseRoutes } = require("./routes/browse.js");
@@ -33,6 +34,8 @@ function createApp({ config, pool, auth, redis }) {
   });
 
   if (redis) forum.post(["/new", "/t/:id/reply", "/p/:id/edit", "/api/uploads", "/report", "/appeal/:id"], rateLimiter({ redis, prefix: "ft:rl:write:", windowMs: 600_000, limit: 60 }));
+  forum.use(sitemapRoutes({ pool, config }));
+  forum.get("/guidelines", (req, res) => render(req, res, "guidelines", { title: "Forum guidelines", canonical: "/forum/guidelines" }));
   forum.use(browseRoutes({ pool, render }));
   forum.use(composeRoutes({ pool, render, auth, config }));
   forum.use(mediaRoutes({ pool, config, auth }));

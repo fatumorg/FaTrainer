@@ -12,7 +12,7 @@
   --line-soft: #211f1d;
   --text: #ece6da;
   --soft: #b9b2a5;
-  --muted: #847d72;
+  --muted: #9a948a;
   --accent: #d9d2c3;
   --accent-ink: #121110;
   --display: "Anybody", "Arial Narrow", sans-serif;
@@ -302,4 +302,19 @@ html.js .fade.in { opacity: 1; transform: none; }
   .game .meta { justify-content: flex-start; text-align: left; }
   .bar nav a.optional { display: none; }
   .brand small { display: none; }
+}
+
+@media (prefers-color-scheme: light) {
+  :root, [data-game="dying-light"] {
+    --ground: #f3eee5;
+    --raised: #fbf8f2;
+    --line: #ddd5c7;
+    --line-soft: #e8e1d4;
+    --text: #1a1917;
+    --soft: #4a453e;
+    --muted: #6b645a;
+    --accent: #8a4f0c;
+    --accent-ink: #fbf8f2;
+    color-scheme: light;
+  }
 }

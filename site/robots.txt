@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /forum/auth
+Disallow: /forum/api
+
+Sitemap: https://fatrainer.fatum.cc/forum/sitemap.xml

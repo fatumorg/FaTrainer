@@ -1,0 +1,18 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <h1>Forum guidelines</h1>
+  <p>The full rules are in <a href="/legal.html#forum">section 4 of the forum terms</a>. The <a href="/prawne.html#forum" hreflang="pl" lang="pl">Polish version</a> is binding.</p>
+</div>
+<h2>What is not allowed</h2>
+<ul>
+  <li>Illegal content, including threats, incitement to violence, hate speech and defamation.</li>
+  <li>Other people's personal data without their consent.</li>
+  <li>Game files, cracks, pirated copies, and other people's mods or code posted without permission.</li>
+  <li>Malware or tools for attacking other people's computers or accounts.</li>
+  <li>Spam, advertising and repeated off-topic posts.</li>
+  <li>Harassing other users or organising harassment of other players.</li>
+</ul>
+<h2>Reporting</h2>
+<p>Use the Report button on a post or thread, or open the <a href="/forum/report">report page</a>. Without an account, write to <a href="mailto:contact@fatum.cc">contact@fatum.cc</a>.</p>
+<h2>Decisions and appeals</h2>
+<p>When a moderator acts on your content you get a statement of reasons with the rule and the facts. You can send an appeal from that page within six months; a different moderator reviews it when there is more than one.</p>
