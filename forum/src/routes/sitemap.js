@@ -9,7 +9,7 @@ function sitemapRoutes({ pool, config }) {
     const cats = await pool.query("SELECT slug FROM categories ORDER BY position, id");
     const threads = await pool.query(
       `SELECT t.id, t.slug, t.last_post_at FROM threads t
-       WHERE t.deleted_at IS NULL AND EXISTS (SELECT 1 FROM posts p WHERE p.thread_id = t.id AND NOT p.held AND p.deleted_at IS NULL)
+       WHERE t.deleted_at IS NULL AND NOT (SELECT held FROM posts WHERE thread_id = t.id ORDER BY id LIMIT 1)
        ORDER BY t.id DESC LIMIT 20000`,
     );
     const urls = [

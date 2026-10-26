@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { startForum } = require("./server.js");
 const { categoryId } = require("./helpers.js");
-const { createThread } = require("../src/compose.js");
+const { createThread, createPost } = require("../src/compose.js");
 
 const site = path.resolve(__dirname, "..", "..", "site");
 const read = (f) => fs.readFileSync(path.join(site, f), "utf8");
@@ -58,12 +58,17 @@ test("sitemap lists categories and public threads only", async (t) => {
   const pub = await createThread(h.pool, as, { categoryId: general, title: "Public thread", body: "one" });
   const gone = await createThread(h.pool, as, { categoryId: general, title: "Removed thread", body: "two" });
   await h.pool.query("UPDATE threads SET deleted_at = now() WHERE id = $1", [gone.id]);
+  const held = await createThread(h.pool, as, { categoryId: general, title: "Held thread", body: "three" });
+  await createPost(h.pool, { id: h.users.inny, username: "inny" }, held.id, "approved reply");
+  await h.pool.query("UPDATE posts SET held = true WHERE id = (SELECT min(id) FROM posts WHERE thread_id = $1)", [held.id]);
+  assert.equal((await h.anon().get(`/forum/t/${held.id}/held-thread`)).status, 404);
   const res = await h.anon().get("/forum/sitemap.xml");
   assert.equal(res.status, 200);
   assert.match(res.headers.get("content-type"), /xml/);
   assert.match(res.text, /\/forum\/c\/general</);
   assert.match(res.text, new RegExp(`/forum/t/${pub.id}/public-thread<`));
   assert.equal(res.text.includes(`/forum/t/${gone.id}/`), false);
+  assert.equal(res.text.includes(`/forum/t/${held.id}/`), false);
   assert.equal(res.text.includes("/forum/u/"), false);
 });
 
