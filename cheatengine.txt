@@ -1,0 +1,4 @@
+version=7.7
+url=https://d1dj9aohuk02ls.cloudfront.net/f/CheatEngine/2129/CheatEngine77.exe
+size=34690856
+sha256=cf0f4b6002555677984233c95856683959be83a5def3dc12175a8296eb22676b
