@@ -45,7 +45,8 @@ async function listThreads(db, { categoryId, sort = "activity", tag, solved, min
 
 async function getThread(db, id, page = 1) {
   const { rows } = await db.query(
-    `SELECT t.*, p.username AS author, c.slug AS category_slug, c.name AS category_name, ${TAGS}
+    `SELECT t.*, p.username AS author, c.slug AS category_slug, c.name AS category_name, ${TAGS},
+            (SELECT min(id) FROM posts WHERE thread_id = t.id) AS first_post_id
      FROM threads t JOIN categories c ON c.id = t.category_id LEFT JOIN aura.public_profiles p ON p.id = t.author_id
      WHERE t.id = $1 AND t.deleted_at IS NULL`,
     [id],

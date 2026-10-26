@@ -1,0 +1,20 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1>Watching</h1>
+  <p class="meta">You get notifications for new replies here. You start watching threads you create or reply to; turn that off in <a href="/forum/settings">forum settings</a>.</p>
+</div>
+<h2>Categories</h2>
+<% if (!it.categories.length) { %><p class="empty">No categories watched.</p>
+<% } else { %><ul class="threads">
+<% for (const c of it.categories) { %>  <li class="thread-row"><a href="/forum/c/<%= c.slug %>"><%= c.name %></a>
+    <form method="post" action="/forum/c/<%= c.slug %>/watch" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="muted" value="1"><button type="submit" class="link">Stop watching</button></form></li>
+<% } %></ul>
+<% } %>
+<h2>Threads</h2>
+<% if (!it.threads.length) { %><p class="empty">No threads watched.</p>
+<% } else { %><ul class="threads">
+<% for (const t of it.threads) { %>  <li class="thread-row"><a href="/forum/t/<%= t.id %>/<%= t.slug %>"><%= t.title %></a>
+    <form method="post" action="/forum/t/<%= t.id %>/watch" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="muted" value="1"><button type="submit" class="link">Stop watching</button></form></li>
+<% } %></ul>
+<% } %>

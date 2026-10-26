@@ -1,0 +1,19 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1>Saved</h1>
+  <p class="meta">Threads you saved. Only you can see this list.</p>
+</div>
+<% if (!it.list.items.length) { %>
+<p class="empty">Nothing saved yet. Use Save on a thread to keep it here.</p>
+<% } else { %>
+<ul class="threads">
+<% for (const t of it.list.items) { %>
+  <li class="thread-row">
+    <h2><a href="/forum/t/<%= t.id %>/<%= t.slug %>"><%= t.title %></a></h2>
+    <p class="meta"><span class="num"><%= t.reply_count %></span> <%= t.reply_count === 1 ? 'reply' : 'replies' %> · last activity <time datetime="<%= it.iso(t.last_post_at) %>"><%= it.day(t.last_post_at) %></time></p>
+  </li>
+<% } %>
+</ul>
+<%~ include('/_pager', { page: it.list.page, pages: it.list.pages, href: it.href }) %>
+<% } %>

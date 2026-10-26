@@ -71,6 +71,8 @@
 .search-filters label { font-weight: 400; display: grid; gap: 2px; }
 .snippet { margin: 4px 0; overflow-wrap: anywhere; }
 .snippet b { background: color-mix(in srgb, var(--accent) 25%, transparent); font-weight: 600; }
+.thread-actions { display: flex; gap: 8px; margin: 10px 0 0; }
+.link[aria-pressed=true] { color: var(--accent); font-weight: 600; }
 @media (max-width: 720px) {
   .forum-nav .wrap { gap: 4px 12px; }
 }
