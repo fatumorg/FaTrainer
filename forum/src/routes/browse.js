@@ -1,5 +1,7 @@
 const express = require("express");
 const { listThreads, getThread, profile, SORTS } = require("../threads.js");
+const { searchForum } = require("../search.js");
+const { ForumError } = require("../compose.js");
 
 const SORT_LABELS = { activity: "Latest activity", new: "Newest", helpful: "Most helpful", unanswered: "Unanswered" };
 
@@ -72,6 +74,24 @@ function browseRoutes({ pool, render }) {
     const pageChanged = req.query.page !== undefined && String(data.page) !== String(req.query.page);
     if (req.params.slug !== data.thread.slug || pageChanged) return res.redirect(301, href(data.page));
     render(req, res, "thread", { title: data.thread.title, ...data, href, canonical: href(data.page), scripts: req.session?.user ? ["/forum/static/js/editor.js"] : [] });
+  });
+
+  r.get("/search", async (req, res) => {
+    const str = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+    const date = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(str(v, 10)) && !Number.isNaN(Date.parse(v)) ? v : "");
+    const form = { q: str(req.query.q, 400), category: str(req.query.category, 60), tag: str(req.query.tag, 40), author: str(req.query.author, 32), from: date(req.query.from), to: date(req.query.to) };
+    const categories = (await pool.query("SELECT id, slug, name FROM categories ORDER BY position, id")).rows;
+    const view = { title: form.q ? `Search: ${form.q}` : "Search", form, categories, results: null, error: null, noindex: true, canonical: "/forum/search" };
+    if (!form.q) return render(req, res, "search", view);
+    try {
+      const cat = categories.find((x) => x.slug === form.category);
+      view.results = await searchForum(pool, { q: form.q, categoryId: cat?.id, tag: form.tag || undefined, author: form.author || undefined, from: form.from || undefined, to: form.to || undefined, page: req.query.page });
+      view.href = (page) => "/forum/search" + query({ ...form, page: pageOf(page) });
+      render(req, res, "search", view);
+    } catch (err) {
+      if (!(err instanceof ForumError)) throw err;
+      render(req, res, "search", { ...view, error: err }, err.status);
+    }
   });
 
   r.get("/u/:nickname", async (req, res, next) => {

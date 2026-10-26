@@ -1,0 +1,38 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1>Search</h1>
+</div>
+<form method="get" action="/forum/search" class="search-form compose" role="search">
+  <label for="q">Search threads and posts</label>
+  <input id="q" name="q" type="text" value="<%= it.form.q %>" maxlength="200"<% if (it.error) { %> aria-invalid="true" aria-describedby="q-error"<% } %>>
+  <%~ include('/_field_error', { name: 'q', error: it.error }) %>
+  <div class="search-filters">
+    <label>Category
+      <select name="category">
+        <option value="">All</option>
+<% for (const cat of it.categories) { %>        <option value="<%= cat.slug %>"<% if (cat.slug === it.form.category) { %> selected<% } %>><%= cat.name %></option>
+<% } %>      </select>
+    </label>
+    <label>Tag <input name="tag" type="text" value="<%= it.form.tag %>" maxlength="40"></label>
+    <label>Author <input name="author" type="text" value="<%= it.form.author %>" maxlength="32"></label>
+    <label>From <input name="from" type="date" value="<%= it.form.from %>"></label>
+    <label>To <input name="to" type="date" value="<%= it.form.to %>"></label>
+  </div>
+  <p class="actions"><button type="submit" class="button">Search</button></p>
+</form>
+<% if (it.results) { %>
+<p class="meta"><span class="num"><%= it.results.total %></span> <%= it.results.total === 1 ? 'result' : 'results' %></p>
+<% if (!it.results.items.length) { %><p class="empty">Nothing found. Try fewer or different words.</p>
+<% } else { %>
+<ul class="threads">
+<% for (const r of it.results.items) { %>
+  <li class="thread-row">
+    <h2><a href="/forum/t/<%= r.threadId %>/<%= r.slug %>#p<%= r.postId %>"><%= r.title %></a></h2>
+    <p class="snippet"><%~ r.snippetHtml %></p>
+    <p class="meta"><time datetime="<%= it.iso(r.at) %>"><%= it.day(r.at) %></time></p>
+  </li>
+<% } %>
+</ul>
+<%~ include('/_pager', { page: it.results.page, pages: it.results.pages, href: it.href }) %>
+<% } %><% } %>
