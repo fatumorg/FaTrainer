@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5 b26
+
+Survivor Update
+
+- Fixed: with HUD colors on, the Be The Zombie nest counter was one solid color. The grey nest icon and its colored fill had the same brightness, so both got the same color; the icon now stays grey and the fill drains over it again.
+- Fixed: UV flare throw speed only knew one of the game's two UV flare items. It now covers both, and the log records how each throw runs so the rest can be fixed.
+- New: Unlock every resolution (Visuals, Screen). The game's video settings list every common resolution, also sizes your monitor does not report, from the next start.
+- New: Start Cheat Engine in the FaTrainer launcher 2.5. The trainer installs Cheat Engine the first time the game starts and opens it with the game, in the game's own prefix, attached to Dying Light.
+
 ## 2.5 b25
 
 Survivor Update
