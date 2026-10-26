@@ -1,0 +1,21 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1>Forum settings</h1>
+  <p class="meta">Your nickname, picture, bio, theme and e-mail address are managed in <a href="<%= it.accountHref %>">Fatum Aura account settings</a>.</p>
+</div>
+<% if (it.saved) { %><p class="alert" role="status">Settings saved.</p>
+<% } %><form method="post" action="/forum/settings" class="compose">
+  <input type="hidden" name="_csrf" value="<%= it.csrf %>">
+  <fieldset>
+    <legend>E-mail (sent at most every 10 minutes, all news in one message)</legend>
+    <label><input type="checkbox" name="email_replies"<% if (it.prefs.email_replies) { %> checked<% } %>> Replies in threads I watch and accepted answers</label>
+    <label><input type="checkbox" name="email_mentions"<% if (it.prefs.email_mentions) { %> checked<% } %>> Mentions of my nickname</label>
+    <p class="meta">Moderation decisions about your content are always sent, because you may want to appeal.</p>
+  </fieldset>
+  <fieldset>
+    <legend>Watching</legend>
+    <label><input type="checkbox" name="auto_watch"<% if (it.prefs.auto_watch) { %> checked<% } %>> Watch threads I start or reply to</label>
+  </fieldset>
+  <p class="actions"><button type="submit" class="button">Save</button></p>
+</form>

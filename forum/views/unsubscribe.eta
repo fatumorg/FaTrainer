@@ -1,0 +1,11 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <h1>E-mail settings</h1>
+<% if (it.done) { %>
+  <p role="status">Done. You will no longer get e-mails about <%= it.what %> from the FaTrainer forum. In-app notifications stay on.</p>
+  <p><a href="/forum/settings">Forum settings</a> (sign-in needed) let you turn them back on.</p>
+<% } else { %>
+  <p>Stop e-mails about <%= it.what %> from the FaTrainer forum?</p>
+  <form method="post" action="/forum/unsubscribe/<%= it.token %>"><button type="submit" class="button">Stop these e-mails</button></form>
+<% } %>
+</div>

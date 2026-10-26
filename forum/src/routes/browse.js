@@ -1,5 +1,5 @@
 const express = require("express");
-const { listThreads, getThread, profile, SORTS } = require("../threads.js");
+const { listThreads, getThread, profile, SORTS, POSTS_PER_PAGE } = require("../threads.js");
 const { searchForum } = require("../search.js");
 const { ForumError } = require("../compose.js");
 const { viewerState } = require("../engagement.js");
@@ -68,6 +68,13 @@ function browseRoutes({ pool, render }) {
 
   r.get("/t/:id{/:slug}", async (req, res, next) => {
     if (!/^\d{1,9}$/.test(req.params.id)) return next();
+    if (/^\d{1,9}$/.test(String(req.query.post || ""))) {
+      const { rows } = await pool.query(
+        "SELECT t.slug, (SELECT count(*)::int FROM posts WHERE thread_id = t.id AND NOT held AND id <= $2) AS n FROM threads t WHERE t.id = $1 AND t.deleted_at IS NULL",
+        [Number(req.params.id), Number(req.query.post)],
+      );
+      if (rows[0]) return res.redirect(303, `/forum/t/${req.params.id}/${rows[0].slug}${query({ page: pageOf(Math.ceil(Math.max(1, rows[0].n) / POSTS_PER_PAGE)) })}#p${Number(req.query.post)}`);
+    }
     const data = await getThread(pool, Number(req.params.id), req.query.page);
     if (!data) return next();
     const base = `/forum/t/${data.thread.id}/${data.thread.slug}`;

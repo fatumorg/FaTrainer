@@ -1,5 +1,6 @@
 const { permissionsFor } = require("./permissions.js");
 const { ForumError } = require("./compose.js");
+const { watchers: watchersOf, notify } = require("./notifications.js");
 
 const PER_PAGE = 25;
 
@@ -35,6 +36,7 @@ async function acceptAnswer(db, user, threadId, postId) {
   if (!((t.author_id === user.id && perms.has("post.edit.own")) || perms.has("post.edit.any"))) throw new ForumError(403, "Only the thread author or a moderator can accept an answer.");
   const solvedPostId = t.solved_post_id === t.post_id ? null : t.post_id;
   await db.query("UPDATE threads SET solved_post_id = $2 WHERE id = $1", [t.id, solvedPostId]);
+  if (solvedPostId) await notify(db, { userId: t.post_author, kind: "accepted", threadId: t.id, postId: t.post_id, actorId: user.id });
   return { solvedPostId, authorId: t.post_author };
 }
 
@@ -67,18 +69,6 @@ async function setSubscription(db, userId, { threadId = null, categoryId = null,
      ON CONFLICT (user_id, thread_id, category_id) DO UPDATE SET muted = EXCLUDED.muted`,
     [userId, threadId, categoryId, Boolean(muted)],
   );
-}
-
-async function watchersOf(db, threadId) {
-  const { rows } = await db.query(
-    `SELECT s.user_id FROM subscriptions s WHERE s.thread_id = $1 AND NOT s.muted
-     UNION
-     SELECT s.user_id FROM subscriptions s JOIN threads t ON t.category_id = s.category_id
-     WHERE t.id = $1 AND NOT s.muted
-       AND NOT EXISTS (SELECT 1 FROM subscriptions m WHERE m.user_id = s.user_id AND m.thread_id = $1 AND m.muted)`,
-    [threadId],
-  );
-  return rows.map((r) => r.user_id);
 }
 
 async function listWatching(db, userId) {

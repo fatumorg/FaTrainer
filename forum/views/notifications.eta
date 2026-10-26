@@ -1,0 +1,19 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1>Notifications</h1>
+<% if (it.unread) { %>  <form method="post" action="/forum/notifications/read"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="button small secondary">Mark all as read</button></form>
+<% } %></div>
+<% if (!it.list.items.length) { %>
+<p class="empty">No notifications yet. Replies in threads you watch, mentions and accepted answers show up here.</p>
+<% } else { %>
+<ul class="threads">
+<% for (const x of it.list.items) { %>
+  <li class="thread-row<%= x.read_at ? '' : ' unread' %>">
+    <a href="/forum/notifications/<%= x.id %>"><%= x.text %></a>
+    <span class="meta"><time datetime="<%= it.iso(x.created_at) %>"><%= it.day(x.created_at) %></time><%= x.read_at ? '' : ' · new' %></span>
+  </li>
+<% } %>
+</ul>
+<%~ include('/_pager', { page: it.list.page, pages: it.list.pages, href: it.href }) %>
+<% } %>

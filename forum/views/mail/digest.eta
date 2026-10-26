@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<body style="margin:0;padding:24px;background:#121110;color:#ece6dc;font:16px/1.5 system-ui,sans-serif">
+<p style="margin:0 0 16px;font-weight:600">FaTrainer Forum</p>
+<p><%= it.items.length %> new on the forum:</p>
+<ul style="padding-left:20px">
+<% for (const i of it.items) { %>  <li style="margin:0 0 8px"><a href="<%= i.url %>" style="color:#ff8a3d"><%= i.text %></a></li>
+<% } %></ul>
+<p style="margin-top:24px;font-size:13px;color:#a69c8f">
+  <a href="<%= it.links.settings %>" style="color:#a69c8f">E-mail settings</a> ·
+  <a href="<%= it.links.replies %>" style="color:#a69c8f">Stop e-mails about replies</a> ·
+  <a href="<%= it.links.mentions %>" style="color:#a69c8f">Stop e-mails about mentions</a>
+</p>
+</body>
+</html>

@@ -7,6 +7,8 @@ const { browseRoutes } = require("./routes/browse.js");
 const { composeRoutes } = require("./routes/compose.js");
 const { mediaRoutes } = require("./routes/media.js");
 const { engagementRoutes } = require("./routes/engagement.js");
+const { notificationRoutes } = require("./routes/notifications.js");
+const { unreadCount } = require("./notifications.js");
 
 function createApp({ config, pool, auth }) {
   const app = express();
@@ -24,6 +26,7 @@ function createApp({ config, pool, auth }) {
   forum.use(async (req, res, next) => {
     const user = req.session?.user;
     req.perms = user ? await permissionsFor(pool, user.id) : new Set();
+    req.unread = user ? await unreadCount(pool, user.id) : 0;
     next();
   });
 
@@ -31,6 +34,7 @@ function createApp({ config, pool, auth }) {
   forum.use(composeRoutes({ pool, render, auth }));
   forum.use(mediaRoutes({ pool, config, auth }));
   forum.use(engagementRoutes({ pool, render, auth }));
+  forum.use(notificationRoutes({ pool, render, auth, config }));
 
   forum.use("/api", (req, res) => res.status(404).json({ error: "NOT_FOUND" }));
   forum.use((req, res) => render(req, res, "error", { title: "Page not found", status: 404, noindex: true }, 404));
