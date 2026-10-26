@@ -4,6 +4,7 @@ const { securityHeaders } = require("fatum-kit/security");
 const { createRenderer } = require("./views.js");
 const { permissionsFor, promoteOwner } = require("./permissions.js");
 const { browseRoutes } = require("./routes/browse.js");
+const { composeRoutes } = require("./routes/compose.js");
 
 function createApp({ config, pool, auth }) {
   const app = express();
@@ -25,6 +26,7 @@ function createApp({ config, pool, auth }) {
   });
 
   forum.use(browseRoutes({ pool, render }));
+  forum.use(composeRoutes({ pool, render, auth }));
 
   forum.use("/api", (req, res) => res.status(404).json({ error: "NOT_FOUND" }));
   forum.use((req, res) => render(req, res, "error", { title: "Page not found", status: 404, noindex: true }, 404));

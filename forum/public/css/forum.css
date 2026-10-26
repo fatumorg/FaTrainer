@@ -43,6 +43,27 @@
 .pager { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
 .pager a, .pager span { min-width: 2.2em; padding: 4px 8px; text-align: center; }
 .pager a[aria-current] { background: var(--accent); color: var(--accent-ink); border-radius: 4px; text-decoration: none; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.alert { padding: 10px 14px; border: 1px solid var(--accent); border-radius: 4px; background: var(--raised); }
+.compose { display: grid; gap: 8px; max-width: 860px; }
+.compose label, .compose legend { font-weight: 600; }
+.compose input[type=text], .compose select, .compose textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg, transparent); color: var(--text); font: inherit; }
+.compose textarea { font-family: var(--mono); font-size: 0.95rem; min-height: 14em; resize: vertical; }
+.compose [aria-invalid=true] { border-color: var(--accent); }
+.field-error { margin: 0; color: var(--text); font-size: 0.9rem; }
+.field-error::before { content: "! "; color: var(--accent); font-weight: 700; }
+.tag-pick { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 1px solid var(--line); border-radius: 4px; }
+.tag-pick label { font-weight: 400; }
+.editor { display: grid; gap: 6px; }
+.editor-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.editor-bar button, .editor-bar select { min-height: 32px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--raised); color: var(--text); font: inherit; font-size: 0.9rem; cursor: pointer; }
+.editor-bar [aria-pressed=true] { border-color: var(--accent); }
+.editor-bar .spacer { flex: 1; }
+.editor .preview { min-height: 14em; padding: 10px; border: 1px dashed var(--line); border-radius: 4px; }
+.button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+.post-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.post-foot input { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text); font: inherit; font-size: 0.85rem; }
+.reply, .preview-result { margin-top: 32px; }
 @media (max-width: 720px) {
   .forum-nav .wrap { gap: 4px 12px; }
 }

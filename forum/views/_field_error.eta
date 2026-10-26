@@ -1,0 +1,1 @@
+<% if (it.error && it.error.field === it.name) { %><p id="<%= it.name %>-error" class="field-error"><%= it.error.message %></p><% } %>

@@ -1,0 +1,42 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a><% if (it.thread) { %> / <a href="/forum/t/<%= it.thread.id %>/<%= it.thread.slug %>"><%= it.thread.title %></a><% } %></p>
+  <h1><%= it.heading %></h1>
+</div>
+<% if (it.error && !it.error.field) { %><p class="alert" role="alert"><%= it.error.message %></p>
+<% } %><form method="post" action="<%= it.action %>" class="compose" data-draft>
+  <input type="hidden" name="_csrf" value="<%= it.csrf %>">
+<% if (it.mode === 'new') { %>
+  <label for="category">Category</label>
+  <select id="category" name="category" required<% if (it.error && it.error.field === 'category') { %> aria-invalid="true" aria-describedby="category-error"<% } %>>
+<% for (const cat of it.categories) { %>    <option value="<%= cat.slug %>"<% if (cat.slug === it.values.category) { %> selected<% } %>><%= cat.name %></option>
+<% } %>  </select>
+  <%~ include('/_field_error', { name: 'category', error: it.error }) %>
+<% } %><% if (it.mode === 'new' || it.meta) { %>
+  <label for="title">Title</label>
+  <input id="title" name="title" type="text" minlength="5" maxlength="140" required value="<%= it.values.title || '' %>"<% if (it.error && it.error.field === 'title') { %> aria-invalid="true" aria-describedby="title-error"<% } %>>
+  <%~ include('/_field_error', { name: 'title', error: it.error }) %>
+<% if (it.tags.length) { %>
+  <fieldset class="tag-pick"<% if (it.error && it.error.field === 'tags') { %> aria-describedby="tags-error"<% } %>>
+    <legend>Tags (up to 5)</legend>
+<% for (const g of it.tags) { %>    <label><input type="checkbox" name="tags" value="<%= g.slug %>"<% if (it.values.tags.includes(g.slug)) { %> checked<% } %>> <%= g.name %></label>
+<% } %>  </fieldset>
+  <%~ include('/_field_error', { name: 'tags', error: it.error }) %>
+<% } %><% } %>
+  <%~ include('/_editor', { body: it.values.body, error: it.error }) %>
+<% if (it.needsReason) { %>
+  <label for="reason">Reason shown to the author</label>
+  <input id="reason" name="reason" type="text" maxlength="300" required value="<%= it.values.reason || '' %>"<% if (it.error && it.error.field === 'reason') { %> aria-invalid="true" aria-describedby="reason-error"<% } %>>
+  <%~ include('/_field_error', { name: 'reason', error: it.error }) %>
+<% } %>
+  <p class="actions">
+    <button type="submit" class="button"><%= it.submit %></button>
+    <button type="submit" name="preview" value="1" class="button secondary" data-nojs-preview>Preview</button>
+  </p>
+</form>
+<% if (it.preview) { %>
+<section class="preview-result" aria-labelledby="preview-h">
+  <h2 id="preview-h">Preview</h2>
+  <div class="body"><%~ it.preview %></div>
+</section>
+<% } %>

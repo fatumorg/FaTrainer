@@ -71,7 +71,7 @@ function browseRoutes({ pool, render }) {
     const href = (page) => base + query({ page: pageOf(page) });
     const pageChanged = req.query.page !== undefined && String(data.page) !== String(req.query.page);
     if (req.params.slug !== data.thread.slug || pageChanged) return res.redirect(301, href(data.page));
-    render(req, res, "thread", { title: data.thread.title, ...data, href, canonical: href(data.page) });
+    render(req, res, "thread", { title: data.thread.title, ...data, href, canonical: href(data.page), scripts: req.session?.user ? ["/forum/static/js/editor.js"] : [] });
   });
 
   r.get("/u/:nickname", async (req, res, next) => {

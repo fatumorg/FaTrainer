@@ -21,8 +21,26 @@
 <% } %>    </header>
 <% if (p.deleted) { %>    <p class="placeholder"><%= p.deleted === 'author' ? 'Deleted by the author.' : 'Removed by a moderator.' %></p>
 <% } else { %>    <div class="body"><%~ p.body_html %></div>
-    <p class="meta"><span class="num"><%= p.helpful %></span> found this helpful</p>
+    <footer class="post-foot meta">
+      <span><span class="num"><%= p.helpful %></span> found this helpful</span>
+<% const own = it.user && p.author_id === it.user.id; %><% if ((own && it.perms.has('post.edit.own')) || it.perms.has('post.edit.any')) { %>      <a href="/forum/p/<%= p.id %>/edit">Edit</a>
+<% } %><% if (own && it.perms.has('post.delete.own')) { %>      <form method="post" action="/forum/p/<%= p.id %>/delete" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="link">Delete</button></form>
+<% } else if (it.perms.has('post.delete.any')) { %>      <form method="post" action="/forum/p/<%= p.id %>/delete" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><label class="visually-hidden" for="reason-<%= p.id %>">Reason</label><input id="reason-<%= p.id %>" name="reason" type="text" required placeholder="Reason" maxlength="300"> <button type="submit" class="link">Remove</button></form>
+<% } %>    </footer>
 <% } %>  </li>
 <% } %>
 </ol>
 <%~ include('/_pager', { page: it.page, pages: it.pages, href: it.href }) %>
+<section class="reply" aria-labelledby="reply-h">
+  <h2 id="reply-h">Reply</h2>
+<% if (it.thread.locked && !it.perms.has('thread.lock')) { %>  <p class="alert">This thread is locked. New replies are closed.</p>
+<% } else if (!it.user) { %>  <p><a class="button" href="<%= it.loginHref %>">Sign in with Fatum Aura to reply</a></p>
+<% } else { %>  <form method="post" action="/forum/t/<%= it.thread.id %>/reply" class="compose" data-draft>
+    <input type="hidden" name="_csrf" value="<%= it.csrf %>">
+    <%~ include('/_editor', { body: '' }) %>
+    <p class="actions">
+      <button type="submit" class="button">Post reply</button>
+      <button type="submit" name="preview" value="1" class="button secondary" data-nojs-preview>Preview</button>
+    </p>
+  </form>
+<% } %></section>
