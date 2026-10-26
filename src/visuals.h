@@ -609,6 +609,34 @@ inline void remove_resolution_unlock() {
     resolution_log("resolutions: hook removed");
 }
 
+#if FATRAINER_DEV
+using LightColorFn = void(__fastcall*)(uintptr_t light, const float* rgb);
+const int LIGHT_LOG_LIMIT = 300;
+inline LightColorFn light_color_original = nullptr;
+inline uintptr_t light_log_base = 0;
+inline void light_log_off(const char*, ...) {}
+inline void (*light_log)(const char*, ...) = light_log_off;
+
+inline void __fastcall light_color_logger(uintptr_t light, const float* rgb) {
+    static std::mutex mx;
+    static std::set<std::pair<uintptr_t, uintptr_t>> seen;
+    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
+    {
+        std::lock_guard<std::mutex> l(mx);
+        if (seen.size() < LIGHT_LOG_LIMIT && seen.insert({light, caller}).second)
+            light_log("light: %llx color %.1f %.1f %.1f caller gamedll+%llx", (unsigned long long)light, rgb[0], rgb[1], rgb[2], (unsigned long long)(caller - light_log_base));
+    }
+    light_color_original(light, rgb);
+}
+
+inline bool install_light_logger(HMODULE gamedll) {
+    light_log_base = (uintptr_t)gamedll;
+    auto original = game::hook_import(gamedll, "engine_x64_rwdi.dll", "?SetColor@ILightObject@@QEAAXAEBVvec3@@@Z", (void*)light_color_logger);
+    if (original) light_color_original = (LightColorFn)original;
+    return original != nullptr;
+}
+#endif
+
 inline bool install_fov_hooks(HMODULE gamedll) {
     if (set_fov_original) return true;
     const char ENGINE_DLL[] = "engine_x64_rwdi.dll";

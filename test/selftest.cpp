@@ -957,6 +957,7 @@ int main(int argc, char** argv) {
         cheats::keep_throw_phase_times((uintptr_t)thrower, 1.0f);
         CHECK(!memcmp(thrower + cheats::THROW_PHASE_TIMES, times, sizeof times));
         cheats::vt_throw_controller = saved_vt;
+        CHECK(cheats::uv_flare_id("Throwable_Btz_Flare") && cheats::uv_flare_id("Throwable_ZaidFlare") && !cheats::uv_flare_id("Throwable_Smoke_Flare") && !cheats::uv_flare_id(nullptr));
     }
     CHECK(cheats::vt_throw_controller && cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
     {

@@ -42,6 +42,9 @@ inline const bool logf_wired = (cheats::logf_hook = logf, true);
 #endif
 inline const bool texts_log_wired = (visuals::texts_log = logf, true);
 inline const bool resolution_log_wired = (visuals::resolution_log = logf, true);
+#if FATRAINER_DEV
+inline const bool light_log_wired = (visuals::light_log = logf, true);
+#endif
 
 inline std::atomic<bool> g_open{false};
 inline DWORD g_last_scan = 0;

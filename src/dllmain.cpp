@@ -641,6 +641,9 @@ static void main_thread() {
     visuals::locate((uintptr_t)gamedll);
     logf("hud colors: %s, color hooks %d/5, hide hook %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll), visuals::install_opacity_hook(engine) ? "ok" : "missing");
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
+#if FATRAINER_DEV
+    logf("light logger: %s", visuals::install_light_logger(gamedll) ? "ok" : "not found");
+#endif
     visuals::locate_texts((uintptr_t)gamedll, engine);
     logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",
          visuals::messages_api.post && visuals::messages_api.game_global ? "ready" : "not found");
@@ -692,6 +695,9 @@ static void main_thread() {
     visuals::locate((uintptr_t)gamedll);
     logf("hud colors: %s, color hooks %d/5, hide hook %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll), visuals::install_opacity_hook(engine) ? "ok" : "missing");
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");
+#if FATRAINER_DEV
+    logf("light logger: %s", visuals::install_light_logger(gamedll) ? "ok" : "not found");
+#endif
     visuals::locate_texts((uintptr_t)gamedll, engine);
     logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",
          visuals::messages_api.post && visuals::messages_api.game_global ? "ready" : "not found");

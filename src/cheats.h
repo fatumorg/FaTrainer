@@ -796,14 +796,21 @@ inline void keep_melee_reach() {
 
 const size_t THROW_CONTROLLER = 0xc28, THROW_STATE = 0x38, THROW_PHASE_TIMES = 0x50;
 const int THROW_PHASE_COUNT = 6, THROW_IDLE = 0;
-inline const char UV_FLARE[] = "Throwable_Btz_Flare";
+inline const char* const UV_FLARES[] = {"Throwable_Btz_Flare", "Throwable_ZaidFlare"};
+
+inline bool uv_flare_id(const char* id) {
+    return id && std::any_of(std::begin(UV_FLARES), std::end(UV_FLARES), [&](const char* f) { return !strcmp(id, f); });
+}
+
+inline const char* hand_item_id(uintptr_t p, int hand) {
+    uintptr_t desc = hand_desc(p, hand);
+    const ItemInfo* info = desc && game::desc_alive(desc) ? game::str_at(rdv<uintptr_t>(desc + g.desc_name)) : nullptr;
+    return info ? info->id : nullptr;
+}
 
 inline bool holding_uv_flare(uintptr_t p) {
-    for (int h = 0; h < HANDS; h++) {
-        uintptr_t desc = hand_desc(p, h);
-        const ItemInfo* info = desc && game::desc_alive(desc) ? game::str_at(rdv<uintptr_t>(desc + g.desc_name)) : nullptr;
-        if (info && !strcmp(info->id, UV_FLARE)) return true;
-    }
+    for (int h = 0; h < HANDS; h++)
+        if (uv_flare_id(hand_item_id(p, h))) return true;
     return false;
 }
 
@@ -845,6 +852,27 @@ inline void keep_throw_phase_times(uintptr_t controller, float f) {
     }
 }
 
+const size_t THROW_START = 0x4c;
+const DWORD FLARE_LOG_MS = 250;
+const int FLARE_LOG_LINES = 200;
+
+inline void log_flare_throw(uintptr_t p, uintptr_t thrower, bool flare_on) {
+    static DWORD logged_at = 0;
+    static int lines = 0;
+    if (!p || lines >= FLARE_LOG_LINES || GetTickCount() - logged_at < FLARE_LOG_MS) return;
+    const char* ids[HANDS];
+    bool throwable = false;
+    for (int h = 0; h < HANDS; h++) ids[h] = hand_item_id(p, h), throwable |= ids[h] && strstr(ids[h], "Throwable") != nullptr;
+    bool busy = throw_busy(thrower);
+    if (!busy && !throwable) return;
+    float t[THROW_PHASE_COUNT];
+    for (int i = 0; i < THROW_PHASE_COUNT; i++) t[i] = rdv<float>(throw_phase_time_at(thrower, i));
+    logged_at = GetTickCount(), lines++;
+    logf_hook("flare: hands %s/%s/%s, state %d, start %.2f, phases %.2f %.2f %.2f %.2f %.2f %.2f, flare_on %d", ids[0] ? ids[0] : "-", ids[1] ? ids[1] : "-",
+              ids[2] ? ids[2] : "-", thrower ? rdv<int>(thrower + THROW_STATE, -1) : -1, thrower ? rdv<float>(thrower + THROW_START) : NAN, t[0], t[1], t[2], t[3], t[4],
+              t[5], (int)flare_on);
+}
+
 inline void speed_melee_anims() {
     float f = tweak_factor("melee_speed");
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
@@ -856,6 +884,7 @@ inline void speed_melee_anims() {
     bool flare_on = !on && flare_f != 1.0f && bind && holding_uv_flare(p);
     uintptr_t thrower = p ? rdv<uintptr_t>(p + THROW_CONTROLLER) : 0;
     keep_throw_phase_times(thrower, flare_on ? flare_f : 1.0f);
+    if (flare_f != 1.0f) log_flare_throw(p, thrower, flare_on);
     bool animate = (on && melee_busy(controller)) || (flare_on && throw_busy(thrower));
     float scale = on ? f : flare_f;
     keep_melee_durations(p, on ? f : 1.0f);
