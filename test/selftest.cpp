@@ -1480,6 +1480,24 @@ int main(int argc, char** argv) {
         config::cfg = kept;
     }
     {
+        const float cyan[3] = {0.0f, 1.0f, 0.89f}, white[3] = {1, 1, 1};
+        float hive[3] = {0.84f, 0.84f, 0.84f}, fill[3] = {0.84f, 0.17f, 0.26f};
+        visuals::tint_track(hive, cyan);
+        CHECK(fabsf(hive[0] - 0.84f) < 1e-4f && fabsf(hive[1] - 0.84f) < 1e-4f && fabsf(hive[2] - 0.84f) < 1e-4f);
+        visuals::tint_track(fill, cyan);
+        CHECK(fabsf(fill[1] - 0.84f) < 1e-3f && fabsf(fill[0] - 0.17f) < 1e-3f && fill[2] < fill[1] && fill[2] > fill[0]);
+        float grey[3] = {0.84f, 0.84f, 0.84f};
+        visuals::tint_track(grey, white);
+        CHECK(fabsf(grey[0] - 0.336f) < 1e-4f && grey[0] == grey[1] && grey[1] == grey[2]);
+        float black[3] = {0, 0, 0}, red[3] = {0.84f, 0.17f, 0.26f};
+        const float none[3] = {0, 0, 0};
+        visuals::tint_track(black, cyan);
+        visuals::tint_track(red, none);
+        CHECK(black[0] == 0 && black[1] == 0 && black[2] == 0 && !std::isnan(red[0]) && !std::isnan(red[1]) && !std::isnan(red[2]));
+        CHECK(visuals::track_element(visuals::part_named("HudZombieHiveCounter"), "I_Hive"));
+        CHECK(!visuals::track_element(visuals::part_named("HudZombieHiveCounter"), "I_Progress") && !visuals::track_element(visuals::part_named("HudStamina"), "I_Hive"));
+    }
+    {
         FakeElement health_bar{1, "I_HealthBar", visuals::UI_VIEW}, stamina_bar{1, "I_StaminaBar", visuals::UI_VIEW}, label{1, "T_Level", visuals::UI_TEXT};
         stamina_bar.color[0] = stamina_bar.original[0] = 0.75f;
         FakeElement stamina_bg{1, "StaminaBarBg", visuals::UI_VIEW};
@@ -1487,20 +1505,27 @@ int main(int argc, char** argv) {
         label.alpha = 0.3f;
         FakeElement health{1, "health_wrap", visuals::UI_NONE}, stamina{1, "HudStamina", visuals::UI_NONE}, root{1, "HUD_DI", visuals::UI_NONE};
         FakeElement radar{1, "HudRadar", visuals::UI_NONE}, radar_icon{1, "I_Icon", visuals::UI_VIEW};
+        FakeElement nests{1, "HudZombieHiveCounter", visuals::UI_NONE}, hive{1, "I_Hive", visuals::UI_VIEW}, fill{1, "I_Progress", visuals::UI_VIEW};
+        for (int c = 0; c < 3; c++) hive.color[c] = hive.original[c] = 0.84f;
+        fill.color[0] = fill.original[0] = 0.84f, fill.color[1] = fill.original[1] = 0.17f, fill.color[2] = fill.original[2] = 0.26f;
+        nests.children = {&hive, &fill};
         health.children = {&health_bar, &label};
         stamina.children = {&stamina_bg, &stamina_bar};
         radar.children = {&radar_icon};
-        root.children = {&health, &stamina, &radar};
+        root.children = {&health, &stamina, &radar, &nests};
         auto saved_ui = visuals::ui;
         auto saved_cfg = config::cfg;
         visuals::ui = {fake_children_count, fake_child, fake_get_color, fake_set_color, fake_get_color, fake_set_text_color, fake_name_of, fake_kind_of,
                        fake_vtable_of, fake_text_alpha, fake_get_opacity, fake_set_opacity, fake_shown};
         CHECK(!visuals::hud_found());
         visuals::find_hud((uintptr_t)&root);
-        CHECK(visuals::hud_found() && visuals::hud_elements() == 5 && !visuals::game_crosshair_shown());
+        CHECK(visuals::hud_found() && visuals::hud_elements() == 7 && !visuals::game_crosshair_shown());
         config::cfg.hud_tint = {true, {0.5f, 1.0f, 1.0f}};
         config::cfg.hud_parts["stamina"] = {true, {0.0f, 1.0f, 0.0f}};
+        config::cfg.hud_parts["nests"] = {true, {0.0f, 1.0f, 0.89f}};
         visuals::apply_hud();
+        CHECK(fabsf(hive.color[0] - 0.84f) < 1e-4f && fabsf(hive.color[1] - 0.84f) < 1e-4f);
+        CHECK(fill.color[0] < 0.01f && fabsf(fill.color[1] - 0.84f) < 1e-4f);
         CHECK(health_bar.color[0] == 0.5f && health_bar.color[1] == 1.0f && label.color[0] == 0.5f && label.written_alpha == 0.3f);
         CHECK(stamina_bar.color[0] == 0.0f && stamina_bar.color[1] == 1.0f);
         CHECK(stamina_bg.color[0] == 0.0f && fabsf(stamina_bg.color[1] - 0.15f) < 1e-6f);
@@ -1549,9 +1574,9 @@ int main(int argc, char** argv) {
         FakeElement late_icon{1, "I_Late", visuals::UI_VIEW};
         radar.children.push_back(&late_icon);
         visuals::walk_hud((uintptr_t)&root, -1, 0);
-        CHECK(visuals::hud_elements() == 6);
+        CHECK(visuals::hud_elements() == 8);
         visuals::walk_hud((uintptr_t)&root, -1, 0);
-        CHECK(visuals::hud_elements() == 6);
+        CHECK(visuals::hud_elements() == 8);
         config::cfg.hud_parts["radar"] = {true, {0.0f, 0.0f, 1.0f}};
         visuals::apply_hud();
         CHECK(late_icon.color[2] == 1.0f && late_icon.color[0] == 0.0f);

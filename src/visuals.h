@@ -35,6 +35,32 @@ inline void tint(float* c, const float color[3], float scale) {
     for (int k = 0; k < 3; k++) c[k] = color[k] / peak * bright;
 }
 
+const float TRACK_GREY_SATURATION = 0.15f, TRACK_GREY_DIM = 0.4f;
+
+inline float saturation_of(const float c[3]) {
+    float peak = std::max({c[0], c[1], c[2]}), low = std::min({c[0], c[1], c[2]});
+    return peak > 0 ? (peak - low) / peak : 0;
+}
+
+inline float hue_of(const float c[3]) {
+    float peak = std::max({c[0], c[1], c[2]}), span = peak - std::min({c[0], c[1], c[2]});
+    if (span <= 0) return 0;
+    float h = peak == c[0] ? std::fmod((c[1] - c[2]) / span, 6.0f) : peak == c[1] ? (c[2] - c[0]) / span + 2 : (c[0] - c[1]) / span + 4;
+    return h < 0 ? h + 6 : h;
+}
+
+inline void tint_track(float* c, const float color[3]) {
+    if (saturation_of(color) < TRACK_GREY_SATURATION) {
+        for (int k = 0; k < 3; k++) c[k] *= TRACK_GREY_DIM;
+        return;
+    }
+    float value = std::max({c[0], c[1], c[2]}), low = value * (1 - saturation_of(c)), h = hue_of(color);
+    float rise = low + (value - low) * (1 - std::fabs(std::fmod(h, 2.0f) - 1));
+    int sector = (int)h % 6;
+    const float table[6][3] = {{value, rise, low}, {rise, value, low}, {low, value, rise}, {low, rise, value}, {rise, low, value}, {value, low, rise}};
+    for (int k = 0; k < 3; k++) c[k] = table[sector][k];
+}
+
 inline bool hunter_glow_var(const char* s) { return !strncmp(s, "v3_btz_zombie_v", 15) && !strstr(s, "not_drained"); }
 
 struct SurvivorGlow { const char* key; const char* label; std::vector<const char*> vars; };
@@ -197,7 +223,7 @@ struct HudNode {
     uintptr_t element, vtable, at, engine, engine_vtable;
     int kind, part;
     float original[3], written[3];
-    bool wrote, dead;
+    bool wrote, dead, track;
 };
 
 struct HudRoot {
@@ -233,6 +259,8 @@ inline bool ui_alive(uintptr_t element) {
     return element && ui.vtable_of(element) && (!engine || rdv<uintptr_t>(engine));
 }
 
+inline bool track_element(int part, const std::string& id) { return part >= 0 && part == part_named("HudZombieHiveCounter") && id == "I_Hive"; }
+
 inline void walk_hud(uintptr_t element, int part, int depth) {
     if (depth > HUD_MAX_DEPTH || !ui.children_count || !ui_alive(element)) return;
     int n = ui.children_count(element);
@@ -253,7 +281,7 @@ inline void walk_hud(uintptr_t element, int part, int depth) {
             int kind = ui.kind_of(c, &at);
             if (kind != UI_NONE) {
                 uintptr_t engine = rdv<uintptr_t>(at + UI_ENGINE_OBJECT);
-                HudNode node{c, ui.vtable_of(c), at, engine, engine ? rdv<uintptr_t>(engine) : 0, kind, p, {}, {}, false, false};
+                HudNode node{c, ui.vtable_of(c), at, engine, engine ? rdv<uintptr_t>(engine) : 0, kind, p, {}, {}, false, false, track_element(p, ui.name_of(c))};
                 (kind == UI_TEXT ? ui.get_text_color : ui.get_color)(at, node.original);
                 if (kind == UI_TEXT && engine) {
                     uint8_t flags = rdv<uint8_t>(engine + TEXT_FLAGS);
@@ -370,7 +398,9 @@ inline void wanted_color(const HudNode& n, const float from[3], float out[3]) {
     memcpy(out, from, 3 * sizeof(float));
     const config::HudColor* own = part_color(n.part);
     const auto& tint = config::cfg.hud_tint;
-    if (own || tint.on) visuals::tint(out, own ? own->color : tint.color, 1.0f);
+    if (!own && !tint.on) return;
+    if (n.track) visuals::tint_track(out, own ? own->color : tint.color);
+    else visuals::tint(out, own ? own->color : tint.color, 1.0f);
 }
 
 inline bool adopt_game_color(uintptr_t engine, float rgb[3]) {
