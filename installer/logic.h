@@ -192,6 +192,23 @@ inline std::string with_ini_value(const std::string& text, const std::string& ke
     return out;
 }
 
+struct CheatEngineInfo { std::string version, url, sha256; long long size = 0; };
+
+inline CheatEngineInfo parse_cheat_engine_info(const std::string& text) {
+    CheatEngineInfo info{ini_value(text, "version"), ini_value(text, "url"), ini_value(text, "sha256"), atoll(ini_value(text, "size").c_str())};
+    bool version_ok = !info.version.empty() && info.version.find_first_not_of("0123456789.") == std::string::npos;
+    bool hash_ok = info.sha256.size() == 64 && info.sha256.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+    if (!version_ok || !hash_ok || info.size <= 0 || info.url.rfind("https://", 0) != 0) return {};
+    return info;
+}
+
+inline bool cheat_engine_file_ok(const std::string& data, const CheatEngineInfo& info) {
+    if (info.version.empty() || (long long)data.size() != info.size) return false;
+    std::string want = info.sha256;
+    std::transform(want.begin(), want.end(), want.begin(), [](unsigned char c) { return (char)tolower(c); });
+    return sha256_hex(data) == want;
+}
+
 struct Announcement { std::string id, title, text; };
 
 inline Announcement parse_announcement(std::string file) {

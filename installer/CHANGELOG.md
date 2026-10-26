@@ -1,5 +1,9 @@
 # FaTrainer launcher changelog
 
+## 2.5
+
+- New: Start Cheat Engine. Tick it and Play also starts Cheat Engine 7.7 with the game, inside the game's own Proton prefix on Linux, and it attaches to Dying Light by itself, also after a restart. FaTrainer downloads the official installer in the background, checks it and installs it the first time the game starts. Cheat Engine closes when the game closes.
+
 ## 2.4
 
 - New: FaTrainer notices when Dying Light is running. Restart with FaTrainer closes the game and starts it again with the trainer, Close Dying Light only closes it.

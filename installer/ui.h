@@ -94,6 +94,7 @@ inline bool button(const char* id, const std::string& text, ImVec2 size, Kind ki
 
 enum class Fetch { loading, ready, failed };
 enum class Job { idle, working, done, failed };
+enum class CheatEngineJob { idle, working, ready, failed };
 
 struct Model {
     std::mutex mx;
@@ -118,6 +119,10 @@ struct Model {
     bool allow_older = false, beta = false, visuals = false, game_running = false;
     std::string installed_edition;
     logic::Announcement announcement;
+    bool cheat_engine = false;
+    CheatEngineJob ce_job = CheatEngineJob::idle;
+    float ce_progress = 0;
+    std::string ce_status;
 };
 inline Model M;
 
@@ -165,6 +170,7 @@ inline void refresh_installed() {
     std::string text = !M.game.empty() && fs::exists(ini, ec) ? platform::read_file(ini) : "";
     bool beta = logic::ini_value(text, "beta") == "1";
     M.allow_older = logic::ini_value(text, "allow_older") == "1";
+    M.cheat_engine = logic::ini_value(text, "cheat_engine") == "1";
     if (beta != M.beta) M.beta = beta, M.refetch = true;
 }
 
@@ -239,6 +245,66 @@ inline void finish(Job job, const std::string& message) {
 inline std::string replace_hint() {
     return platform::LINUX ? "Check that you can write to the game folder."
                            : "Close Dying Light if it is running. If it is not, right-click FaTrainer and choose Run as administrator.";
+}
+
+inline void cheat_engine_result(CheatEngineJob job, const std::string& status) {
+    std::lock_guard<std::mutex> l(M.mx);
+    M.ce_job = job, M.ce_status = status;
+}
+
+inline void ensure_cheat_engine() {
+    fs::path game;
+    {
+        std::lock_guard<std::mutex> l(M.mx);
+        if (!M.cheat_engine || M.visuals || M.game.empty() || M.ce_job != CheatEngineJob::idle) return;
+        M.ce_job = CheatEngineJob::working, M.ce_progress = 0, M.ce_status = "Checking Cheat Engine";
+        game = M.game;
+    }
+    std::thread([game] {
+        const unsigned long long LIMIT = 128ull << 20;
+        std::string text, error, data;
+        if (!platform::net::get_text(CHEAT_ENGINE_INFO_URL, text, error)) return cheat_engine_result(CheatEngineJob::failed, "Cheat Engine is not available right now: " + error);
+        logic::CheatEngineInfo info = logic::parse_cheat_engine_info(text);
+        if (info.version.empty()) return cheat_engine_result(CheatEngineJob::failed, "Cheat Engine is not available right now. Play still starts the game.");
+        std::error_code ec;
+        fs::path dir = game / CHEAT_ENGINE_DIR, target = dir / ("CheatEngine" + info.version + ".exe"), info_file = dir / CHEAT_ENGINE_INFO_FILE;
+        bool have = fs::exists(target, ec) && logic::cheat_engine_file_ok(platform::read_file(target), info);
+        if (!have) {
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                M.ce_status = "Downloading Cheat Engine " + info.version;
+            }
+            bool ok = platform::net::get(info.url, [&](const char* d, size_t n, unsigned long long) {
+                data.append(d, n);
+                std::lock_guard<std::mutex> l(M.mx);
+                M.ce_progress = std::min(1.0f, (float)data.size() / (float)info.size);
+                M.ce_status = "Downloading Cheat Engine " + info.version + ", " + std::to_string((int)(M.ce_progress * 100)) + "%";
+                return data.size() <= LIMIT;
+            }, error);
+            if (!ok) return cheat_engine_result(CheatEngineJob::failed, "Cheat Engine download failed: " + error);
+            if (!logic::cheat_engine_file_ok(data, info)) return cheat_engine_result(CheatEngineJob::failed, "The Cheat Engine download did not match its checksum, so it was not kept.");
+            fs::create_directories(dir, ec);
+            fs::path temp = target;
+            temp += ".download";
+            {
+                std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+                out.write(data.data(), (std::streamsize)data.size());
+                if (!out) return cheat_engine_result(CheatEngineJob::failed, "Could not write Cheat Engine to the game folder. " + replace_hint());
+            }
+            fs::rename(temp, target, ec);
+            if (ec) return cheat_engine_result(CheatEngineJob::failed, "Could not write Cheat Engine to the game folder. " + replace_hint());
+        }
+        if (platform::read_file(info_file) != text) {
+            std::ofstream out(info_file, std::ios::binary | std::ios::trunc);
+            out << text;
+            if (!out) return cheat_engine_result(CheatEngineJob::failed, "Could not write Cheat Engine to the game folder. " + replace_hint());
+        }
+        for (const auto& entry : fs::directory_iterator(dir, ec)) {
+            std::string name = entry.path().filename().string();
+            if (entry.path() != target && name.rfind("CheatEngine", 0) == 0 && name != CHEAT_ENGINE_INFO_FILE) fs::remove(entry.path(), ec);
+        }
+        cheat_engine_result(CheatEngineJob::ready, "Cheat Engine " + info.version + " ready");
+    }).detach();
 }
 
 inline void start_play() {
@@ -317,6 +383,14 @@ inline void start_play() {
                 written = M.game != game || M.allow_older || set_ini_flag("allow_older", true);
             }
             if (!written) return finish(Job::failed, "Could not write fatrainer.ini. " + replace_hint());
+        }
+        for (;;) {
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                if (visuals || !M.cheat_engine || M.ce_job != CheatEngineJob::working) break;
+                M.step = "Downloading Cheat Engine", M.progress = M.ce_progress;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
         fs::path arm = game / LAUNCH_FILE;
         bool armed = !visuals && !newer_version(FIRST_ARMED_VERSION, installed);
@@ -423,6 +497,8 @@ inline void uninstall() {
         return;
     }
     bool restored = fs::exists(backup, ec) && (fs::rename(backup, target, ec), !ec);
+    fs::remove_all(M.game / CHEAT_ENGINE_DIR, ec);
+    if (M.ce_job != CheatEngineJob::working) M.ce_job = CheatEngineJob::idle, M.ce_status.clear();
     refresh_installed();
     M.job = Job::idle;
     M.message = restored ? "FaTrainer was removed from the game folder and the xinput1_3.dll that was there before is back." : "FaTrainer was removed from the game folder. Your fatrainer.ini settings stay there. Press Play to put it back.";
@@ -723,6 +799,7 @@ inline void detail(float width) {
         refetch = M.refetch && M.fetch != Fetch::loading;
     }
     if (refetch) fetch_release();
+    ensure_cheat_engine();
     static bool self_update_started = false;
     bool must_update;
     {
@@ -743,6 +820,7 @@ inline void detail(float width) {
         view.installer_update = M.installer_update;
         view.releases = M.releases, view.chosen = M.chosen, view.beta = M.beta, view.on_beta = M.on_beta;
         view.visuals = M.visuals, view.installed_edition = M.installed_edition, view.game_running = M.game_running;
+        view.cheat_engine = M.cheat_engine, view.ce_job = M.ce_job, view.ce_status = M.ce_status;
     }
     bool found = platform::is_game_dir(view.game);
     bool ready = view.fetch == Fetch::ready;
@@ -883,7 +961,13 @@ inline void detail(float width) {
         ImVec2 visuals_box{beta_box.x + S(232), beta_box.y};
         bool visuals = view.visuals;
         if (check_box(dl, "visuals", "Visuals only", visuals_box, visuals, found)) set_visuals(!visuals);
-        ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10)});
+        bool cheat_engine = view.cheat_engine;
+        if (!view.visuals && check_box(dl, "cheat_engine", "Start Cheat Engine", {beta_box.x, beta_box.y + S(44)}, cheat_engine, found)) {
+            toggle_ini_flag("cheat_engine", !cheat_engine);
+            std::lock_guard<std::mutex> l(M.mx);
+            if (M.ce_job == CheatEngineJob::failed || !M.cheat_engine) M.ce_job = CheatEngineJob::idle, M.ce_status.clear();
+        }
+        ImGui::SetCursorScreenPos({a.x, a.y + S(14) + S(44) + S(10) + (view.visuals ? 0 : S(44))});
         bool older = !view.chosen.tag.empty() && ready && newer_version(view.latest.version, view.chosen.version);
         bool unarmed = !view.chosen.tag.empty() && newer_version(FIRST_ARMED_VERSION, view.chosen.version);
         std::string note = view.visuals ? "Visuals only installs the Visuals Version: your UV light, Night Hunter glow, HUD colors and texts, no cheats. It never connects to the internet and also runs when you start Dying Light from Steam."
@@ -892,6 +976,11 @@ inline void detail(float width) {
                            : beta  ? "Play uses the beta build when it is newer than the latest release. Beta builds are what is being worked on right now and may have bugs."
                                    : "Play always uses the newest version. Pick an older one here, or tick Beta builds for the version being worked on right now, which may have bugs.";
         muted_note(width, note.c_str());
+        if (!view.visuals && view.cheat_engine) {
+            ImGui::Dummy({0, S(4)});
+            muted_note(width, "Play also starts Cheat Engine in the game's Proton prefix, attached to Dying Light. It is downloaded from Cheat Engine's own servers and installs itself the first time the game starts.");
+            if (!view.ce_status.empty()) muted_note(width, view.ce_status.c_str());
+        }
         ImGui::Dummy({0, S(8)});
     }
 

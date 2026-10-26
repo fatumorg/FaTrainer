@@ -200,6 +200,20 @@ int main(int argc, char** argv) {
     CHECK(info.version == "2.1" && info.sha256 == "ab12" && info.size == 2598750);
     CHECK(!strcmp(VERSION, FATRAINER_VERSION));
     CHECK(logic::sha256_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    {
+        std::string good = "version=7.7\r\nurl=https://d1dj9aohuk02ls.cloudfront.net/f/CheatEngine/2129/CheatEngine77.exe\nsize=34690856\nsha256=cf0f4b6002555677984233c95856683959be83a5def3dc12175a8296eb22676b\n";
+        auto info = logic::parse_cheat_engine_info(good);
+        CHECK(info.version == "7.7" && info.size == 34690856 && info.url.rfind("https://", 0) == 0 && info.sha256.size() == 64);
+        std::string hash = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        CHECK(logic::parse_cheat_engine_info("version=7.7\nurl=http://x/y.exe\nsize=3\nsha256=" + hash).version.empty());
+        CHECK(logic::parse_cheat_engine_info("version=7.7\nurl=https://x/y.exe\nsize=0\nsha256=" + hash).version.empty());
+        CHECK(logic::parse_cheat_engine_info("version=7.7\nurl=https://x/y.exe\nsize=3\nsha256=" + hash.substr(1)).version.empty());
+        CHECK(logic::parse_cheat_engine_info("version=7.7\nurl=https://x/y.exe\nsize=3\n").version.empty());
+        CHECK(logic::parse_cheat_engine_info("version=7.7/../x\nurl=https://x/y.exe\nsize=3\nsha256=" + hash).version.empty());
+        CHECK(logic::parse_cheat_engine_info("").version.empty() && logic::parse_cheat_engine_info("<html>404</html>").version.empty());
+        logic::CheatEngineInfo abc{"1", "https://x/y.exe", hash, 3};
+        CHECK(logic::cheat_engine_file_ok("abc", abc) && !logic::cheat_engine_file_ok("abd", abc) && !logic::cheat_engine_file_ok("abcd", abc));
+    }
     CHECK(logic::game_process("Z:\\mnt\\data\\Gaming\\Steam\\steamapps\\common\\Dying Light\\DyingLightGame.exe") && logic::game_process("DyingLightGame.exe"));
     CHECK(logic::game_process("/home/x/.steam/steamapps/common/Dying Light/dyinglightgame.EXE") && !logic::game_process("grep DyingLightGame.exe"));
     CHECK(!logic::game_process("/usr/bin/steam") && !logic::game_process("") && !logic::game_process("C:\\DyingLightGame.exe.bak"));

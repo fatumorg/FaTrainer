@@ -7,7 +7,7 @@
 
 #define FATRAINER_VERSION "2.5 b25"
 #define FATRAINER_NAME "Survivor Update"
-#define INSTALLER_VERSION "2.4"
+#define INSTALLER_VERSION "2.5"
 #if FATRAINER_VISUALS
 #define FATRAINER_EDITION "Visuals Version"
 #define FATRAINER_EDITION_CAPS "VISUALS VERSION"
@@ -25,6 +25,9 @@ inline const char* RELEASE_TAG_DOWNLOADS = "https://github.com/fatumorg/FaTraine
 inline const char* RELEASES_API = "https://api.github.com/repos/fatumorg/FaTrainer/releases?per_page=100";
 inline const char* BETA_DOWNLOADS = "https://github.com/fatumorg/FaTrainer/releases/download/beta/";
 inline const char* INSTALLER_DOWNLOADS = "https://github.com/fatumorg/FaTrainer/releases/download/installer/";
+inline const char* CHEAT_ENGINE_INFO_URL = "https://raw.githubusercontent.com/fatumorg/FaTrainer/main/cheatengine.txt";
+inline const char* CHEAT_ENGINE_DIR = "fatrainer_cheatengine";
+inline const char* CHEAT_ENGINE_INFO_FILE = "cheatengine.txt";
 inline const char* ANNOUNCEMENT_URL = "https://raw.githubusercontent.com/fatumorg/FaTrainer/main/announcement.txt";
 inline const char* LAUNCH_FILE = "fatrainer.launch";
 inline const char* FIRST_ARMED_VERSION = "2.3";
