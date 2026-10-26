@@ -1,0 +1,26 @@
+.forum-nav { border-bottom: 1px solid var(--line); background: var(--raised); }
+.forum-nav .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; min-height: 48px; padding-block: 6px; }
+.forum-nav a, .forum-nav .link { color: var(--soft); text-decoration: none; font-size: 0.95rem; }
+.forum-nav a:hover, .forum-nav a:focus-visible, .forum-nav .link:hover { color: var(--text); text-decoration: underline; }
+.forum-nav .spacer { flex: 1; }
+.forum-nav .count { display: inline-block; min-width: 1.4em; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font: 600 0.75rem/1.5 var(--mono); text-align: center; }
+.inline { display: inline; }
+.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.forum-main { padding-block: clamp(24px, 4vw, 48px); min-height: 60vh; }
+.forum-main:focus { outline: none; }
+.forum-head { margin-bottom: 28px; }
+.forum-head h1 { font-family: var(--display); font-size: clamp(2rem, 4vw, 3rem); line-height: 1; letter-spacing: -0.02em; margin: 0 0 10px; }
+.meta { color: var(--muted); font-size: 0.9rem; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.categories, .threads, .posts, .subcategories { list-style: none; margin: 0; padding: 0; }
+.category { padding: 18px 0; border-top: 1px solid var(--line); }
+.category h2 { margin: 0 0 4px; font-size: 1.25rem; }
+.category h2 a { color: var(--text); }
+.subcategories { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.button.small { padding: 6px 12px; font-size: 0.9rem; }
+.forum-foot { border-top: 1px solid var(--line); padding-block: 24px; }
+.forum-foot .wrap { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.forum-foot a { color: var(--soft); font-size: 0.9rem; }
+@media (max-width: 720px) {
+  .forum-nav .wrap { gap: 4px 12px; }
+}

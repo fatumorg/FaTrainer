@@ -1,0 +1,18 @@
+<% layout('layout') %>
+<div class="forum-head">
+  <h1>Forum</h1>
+  <p class="meta">Questions, ideas, configs and announcements for FaTrainer | Dying Light. Anyone can read; sign in with Fatum Aura to post.</p>
+<% if (it.user) { %>  <p><a class="button" href="/forum/new">Start a thread</a></p>
+<% } %></div>
+<ul class="categories">
+<% for (const c of it.categories) { %>
+  <li class="category">
+    <h2><a href="/forum/c/<%= c.slug %>"><%= c.name %></a></h2>
+    <p><%= c.description %></p>
+    <p class="meta"><span class="num"><%= c.threads %></span> <%= c.threads === 1 ? 'thread' : 'threads' %><% if (c.last_post_at) { %> · last activity <time datetime="<%= new Date(c.last_post_at).toISOString() %>"><%= new Date(c.last_post_at).toISOString().slice(0, 10) %></time><% } %></p>
+<% if (c.children.length) { %>    <ul class="subcategories">
+<% for (const s of c.children) { %>      <li><a href="/forum/c/<%= s.slug %>"><%= s.name %></a></li>
+<% } %>    </ul>
+<% } %>  </li>
+<% } %>
+</ul>

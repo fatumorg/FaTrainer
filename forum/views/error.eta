@@ -1,0 +1,7 @@
+<% layout('layout') %>
+<div class="forum-head">
+  <p class="meta">Error <%= it.status %></p>
+  <h1><%= it.title %></h1>
+  <p><%= it.message || (it.status === 404 ? 'The address may be mistyped, or the thread was removed.' : it.status === 403 ? 'You do not have permission to do that.' : 'Try again in a moment. If it keeps happening, write to contact@fatum.cc.') %></p>
+  <p><a class="button" href="/forum">Back to the forum</a></p>
+</div>

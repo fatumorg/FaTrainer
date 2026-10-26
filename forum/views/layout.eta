@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="<%= it.theme %>">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= it.title %> | FaTrainer Forum</title>
+<meta name="description" content="<%= it.description %>">
+<% if (it.canonical) { %><link rel="canonical" href="<%= it.site.appUrl %><%= it.canonical %>">
+<% } %><% if (it.noindex || it.user) { %><meta name="robots" content="noindex">
+<% } %><meta property="og:type" content="website">
+<meta property="og:site_name" content="FaTrainer Forum">
+<meta property="og:title" content="<%= it.title %> | FaTrainer Forum">
+<meta property="og:description" content="<%= it.description %>">
+<meta property="og:image" content="<%= it.site.appUrl %>/forum/static/og-1200x630.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#121110">
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/style.css?v=12">
+<link rel="stylesheet" href="/forum/static/css/forum.css?v=1">
+</head>
+<body class="forum">
+<a class="skip" href="#content">Skip to content</a>
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="/">FaTrainer</a>
+    <nav aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/dying-light/">Dying Light</a>
+      <a href="/forum" aria-current="<%= it.path.startsWith('/forum') ? 'page' : 'false' %>">Forum</a>
+    </nav>
+  </div>
+</header>
+<nav class="forum-nav" aria-label="Forum">
+  <div class="wrap">
+    <a href="/forum">Categories</a>
+    <a href="/forum/search">Search</a>
+    <a href="/forum/tags">Tags</a>
+<% if (it.user) { %>
+    <a href="/forum/notifications">Notifications<% if (it.unread) { %> <span class="count"><%= it.unread %></span><% } %></a>
+    <a href="/forum/saved">Saved</a>
+    <a href="/forum/watching">Watching</a>
+<% if (it.perms.has('report.view')) { %>    <a href="/forum/mod">Moderation</a>
+<% } %><% if (it.perms.has('category.manage') || it.perms.has('role.assign')) { %>    <a href="/forum/admin">Admin</a>
+<% } %>    <span class="spacer"></span>
+    <a href="/forum/u/<%= encodeURIComponent(it.user.username) %>" class="me"><%= it.user.username %></a>
+    <a href="/forum/settings">Settings</a>
+    <form method="post" action="/forum/auth/logout" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="link">Sign out</button></form>
+<% } else { %>
+    <span class="spacer"></span>
+    <a class="button small" href="<%= it.loginHref %>">Sign in with Fatum Aura</a>
+<% } %>
+  </div>
+</nav>
+<main id="content" class="forum-main" tabindex="-1">
+  <div class="wrap">
+<%~ it.body %>
+  </div>
+</main>
+<footer class="forum-foot">
+  <div class="wrap">
+    <a href="/forum/guidelines">Guidelines</a>
+    <a href="/forum/report">Report content</a>
+    <a href="/legal.html">Privacy, contact and rules</a>
+    <a href="/prawne.html" lang="pl">Wersja polska (wiążąca)</a>
+    <a href="mailto:contact@fatum.cc">contact@fatum.cc</a>
+  </div>
+</footer>
+<% for (const src of it.scripts || []) { %><script src="<%= src %>" defer></script>
+<% } %></body>
+</html>

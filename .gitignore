@@ -17,4 +17,5 @@ nexus/
 .zig-cache/
 dist/
 docs/
-.superpowers/
+.superpowers/node_modules/
+.env
