@@ -21,6 +21,28 @@
 .forum-foot { border-top: 1px solid var(--line); padding-block: 24px; }
 .forum-foot .wrap { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 .forum-foot a { color: var(--soft); font-size: 0.9rem; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 16px; font-size: 0.95rem; }
+.filters a { color: var(--soft); }
+.filters a[aria-current] { color: var(--text); font-weight: 600; text-decoration-color: var(--accent); }
+.thread-row { padding: 14px 0; border-top: 1px solid var(--line); }
+.thread-row h2 { margin: 0 0 4px; font-size: 1.1rem; }
+.thread-row h2 a { color: var(--text); }
+.marker { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 0.8rem; color: var(--soft); }
+.marker.solved { border-color: var(--accent); color: var(--text); }
+.tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--raised); font-size: 0.8rem; }
+.author { font-weight: 600; }
+.author.gone { font-weight: 400; font-style: italic; color: var(--muted); }
+.post { padding: 18px 0; border-top: 1px solid var(--line); }
+.post.accepted { border-left: 3px solid var(--accent); padding-left: 14px; }
+.post-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 8px; }
+.post .body { overflow-wrap: anywhere; }
+.post .body pre { overflow-x: auto; padding: 12px; border-radius: 4px; background: var(--raised); }
+.placeholder { color: var(--muted); font-style: italic; }
+.empty { padding: 28px 0; border-top: 1px solid var(--line); }
+.bio { max-width: 60ch; white-space: pre-line; }
+.pager { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
+.pager a, .pager span { min-width: 2.2em; padding: 4px 8px; text-align: center; }
+.pager a[aria-current] { background: var(--accent); color: var(--accent-ink); border-radius: 4px; text-decoration: none; }
 @media (max-width: 720px) {
   .forum-nav .wrap { gap: 4px 12px; }
 }

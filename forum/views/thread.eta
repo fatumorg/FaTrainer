@@ -1,0 +1,28 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a> / <a href="/forum/c/<%= it.thread.category_slug %>"><%= it.thread.category_name %></a></p>
+  <h1><%= it.thread.title %></h1>
+  <p class="meta">
+<% if (it.thread.pinned) { %>    <span class="marker">Pinned</span>
+<% } %><% if (it.thread.locked) { %>    <span class="marker">Locked</span>
+<% } %><% if (it.thread.solved_post_id) { %>    <span class="marker solved">Solved</span>
+<% } %>    Started by <%~ include('/_author', { name: it.thread.author }) %> on <time datetime="<%= it.iso(it.thread.created_at) %>"><%= it.day(it.thread.created_at) %></time>
+<% for (const g of it.thread.tags) { %>    <a class="tag" href="/forum/tags/<%= g.slug %>"><%= g.name %></a>
+<% } %>  </p>
+</div>
+<ol class="posts">
+<% for (const p of it.posts) { %>
+  <li class="post<%= p.id === it.thread.solved_post_id ? ' accepted' : '' %>" id="p<%= p.id %>">
+    <header class="post-head">
+      <%~ include('/_author', { name: p.author }) %>
+      <a class="meta" href="#p<%= p.id %>"><time datetime="<%= it.iso(p.created_at) %>"><%= it.day(p.created_at) %></time></a>
+<% if (p.edited_at && !p.deleted) { %>      <span class="meta">edited</span>
+<% } %><% if (p.id === it.thread.solved_post_id) { %>      <span class="marker solved">Accepted answer</span>
+<% } %>    </header>
+<% if (p.deleted) { %>    <p class="placeholder"><%= p.deleted === 'author' ? 'Deleted by the author.' : 'Removed by a moderator.' %></p>
+<% } else { %>    <div class="body"><%~ p.body_html %></div>
+    <p class="meta"><span class="num"><%= p.helpful %></span> found this helpful</p>
+<% } %>  </li>
+<% } %>
+</ol>
+<%~ include('/_pager', { page: it.page, pages: it.pages, href: it.href }) %>

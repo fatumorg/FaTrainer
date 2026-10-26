@@ -1,0 +1,8 @@
+<% if (it.pages > 1) { %>
+<nav class="pager" aria-label="Pages">
+<% if (it.page > 1) { %>  <a href="<%= it.href(it.page - 1) %>" rel="prev">Previous</a>
+<% } %><% for (let n = 1; n <= it.pages; n++) { %><% if (n === 1 || n === it.pages || Math.abs(n - it.page) <= 2) { %>  <a href="<%= it.href(n) %>"<% if (n === it.page) { %> aria-current="page"<% } %>><%= n %></a>
+<% } else if (Math.abs(n - it.page) === 3) { %>  <span aria-hidden="true">…</span>
+<% } %><% } %><% if (it.page < it.pages) { %>  <a href="<%= it.href(it.page + 1) %>" rel="next">Next</a>
+<% } %></nav>
+<% } %>

@@ -3,6 +3,7 @@ const express = require("express");
 const { securityHeaders } = require("fatum-kit/security");
 const { createRenderer } = require("./views.js");
 const { permissionsFor, promoteOwner } = require("./permissions.js");
+const { browseRoutes } = require("./routes/browse.js");
 
 function createApp({ config, pool, auth }) {
   const app = express();
@@ -23,17 +24,7 @@ function createApp({ config, pool, auth }) {
     next();
   });
 
-  forum.get("/", async (req, res) => {
-    const { rows } = await pool.query(
-      `SELECT c.id, c.slug, c.name, c.description, c.parent_id,
-              count(t.id) FILTER (WHERE t.deleted_at IS NULL)::int AS threads,
-              max(t.last_post_at) FILTER (WHERE t.deleted_at IS NULL) AS last_post_at
-       FROM categories c LEFT JOIN threads t ON t.category_id = c.id
-       GROUP BY c.id ORDER BY c.position, c.id`,
-    );
-    const top = rows.filter((c) => !c.parent_id).map((c) => ({ ...c, children: rows.filter((s) => s.parent_id === c.id) }));
-    render(req, res, "index", { title: "Forum", categories: top });
-  });
+  forum.use(browseRoutes({ pool, render }));
 
   forum.use("/api", (req, res) => res.status(404).json({ error: "NOT_FOUND" }));
   forum.use((req, res) => render(req, res, "error", { title: "Page not found", status: 404, noindex: true }, 404));

@@ -1,0 +1,25 @@
+<% layout('/layout') %>
+<div class="forum-head profile">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1><%= it.user.username %></h1>
+  <p class="meta">
+<% if (it.user.role) { %>    <span class="marker"><%= it.user.role === 'administrator' ? 'Administrator' : 'Moderator' %></span>
+<% } %><% if (it.user.joined_at) { %>    Joined the forum on <time datetime="<%= it.iso(it.user.joined_at) %>"><%= it.day(it.user.joined_at) %></time> ·
+<% } %>    <span class="num"><%= it.user.solved %></span> solved <%= it.user.solved === 1 ? 'answer' : 'answers' %>
+  </p>
+<% if (it.user.bio) { %>  <p class="bio"><%= it.user.bio %></p>
+<% } %></div>
+<h2>Threads and posts</h2>
+<% if (!it.posts.length) { %>
+<p class="empty">No posts yet.</p>
+<% } else { %>
+<ul class="threads">
+<% for (const p of it.posts) { %>
+  <li class="thread-row">
+    <a href="/forum/t/<%= p.thread_id %>/<%= p.slug %>#p<%= p.id %>"><%= p.title %></a>
+    <span class="meta"><%= p.started ? 'started' : 'replied' %> on <time datetime="<%= it.iso(p.created_at) %>"><%= it.day(p.created_at) %></time></span>
+  </li>
+<% } %>
+</ul>
+<%~ include('/_pager', { page: it.page, pages: it.pages, href: it.href }) %>
+<% } %>

@@ -1,0 +1,38 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a></p>
+  <h1><%= it.category.name %></h1>
+  <p><%= it.category.description %></p>
+  <p><a class="button" href="/forum/new?category=<%= it.category.slug %>"><%= it.category.slug === 'qa' ? 'Ask a question' : 'Start a thread' %></a></p>
+</div>
+<nav class="filters" aria-label="Sort and filter">
+<% for (const [key, label] of Object.entries(it.sorts)) { %>  <a href="<%= it.filterHref({ sort: key === 'activity' ? undefined : key, page: undefined }) %>"<% if ((it.filters.sort || 'activity') === key) { %> aria-current="true"<% } %>><%= label %></a>
+<% } %><% if (it.category.slug === 'qa') { %>  <a href="<%= it.filterHref({ solved: it.filters.solved === 'yes' ? undefined : 'yes' }) %>"<% if (it.filters.solved === 'yes') { %> aria-current="true"<% } %>>Solved</a>
+  <a href="<%= it.filterHref({ solved: it.filters.solved === 'no' ? undefined : 'no' }) %>"<% if (it.filters.solved === 'no') { %> aria-current="true"<% } %>>Unsolved</a>
+<% } %><% if (it.user) { %>  <a href="<%= it.filterHref({ mine: it.filters.mine ? undefined : '1' }) %>"<% if (it.filters.mine) { %> aria-current="true"<% } %>>My threads</a>
+<% } %><% if (it.filters.tag) { %>  <a href="<%= it.filterHref({ tag: undefined }) %>">Tag: <%= it.filters.tag %> (clear)</a>
+<% } %></nav>
+<% if (!it.list.items.length) { %>
+<div class="empty">
+  <p>No threads here yet. Start the first one.</p>
+  <p><a class="button" href="/forum/new?category=<%= it.category.slug %>">Start a thread</a></p>
+</div>
+<% } else { %>
+<ul class="threads">
+<% for (const t of it.list.items) { %>
+  <li class="thread-row<%= t.pinned ? ' pinned' : '' %>">
+    <h2><a href="/forum/t/<%= t.id %>/<%= t.slug %>"><%= t.title %></a></h2>
+    <p class="meta">
+<% if (t.pinned) { %>      <span class="marker">Pinned</span>
+<% } %><% if (t.locked) { %>      <span class="marker">Locked</span>
+<% } %><% if (t.solved) { %>      <span class="marker solved">Solved</span>
+<% } %>      <%~ include('/_author', { name: t.author }) %>
+      · <span class="num"><%= t.reply_count %></span> <%= t.reply_count === 1 ? 'reply' : 'replies' %>
+      · <time datetime="<%= it.iso(t.last_post_at) %>"><%= it.day(t.last_post_at) %></time>
+<% for (const g of t.tags) { %>      <a class="tag" href="/forum/tags/<%= g.slug %>"><%= g.name %></a>
+<% } %>    </p>
+  </li>
+<% } %>
+</ul>
+<%~ include('/_pager', { page: it.list.page, pages: it.list.pages, href: it.href }) %>
+<% } %>

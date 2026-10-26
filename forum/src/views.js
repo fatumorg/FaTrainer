@@ -17,6 +17,8 @@ function createRenderer({ config, auth }) {
       perms: req.perms || new Set(),
       unread: req.unread || 0,
       noindex: false,
+      day: (d) => (d ? new Date(d).toISOString().slice(0, 10) : ""),
+      iso: (d) => (d ? new Date(d).toISOString() : ""),
       description: "The FaTrainer | Dying Light forum: questions, ideas, configs and announcements.",
       ...data,
     });
