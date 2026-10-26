@@ -10,6 +10,7 @@
 #include "input.h"
 #include "version.h"
 #include "../installer/logic.h"
+#include "cheat_engine.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -1886,6 +1887,13 @@ int main(int argc, char** argv) {
         CHECK(keys[0x04] == 0);
     }
     {
+        std::string script = cheat_engine::ATTACH_SCRIPT;
+        CHECK(script.find("getAutoAttachList().add(\"DyingLightGame.exe\")") != std::string::npos && script.find("closeCE()") != std::string::npos);
+        CHECK(script.find("--") == std::string::npos);
+        std::wstring args = cheat_engine::installer_arguments(L"C:\\Users\\a\\AppData\\Local\\FaTrainer\\Cheat Engine");
+        CHECK(args == L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ZBDIST /DIR=\"C:\\Users\\a\\AppData\\Local\\FaTrainer\\Cheat Engine\"");
+    }
+    {
         auto mode = [](UINT w, UINT h, UINT hz) { DXGI_MODE_DESC m{}; m.Width = w, m.Height = h, m.RefreshRate = {hz, 1}, m.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; return m; };
         auto count = [](const std::vector<DXGI_MODE_DESC>& v, UINT w, UINT h, UINT hz) { return std::count_if(v.begin(), v.end(), [&](const DXGI_MODE_DESC& m) { return m.Width == w && m.Height == h && (!hz || m.RefreshRate.Numerator == hz); }); };
         std::vector<DXGI_MODE_DESC> native = {mode(1920, 1080, 60), mode(2560, 1440, 60), mode(2560, 1440, 144)};
@@ -1909,7 +1917,7 @@ int main(int argc, char** argv) {
         config::cfg.spit_keys[2] = 'G';
         config::cfg.esp.on = true, config::cfg.esp.box = false, config::cfg.esp.max_distance = 450, config::cfg.esp.hunter[1] = 0.5f;
         config::cfg.uv.on = true, config::cfg.uv.glow = 2.5f, config::cfg.uv.color[0] = 0.25f;
-        config::cfg.hidden_configs = {"hunter_rage", "survivor_legit"}, config::cfg.allow_older = true, config::cfg.all_resolutions = true;
+        config::cfg.hidden_configs = {"hunter_rage", "survivor_legit"}, config::cfg.allow_older = true, config::cfg.all_resolutions = true, config::cfg.cheat_engine = true;
         std::string ini = config::profile_dir() + "_test.ini";
         CHECK(config::save(ini));
         config::cfg = config::Config();
@@ -1919,6 +1927,7 @@ int main(int argc, char** argv) {
         CHECK(config::cfg.esp.on && !config::cfg.esp.box && config::cfg.esp.max_distance == 450 && config::cfg.esp.hunter[1] == 0.5f);
         CHECK(config::cfg.uv.on && config::cfg.uv.glow == 2.5f && config::cfg.uv.color[0] == 0.25f);
         CHECK(config::cfg.all_resolutions && config::peek(ini, "all_resolutions") == "1");
+        CHECK(config::cfg.cheat_engine && config::peek(ini, "cheat_engine") == "1");
         DeleteFileA(ini.c_str());
         config::cfg = saved_cfg;
     }
@@ -2022,7 +2031,8 @@ int main(int argc, char** argv) {
         CHECK(full.find("FaTrainer-edition:Fatum") != std::string::npos);
         CHECK(!cosmetic.empty() && cosmetic.find("FaTrainer-edition:Visuals") != std::string::npos);
         CHECK(lowered.find("winhttp") == std::string::npos);
-        for (const char* cheat : {"one_hit", "Infinite ammo", "God mode", "Show players", "Dodge spit"}) CHECK(cosmetic.find(cheat) == std::string::npos);
+        for (const char* cheat : {"one_hit", "Infinite ammo", "God mode", "Show players", "Dodge spit", "getAutoAttachList", "cheat engine:"}) CHECK(cosmetic.find(cheat) == std::string::npos);
+        CHECK(full.find("getAutoAttachList") != std::string::npos);
     }
     printf(fails ? "SELFTEST FAILED (%d)\n" : "SELFTEST OK\n", fails);
     return fails != 0;

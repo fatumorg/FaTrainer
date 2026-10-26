@@ -81,6 +81,7 @@ struct Config {
     bool allow_older = false;
     bool beta = false;
     bool all_resolutions = false;
+    bool cheat_engine = false;
     std::vector<std::string> hidden_configs;
     std::vector<PageEntry> pages;
     std::vector<std::string> cheats_on;
@@ -382,6 +383,7 @@ inline void load(const std::string& path) {
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
         else if (k == "all_resolutions") cfg.all_resolutions = v == "1";
+        else if (k == "cheat_engine") cfg.cheat_engine = v == "1";
         else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
         else if (k == "text_language") {
             size_t c = v.find(',');
@@ -453,7 +455,7 @@ inline bool save(const std::string& path) {
     fprintf(f, "accent=%.3f,%.3f,%.3f\n", cfg.accent[0], cfg.accent[1], cfg.accent[2]);
     fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\nallow_older=%d\nbeta=%d\n", cfg.dim, cfg.scale, cfg.menu_key,
             (int)cfg.remember_cheats, (int)cfg.allow_older, (int)cfg.beta);
-    fprintf(f, "all_resolutions=%d\n", (int)cfg.all_resolutions);
+    fprintf(f, "all_resolutions=%d\ncheat_engine=%d\n", (int)cfg.all_resolutions, (int)cfg.cheat_engine);
     if (cfg.window[0] > 0 && cfg.window[1] > 0) fprintf(f, "window=%.0f,%.0f\n", cfg.window[0], cfg.window[1]);
     for (auto& h : cfg.hidden_configs) fprintf(f, "hidden_config=%s\n", h.c_str());
     for (auto& p : cfg.pages) fprintf(f, "page=%s,%d\n", p.id.c_str(), (int)p.visible);

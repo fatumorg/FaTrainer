@@ -18,6 +18,9 @@
 #if !FATRAINER_VISUALS
 #include "net_win.h"
 #include "../installer/logic.h"
+#if !FATRAINER_VISUALS
+#include "cheat_engine.h"
+#endif
 #endif
 #include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
@@ -657,6 +660,10 @@ static void main_thread() {
 }
 #else
     DeleteFileW((own_path() + L".old").c_str());
+    if (config::peek(config::default_path(), "cheat_engine") == "1") {
+        std::wstring dll = own_path();
+        std::thread(cheat_engine::run, dll.substr(0, dll.find_last_of(L"\\/"))).detach();
+    }
     ReleaseInfo release = latest_release();
     const std::string& latest = release.version;
     HMODULE gamedll = nullptr;
