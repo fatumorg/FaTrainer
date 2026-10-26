@@ -14,7 +14,7 @@
     <thead><tr><th scope="col">Category</th><th scope="col">Slug</th><th scope="col">Threads</th><th scope="col">Edit</th></tr></thead>
     <tbody>
 <% for (const c of it.categories) { %>      <tr>
-        <td><%= c.parent_id ? '— ' : '' %><%= c.name %></td><td><%= c.slug %></td><td class="num"><%= c.threads %></td>
+        <td><%= c.parent_id ? '- ' : '' %><%= c.name %></td><td><%= c.slug %></td><td class="num"><%= c.threads %></td>
         <td><details><summary>Edit</summary>
           <form method="post" action="/forum/admin/categories" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="id" value="<%= c.id %>">
             <label>Name <input type="text" name="name" value="<%= c.name %>" maxlength="60" required></label>

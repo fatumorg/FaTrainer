@@ -26,6 +26,17 @@ test("legal pages mention cookies only for forum sign-in", () => {
   assert.match(read("prawne.html"), /dopóki nie zalogujesz się na Forum/);
 });
 
+test("static pages carry no inline styles or handlers so a strict CSP holds, and have error pages", () => {
+  const pages = ["index.html", "forum.html", "legal.html", "prawne.html", "404.html", "maintenance.html", "dying-light/index.html", "dying-light/docs.html"];
+  for (const f of pages) {
+    const html = read(f);
+    assert.equal(/\sstyle="/.test(html), false, f);
+    assert.equal(/\son[a-z]+="/.test(html), false, f);
+    assert.equal(/<script(?![^>]*\ssrc=)[^>]*>/.test(html), false, f);
+  }
+  assert.match(read("404.html"), /<meta name="robots" content="noindex">/);
+});
+
 test("style has a daylight theme and robots lists the sitemap", () => {
   assert.match(read("assets/style.css"), /prefers-color-scheme: light/);
   assert.match(read("robots.txt"), /Sitemap: https:\/\/fatrainer\.fatum\.cc\/forum\/sitemap\.xml/);
@@ -54,4 +65,11 @@ test("sitemap lists categories and public threads only", async (t) => {
   assert.match(res.text, new RegExp(`/forum/t/${pub.id}/public-thread<`));
   assert.equal(res.text.includes(`/forum/t/${gone.id}/`), false);
   assert.equal(res.text.includes("/forum/u/"), false);
+});
+
+test("forum healthz answers ok without details", async (t) => {
+  const h = await startForum(t);
+  const res = await h.anon().get("/forum/healthz");
+  assert.equal(res.status, 200);
+  assert.equal(res.text, "ok");
 });

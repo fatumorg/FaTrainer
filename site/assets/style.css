@@ -318,3 +318,11 @@ html.js .fade.in { opacity: 1; transform: none; }
     color-scheme: light;
   }
 }
+
+.deck img:nth-child(1) { --k: -1.5; --a: 1.5; }
+.deck img:nth-child(2) { --k: -0.5; --a: 0.5; }
+.deck img:nth-child(3) { --k: 0.5; --a: 0.5; }
+.deck img:nth-child(4) { --k: 1.5; --a: 1.5; }
+.game-dl { --game-accent: #e8973a; --skyline: url(/dying-light/img/harran-front-lit.svg); }
+.line-mask + .line-mask { --i: 1; }
+.delay-2 { --i: 2; }

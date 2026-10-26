@@ -21,6 +21,15 @@ function createApp({ config, pool, auth, redis }) {
   const render = createRenderer({ config, auth });
   const forum = express.Router();
 
+  forum.get("/healthz", async (req, res) => {
+    try {
+      await pool.query("SELECT 1");
+      if (redis) await redis.ping();
+      res.type("text").send("ok");
+    } catch {
+      res.status(503).type("text").send("unavailable");
+    }
+  });
   forum.use("/static", express.static(path.join(__dirname, "..", "public"), { index: false, maxAge: "7d" }));
   forum.use(express.urlencoded({ extended: false, limit: "64kb" }));
   forum.use(express.json({ limit: "64kb" }));
