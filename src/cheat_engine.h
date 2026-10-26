@@ -115,7 +115,7 @@ inline void run(const std::wstring& game_dir) {
         logf("cheat engine: already running, it attaches by itself");
         return;
     }
-    if (launch(dir + L"\\" + EXE, L"", SW_SHOWMINNOACTIVE, false) == INVALID_HANDLE_VALUE) logf("cheat engine: did not start (error %lu)", GetLastError());
+    if (launch(dir + L"\\" + EXE, L"", SW_SHOWNOACTIVATE, false) == INVALID_HANDLE_VALUE) logf("cheat engine: did not start (error %lu)", GetLastError());
     else logf("cheat engine: started %s", info.version.c_str());
 }
 

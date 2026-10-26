@@ -308,10 +308,10 @@ inline std::string run(const std::string& line) {
     }
     if (c == "give") {
         char id[96] = {};
-        int n = 1;
-        sscanf(p.s, "%95s %d", id, &n);
+        int n = 1, kind = game::K_BACKPACK;
+        sscanf(p.s, "%95s %d %d", id, &n, &kind);
         auto d = game::g.descs.find(id);
-        int into = d == game::g.descs.end() ? -2 : game::give_anywhere(game::K_BACKPACK, d->second, n);
+        int into = d == game::g.descs.end() ? -2 : game::give_anywhere((game::Kind)std::clamp(kind, 0, game::K_COUNT - 1), d->second, n);
         snprintf(b, sizeof b, "  gave into %d\n", into);
         return out + b;
     }
