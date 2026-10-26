@@ -6,16 +6,14 @@ src/items.h
 src/skills.h
 __pycache__/
 *.pyc
-graphify-out/
 .vscode/
 .idea/
 *.swp
 .DS_Store
-CLAUDE.md
 PROGRESS.md
 nexus/
 .zig-cache/
 dist/
 docs/
-.superpowers/node_modules/
 .env
+node_modules/
