@@ -1,5 +1,6 @@
 const path = require("node:path");
 const { Eta } = require("eta");
+const { composeStamp } = require("./abuse.js");
 
 const eta = new Eta({ views: path.join(__dirname, "..", "views"), cache: process.env.NODE_ENV === "production" });
 
@@ -11,6 +12,7 @@ function createRenderer({ config, auth }) {
       theme: ["light", "dark"].includes(user?.theme) ? user.theme : "system",
       site: { appUrl: config.appUrl, issuer: config.issuer },
       csrf: user ? auth.csrf.token(req) : "",
+      stamp: user ? composeStamp(config.secret) : "",
       path: req.originalUrl,
       loginHref: "/forum/auth/login?return_to=" + encodeURIComponent(req.originalUrl),
       accountHref: auth.accountSettingsUrl(config.appUrl + "/forum"),

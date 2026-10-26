@@ -33,7 +33,8 @@
     <header class="post-head">
       <%~ include('/_author', { name: p.author }) %>
       <a class="meta" href="#p<%= p.id %>"><time datetime="<%= it.iso(p.created_at) %>"><%= it.day(p.created_at) %></time></a>
-<% if (p.edited_at && !p.deleted) { %>      <span class="meta">edited</span>
+<% if (p.held) { %>      <span class="marker">Waiting for a moderator</span>
+<% } %><% if (p.edited_at && !p.deleted) { %>      <span class="meta">edited</span>
 <% } %><% if (p.id === it.thread.solved_post_id) { %>      <span class="marker solved">Accepted answer</span>
 <% } %>    </header>
 <% if (p.deleted) { %>    <p class="placeholder"><%= p.deleted === 'author' ? 'Deleted by the author.' : 'Removed by a moderator.' %></p>
@@ -64,7 +65,7 @@
 <% } else if (!it.user) { %>  <p><a class="button" href="<%= it.loginHref %>">Sign in with Fatum Aura to reply</a></p>
 <% } else { %>  <form method="post" action="/forum/t/<%= it.thread.id %>/reply" class="compose" data-draft>
     <input type="hidden" name="_csrf" value="<%= it.csrf %>">
-    <%~ include('/_editor', { body: '', canUpload: it.perms.has('upload.create') }) %>
+    <%~ include('/_editor', { body: '', canUpload: it.perms.has('upload.create'), stamp: it.stamp }) %>
     <p class="actions">
       <button type="submit" class="button">Post reply</button>
       <button type="submit" name="preview" value="1" class="button secondary" data-nojs-preview>Preview</button>

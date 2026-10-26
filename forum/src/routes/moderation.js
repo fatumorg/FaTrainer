@@ -97,6 +97,11 @@ function moderationRoutes({ pool, render, auth }) {
     res.redirect(303, row.deleted_at ? "/forum/mod" : `/forum/t/${t.id}/${row.slug}`);
   }));
 
+  r.post("/mod/posts/:id/approve", write, guarded(async (req, res) => {
+    await m.approvePost(pool, req.session.user, req.params.id);
+    res.redirect(303, "/forum/mod");
+  }));
+
   r.post("/mod/users/:id/suspend", write, guarded(async (req, res) => {
     await m.suspendUser(pool, req.session.user, req.params.id, { until: req.body.until, reason: req.body.reason, rule: req.body.rule });
     res.redirect(303, "/forum/mod");

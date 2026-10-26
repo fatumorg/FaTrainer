@@ -1,3 +1,5 @@
+<input type="hidden" name="started" value="<%= it.stamp || '' %>">
+<div class="trap" aria-hidden="true"><label for="website-<%= it.stamp || 'x' %>">Leave this empty</label><input id="website-<%= it.stamp || 'x' %>" name="website" type="text" tabindex="-1" autocomplete="off"></div>
 <div class="editor" data-editor>
   <div class="editor-bar" role="toolbar" aria-label="Formatting" hidden>
     <button type="button" data-md="bold" title="Bold"><b>B</b></button>

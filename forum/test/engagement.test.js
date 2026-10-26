@@ -48,8 +48,9 @@ test("accept only in Q&A by author or moderator", async (t) => {
 
 test("bookmark list paginated", async (t) => {
   const { h, as, general } = await setup(t);
+  await grantRole(h.pool, h.users.gracz, "moderator");
   const ids = [];
-  for (let i = 0; i < 27; i++) ids.push((await createThread(h.pool, as("gracz"), { categoryId: general, title: `Saved thread ${i}`, body: "x" })).id);
+  for (let i = 0; i < 27; i++) ids.push((await createThread(h.pool, as("gracz"), { categoryId: general, title: `Saved thread ${i}`, body: `x ${i}` })).id);
   for (const id of ids) assert.deepEqual(await e.toggleBookmark(h.pool, h.users.inny, id), { saved: true });
   assert.deepEqual(await e.toggleBookmark(h.pool, h.users.inny, ids[0]), { saved: false });
   const first = await e.listBookmarks(h.pool, h.users.inny, 1);
@@ -78,7 +79,7 @@ test("unsubscribe stops notifications", async (t) => {
   await e.setSubscription(h.pool, h.users.mod, { categoryId: general, muted: false });
   assert.deepEqual((await e.watchersOf(h.pool, th.id)).sort(), [h.users.gracz, h.users.mod].sort());
   await h.pool.query("UPDATE forum_prefs SET auto_watch = false WHERE user_id = $1", [h.users.gracz]);
-  const second = await createThread(h.pool, as("gracz"), { categoryId: general, title: "No auto watch", body: "x" });
+  const second = await createThread(h.pool, as("gracz"), { categoryId: general, title: "No auto watch", body: "second body" });
   assert.deepEqual(await e.watchersOf(h.pool, second.id), [h.users.mod]);
   const { client, csrf } = await h.signedIn("gracz");
   assert.equal((await client.post(`/forum/t/${th.id}/watch`, { _csrf: csrf, muted: "1" })).status, 303);

@@ -24,7 +24,7 @@ async function startForum(t, { claims = {}, ownerSub } = {}) {
   const redis = new Redis(process.env.TEST_REDIS_URL);
   await redis.flushdb();
   const uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), "forum-uploads-"));
-  const config = { appUrl, issuer: issuer.issuer, ownerSub: ownerSub === undefined ? String(users.owner) : ownerSub, uploadDir, secret: SECRET };
+  const config = { appUrl, issuer: issuer.issuer, ownerSub: ownerSub === undefined ? String(users.owner) : ownerSub, uploadDir, secret: SECRET, minComposeMs: 0 };
   const sent = [];
   const auth = await createForumAuth({ config, redis, clientSecret: SECRET });
   const app = createApp({ config, pool, auth, redis, mailer: { send: async (m) => sent.push(m) } });

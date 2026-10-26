@@ -3,6 +3,7 @@ const { permissionsFor } = require("./permissions.js");
 const { logAction } = require("./audit.js");
 const { attachUploads, checkImageCount, MAX_PER_POST } = require("./uploads.js");
 const { notifyOnPost } = require("./notifications.js");
+const { checkPostAllowed } = require("./abuse.js");
 
 const MAX_BODY = 20000;
 const MAX_TAGS = 5;
@@ -78,6 +79,12 @@ async function watch(db, userId, threadId) {
   await db.query("INSERT INTO subscriptions (user_id, thread_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, threadId]);
 }
 
+async function allowed(pool, user, body, threadId) {
+  const check = await checkPostAllowed(pool, user, { body, threadId });
+  if (!check.ok) throw new ForumError(check.reason === "suspended" ? 403 : 429, check.message);
+  return check.hold;
+}
+
 async function createThread(pool, user, { categoryId, title, body, tags }) {
   const cleanTitle = checkTitle(title);
   const md = checkBody(body);
@@ -87,17 +94,18 @@ async function createThread(pool, user, { categoryId, title, body, tags }) {
   const perms = await permissionsFor(pool, user.id, category.id);
   if (!perms.has("thread.create") || !perms.has(category.post_permission)) throw new ForumError(403, "You cannot start threads in this category.", "category");
   const ids = await tagIds(pool, tags);
+  const held = await allowed(pool, user, md, null);
   const rendered = await renderPost(pool, md);
   const slug = slugify(cleanTitle);
   return tx(pool, async (db) => {
     const t = await db.query("INSERT INTO threads (category_id, author_id, title, slug) VALUES ($1, $2, $3, $4) RETURNING id", [category.id, user.id, cleanTitle, slug]);
     const id = t.rows[0].id;
-    const p = await db.query("INSERT INTO posts (thread_id, author_id, body_md, body_html, renderer_version) VALUES ($1, $2, $3, $4, $5) RETURNING id", [id, user.id, md, rendered.html, RENDERER_VERSION]);
+    const p = await db.query("INSERT INTO posts (thread_id, author_id, body_md, body_html, renderer_version, held) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id", [id, user.id, md, rendered.html, RENDERER_VERSION, held]);
     for (const tag of ids) await db.query("INSERT INTO thread_tags (thread_id, tag_id) VALUES ($1, $2)", [id, tag]);
     await attachUploads(db, user.id, p.rows[0].id, md);
     if (await joinForum(db, user.id)) await watch(db, user.id, id);
-    await notifyOnPost(db, { id: p.rows[0].id, threadId: id, authorId: user.id, mentions: rendered.mentions, isReply: false });
-    return { id, slug, postId: p.rows[0].id, mentions: rendered.mentions };
+    if (!held) await notifyOnPost(db, { id: p.rows[0].id, threadId: id, authorId: user.id, mentions: rendered.mentions, isReply: false });
+    return { id, slug, postId: p.rows[0].id, mentions: rendered.mentions, held };
   });
 }
 
@@ -112,15 +120,16 @@ async function createPost(pool, user, threadId, body) {
   if (thread.locked && !perms.has("thread.lock")) throw new ForumError(403, "This thread is locked. New replies are closed.");
   if (!perms.has("post.create") || !perms.has(thread.post_permission)) throw new ForumError(403, "You cannot reply in this category.");
   const md = checkBody(body);
+  const held = await allowed(pool, user, md, thread.id);
   const rendered = await renderPost(pool, md);
   return tx(pool, async (db) => {
-    const p = await db.query("INSERT INTO posts (thread_id, author_id, body_md, body_html, renderer_version) VALUES ($1, $2, $3, $4, $5) RETURNING id", [thread.id, user.id, md, rendered.html, RENDERER_VERSION]);
-    await db.query("UPDATE threads SET last_post_at = now(), reply_count = reply_count + 1 WHERE id = $1", [thread.id]);
+    const p = await db.query("INSERT INTO posts (thread_id, author_id, body_md, body_html, renderer_version, held) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id", [thread.id, user.id, md, rendered.html, RENDERER_VERSION, held]);
+    if (!held) await db.query("UPDATE threads SET last_post_at = now(), reply_count = reply_count + 1 WHERE id = $1", [thread.id]);
     await attachUploads(db, user.id, p.rows[0].id, md);
     if (await joinForum(db, user.id)) await watch(db, user.id, thread.id);
-    await notifyOnPost(db, { id: p.rows[0].id, threadId: thread.id, authorId: user.id, mentions: rendered.mentions });
-    const position = (await db.query("SELECT count(*)::int AS n FROM posts WHERE thread_id = $1 AND NOT held AND id <= $2", [thread.id, p.rows[0].id])).rows[0].n;
-    return { id: p.rows[0].id, threadId: thread.id, slug: thread.slug, page: Math.ceil(position / 20), mentions: rendered.mentions };
+    if (!held) await notifyOnPost(db, { id: p.rows[0].id, threadId: thread.id, authorId: user.id, mentions: rendered.mentions });
+    const position = (await db.query("SELECT count(*)::int AS n FROM posts WHERE thread_id = $1 AND (NOT held OR id = $2) AND id <= $2", [thread.id, p.rows[0].id])).rows[0].n;
+    return { id: p.rows[0].id, threadId: thread.id, slug: thread.slug, page: Math.ceil(position / 20), mentions: rendered.mentions, held };
   });
 }
 

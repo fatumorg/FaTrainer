@@ -43,6 +43,7 @@
 .pager { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
 .pager a, .pager span { min-width: 2.2em; padding: 4px 8px; text-align: center; }
 .pager a[aria-current] { background: var(--accent); color: var(--accent-ink); border-radius: 4px; text-decoration: none; }
+.trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .alert { padding: 10px 14px; border: 1px solid var(--accent); border-radius: 4px; background: var(--raised); }
 .compose { display: grid; gap: 8px; max-width: 860px; }

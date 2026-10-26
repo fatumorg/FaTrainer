@@ -2,7 +2,7 @@ const { permissionsFor } = require("./permissions.js");
 const { ForumError, tx, renderPost } = require("./compose.js");
 const { RENDERER_VERSION } = require("./markdown.js");
 const { logAction } = require("./audit.js");
-const { notify } = require("./notifications.js");
+const { notify, notifyOnPost } = require("./notifications.js");
 
 const RULES = {
   topic: "Stay on topic: FaTrainer, in English or Polish",
@@ -220,6 +220,25 @@ async function suspendUser(pool, mod, userId, { until, reason, rule }) {
   });
 }
 
+async function approvePost(pool, mod, postId) {
+  const post = (await pool.query(
+    `SELECT p.id, p.thread_id, p.author_id, p.body_md, t.category_id, p.id = (SELECT min(id) FROM posts WHERE thread_id = p.thread_id) AS first
+     FROM posts p JOIN threads t ON t.id = p.thread_id WHERE p.id = $1 AND p.held AND p.deleted_at IS NULL`,
+    [Number(postId) || 0],
+  )).rows[0];
+  if (!post) throw new ForumError(404, "This held post does not exist.");
+  await need(pool, mod, "report.resolve", post.category_id);
+  const rendered = await renderPost(pool, post.body_md);
+  await tx(pool, async (db) => {
+    await db.query("UPDATE posts SET held = false WHERE id = $1", [post.id]);
+    if (!post.first) await db.query("UPDATE threads SET last_post_at = now(), reply_count = reply_count + 1 WHERE id = $1", [post.thread_id]);
+    else await db.query("UPDATE threads SET last_post_at = now() WHERE id = $1", [post.thread_id]);
+    await notifyOnPost(db, { id: post.id, threadId: post.thread_id, authorId: post.author_id, mentions: rendered.mentions, isReply: !post.first });
+    await logAction(db, { actorId: mod.id, action: "post.approve", targetType: "post", targetId: post.id });
+  });
+  return post;
+}
+
 async function queue(db, mod) {
   await need(db, mod, "report.view");
   const reports = await db.query(
@@ -254,4 +273,4 @@ async function modLog(db, mod, page = 1) {
   return { items: rows, page: current, pages };
 }
 
-module.exports = { RULES, REASONS, ACTIONS, fileReport, decide, moderate, reportView, fileAppeal, decideAppeal, threadAction, suspendUser, queue, modLog };
+module.exports = { RULES, REASONS, ACTIONS, approvePost, fileReport, decide, moderate, reportView, fileAppeal, decideAppeal, threadAction, suspendUser, queue, modLog };

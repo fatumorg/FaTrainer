@@ -14,6 +14,7 @@ function loadConfig(env = process.env) {
     ownerSub: env.FORUM_OWNER_SUB || "",
     uploadDir: env.UPLOAD_DIR,
     smtpUrl: env.SMTP_URL || "",
+    minComposeMs: 3000,
     mailFrom: env.MAIL_FROM || "FaTrainer Forum <noreply@fatum.cc>",
     db: { user: env.DB_USER, host: env.DB_HOST, database: env.DB_NAME, password: env.DB_PASSWORD, port: Number(env.DB_PORT) },
   };

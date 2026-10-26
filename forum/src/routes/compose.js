@@ -2,9 +2,18 @@ const express = require("express");
 const { permissionsFor } = require("../permissions.js");
 const c = require("../compose.js");
 const { moderate } = require("../moderation.js");
+const { stampAge } = require("../abuse.js");
 
-function composeRoutes({ pool, render, auth }) {
+function composeRoutes({ pool, render, auth, config }) {
   const r = express.Router();
+
+  function checkHuman(req) {
+    if (req.body.website) return new c.ForumError(422, "Your post could not be sent. Reload the page and try again.");
+    const min = config.minComposeMs ?? 3000;
+    const age = stampAge(config.secret, req.body.started);
+    if (min > 0 && age < min) return new c.ForumError(422, "Take a moment before posting: wait a few seconds after opening the form.");
+    return null;
+  }
 
   const signIn = (returnTo) => (req, res, next) => {
     if (req.session?.user) return next();
@@ -54,6 +63,8 @@ function composeRoutes({ pool, render, auth }) {
   r.post("/new", signIn((req) => `/forum/new?category=${encodeURIComponent(req.body?.category || "")}`), auth.csrf.verify, async (req, res) => {
     const values = { category: String(req.body.category || ""), title: String(req.body.title || ""), body: String(req.body.body || ""), tags: asList(req.body.tags) };
     if (req.body.preview) return showNew(req, res, { values, preview: (await c.renderPost(pool, values.body.slice(0, c.MAX_BODY))).html });
+    const bot = checkHuman(req);
+    if (bot) return showNew(req, res, { values, error: bot }, bot.status);
     try {
       const cat = (await pool.query("SELECT id FROM categories WHERE slug = $1", [values.category])).rows[0];
       const t = await c.createThread(pool, req.session.user, { categoryId: cat?.id, title: values.title, body: values.body, tags: values.tags });
@@ -86,6 +97,8 @@ function composeRoutes({ pool, render, auth }) {
     const id = Number(req.params.id) || 0;
     const body = String(req.body.body || "");
     if (req.body.preview) return showReply(req, res, id, { body, preview: (await c.renderPost(pool, body.slice(0, c.MAX_BODY))).html });
+    const bot = checkHuman(req);
+    if (bot) return showReply(req, res, id, { body, error: bot }, bot.status);
     try {
       const p = await c.createPost(pool, req.session.user, id, body);
       res.redirect(303, `/forum/t/${p.threadId}/${p.slug}?${p.page > 1 ? `page=${p.page}&` : ""}posted=1#p${p.id}`);

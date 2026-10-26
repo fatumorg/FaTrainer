@@ -16,7 +16,7 @@
 <meta name="theme-color" content="#121110">
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/style.css?v=12">
-<link rel="stylesheet" href="/forum/static/css/forum.css?v=7">
+<link rel="stylesheet" href="/forum/static/css/forum.css?v=8">
 </head>
 <body class="forum">
 <a class="skip" href="#content">Skip to content</a>

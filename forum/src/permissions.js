@@ -1,3 +1,9 @@
+const PERMISSIONS = [
+  "thread.create", "post.create", "post.edit.own", "post.delete.own", "post.edit.any", "post.delete.any",
+  "thread.pin", "thread.lock", "thread.move", "thread.delete.any", "report.view", "report.resolve",
+  "user.suspend", "user.ban", "role.assign", "category.manage", "tag.manage", "audit.view", "upload.create", "announcement.create",
+];
+
 async function isSuspended(db, userId) {
   const { rowCount } = await db.query("SELECT 1 FROM suspensions WHERE user_id = $1 AND lifted_at IS NULL AND (until IS NULL OR until > now()) LIMIT 1", [userId]);
   return rowCount > 0;
@@ -32,4 +38,4 @@ async function promoteOwner(db, sub) {
   return true;
 }
 
-module.exports = { permissionsFor, can, promoteOwner, isSuspended };
+module.exports = { permissionsFor, can, promoteOwner, isSuspended, PERMISSIONS };

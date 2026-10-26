@@ -14,7 +14,7 @@ const TAGS = `COALESCE((SELECT json_agg(json_build_object('slug', g.slug, 'name'
   FROM thread_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.thread_id = t.id), '[]') AS tags`;
 
 async function listThreads(db, { categoryId, sort = "activity", tag, solved, mine, page = 1 }) {
-  const where = ["t.deleted_at IS NULL"];
+  const where = ["t.deleted_at IS NULL", "NOT (SELECT held FROM posts WHERE thread_id = t.id ORDER BY id LIMIT 1)"];
   const args = [];
   const arg = (v) => (args.push(v), `$${args.length}`);
   if (categoryId) where.push(`t.category_id = ${arg(categoryId)}`);
@@ -43,7 +43,7 @@ async function listThreads(db, { categoryId, sort = "activity", tag, solved, min
   return { items: rows, page: current, pages: last, total };
 }
 
-async function getThread(db, id, page = 1) {
+async function getThread(db, id, page = 1, viewer = {}) {
   const { rows } = await db.query(
     `SELECT t.*, p.username AS author, c.slug AS category_slug, c.name AS category_name, ${TAGS},
             (SELECT min(id) FROM posts WHERE thread_id = t.id) AS first_post_id
@@ -53,19 +53,23 @@ async function getThread(db, id, page = 1) {
   );
   const thread = rows[0];
   if (!thread) return null;
-  const total = (await db.query("SELECT count(*)::int AS n FROM posts WHERE thread_id = $1 AND NOT held", [id])).rows[0].n;
+  const seen = "(NOT po.held OR po.author_id = $2 OR $3)";
+  const args = [id, viewer.id || 0, Boolean(viewer.moderator)];
+  const first = (await db.query("SELECT held, author_id FROM posts WHERE thread_id = $1 ORDER BY id LIMIT 1", [id])).rows[0];
+  if (first?.held && first.author_id !== viewer.id && !viewer.moderator) return null;
+  const total = (await db.query(`SELECT count(*)::int AS n FROM posts po WHERE po.thread_id = $1 AND ${seen}`, args)).rows[0].n;
   const last = pages(total, POSTS_PER_PAGE);
   const current = clamp(page, last);
   const posts = await db.query(
-    `SELECT po.id, po.author_id, po.created_at, po.edited_at, po.deleted_at,
+    `SELECT po.id, po.author_id, po.created_at, po.edited_at, po.deleted_at, po.held,
             CASE WHEN po.deleted_at IS NULL THEN po.body_html END AS body_html,
             CASE WHEN po.deleted_at IS NULL THEN NULL WHEN po.deleted_by = po.author_id THEN 'author' ELSE 'moderator' END AS deleted,
             p.username AS author, (SELECT count(*) FROM reactions r WHERE r.post_id = po.id)::int AS helpful
      FROM posts po LEFT JOIN aura.public_profiles p ON p.id = po.author_id
-     WHERE po.thread_id = $1 AND NOT po.held
+     WHERE po.thread_id = $1 AND ${seen}
      ORDER BY po.id
      LIMIT ${POSTS_PER_PAGE} OFFSET ${(current - 1) * POSTS_PER_PAGE}`,
-    [id],
+    args,
   );
   return { thread, posts: posts.rows, page: current, pages: last };
 }

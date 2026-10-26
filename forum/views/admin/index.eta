@@ -1,0 +1,84 @@
+<% layout('/layout') %>
+<div class="forum-head">
+  <p class="meta"><a href="/forum">Forum</a> · <a href="/forum/mod/log">Moderation log</a></p>
+  <h1>Admin</h1>
+</div>
+<% if (it.error) { %><p class="alert" role="alert"><%= it.error.message %></p>
+<% } else if (it.saved) { %><p class="alert" role="status">Saved.</p>
+<% } %>
+<% const opts = (sel) => it.permissions.map((p) => `<option value="${p}"${p === sel ? ' selected' : ''}>${p}</option>`).join(''); %>
+<% if (it.perms.has('category.manage')) { %>
+<section aria-labelledby="cats-h">
+  <h2 id="cats-h">Categories</h2>
+  <div class="table-wrap"><table class="log">
+    <thead><tr><th scope="col">Category</th><th scope="col">Slug</th><th scope="col">Threads</th><th scope="col">Edit</th></tr></thead>
+    <tbody>
+<% for (const c of it.categories) { %>      <tr>
+        <td><%= c.parent_id ? '— ' : '' %><%= c.name %></td><td><%= c.slug %></td><td class="num"><%= c.threads %></td>
+        <td><details><summary>Edit</summary>
+          <form method="post" action="/forum/admin/categories" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="id" value="<%= c.id %>">
+            <label>Name <input type="text" name="name" value="<%= c.name %>" maxlength="60" required></label>
+            <label>Slug <input type="text" name="slug" value="<%= c.slug %>" maxlength="60" required></label>
+            <label>Description <input type="text" name="description" value="<%= c.description %>" maxlength="300"></label>
+            <label>Position <input type="number" name="position" value="<%= c.position %>"></label>
+            <label>Parent <select name="parent"><option value="">None (top level)</option><% for (const p of it.categories.filter((x) => !x.parent_id && x.id !== c.id)) { %><option value="<%= p.id %>"<% if (p.id === c.parent_id) { %> selected<% } %>><%= p.name %></option><% } %></select></label>
+            <label>Who can start threads <select name="post_permission"><%~ opts(c.post_permission) %></select></label>
+            <p class="actions"><button type="submit" class="button small">Save</button></p>
+          </form>
+<% if (!c.threads) { %>          <form method="post" action="/forum/admin/categories/<%= c.id %>/delete" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="link">Delete empty category</button></form>
+<% } %>        </details></td>
+      </tr>
+<% } %>    </tbody>
+  </table></div>
+  <h3>New category</h3>
+  <form method="post" action="/forum/admin/categories" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+    <label>Name <input type="text" name="name" maxlength="60" required></label>
+    <label>Slug <input type="text" name="slug" maxlength="60" required pattern="[a-z0-9]+(-[a-z0-9]+)*"></label>
+    <label>Description <input type="text" name="description" maxlength="300"></label>
+    <label>Position <input type="number" name="position" value="0"></label>
+    <label>Parent <select name="parent"><option value="">None (top level)</option><% for (const p of it.categories.filter((x) => !x.parent_id)) { %><option value="<%= p.id %>"><%= p.name %></option><% } %></select></label>
+    <label>Who can start threads <select name="post_permission"><%~ opts('post.create') %></select></label>
+    <p class="actions"><button type="submit" class="button small">Create category</button></p>
+  </form>
+</section>
+<% } %>
+<% if (it.perms.has('tag.manage')) { %>
+<section aria-labelledby="tags-h">
+  <h2 id="tags-h">Tags</h2>
+<% if (!it.tags.length) { %>  <p class="empty">No tags yet.</p>
+<% } %>  <ul class="threads">
+<% for (const t of it.tags) { %>    <li class="thread-row"><span class="tag"><%= t.name %></span> <span class="meta"><%= t.slug %> · <%= t.threads %> threads</span>
+      <form method="post" action="/forum/admin/tags/<%= t.id %>/delete" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><button type="submit" class="link">Delete</button></form></li>
+<% } %>  </ul>
+  <form method="post" action="/forum/admin/tags" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+    <label>Tag name <input type="text" name="name" maxlength="40" required></label>
+    <label>Slug <input type="text" name="slug" maxlength="40" required pattern="[a-z0-9]+(-[a-z0-9]+)*"></label>
+    <p class="actions"><button type="submit" class="button small">Add tag</button></p>
+  </form>
+</section>
+<% } %>
+<% if (it.perms.has('role.assign')) { %>
+<section aria-labelledby="roles-h">
+  <h2 id="roles-h">Roles</h2>
+  <ul class="threads">
+<% for (const h of it.holders) { %>    <li class="thread-row"><%= h.username || 'Deleted account' %> · <%= h.role %><%= h.category ? ' in ' + h.category : '' %>
+      <form method="post" action="/forum/admin/roles/remove" class="inline"><input type="hidden" name="_csrf" value="<%= it.csrf %>"><input type="hidden" name="user" value="<%= h.user_id %>"><input type="hidden" name="role" value="<%= h.role %>"><input type="hidden" name="category" value="<%= h.category_id || '' %>"><button type="submit" class="link">Remove</button></form></li>
+<% } %>  </ul>
+  <form method="post" action="/forum/admin/roles/assign" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+    <label>Nickname <input type="text" name="nickname" maxlength="32" required></label>
+    <label>Role <select name="role"><option value="moderator">Moderator</option><option value="administrator">Administrator</option></select></label>
+    <label>Only in category <select name="category"><option value="">Everywhere</option><% for (const c of it.categories) { %><option value="<%= c.id %>"><%= c.name %></option><% } %></select></label>
+    <p class="actions"><button type="submit" class="button small">Assign role</button></p>
+  </form>
+<% for (const role of it.roles.filter((x) => x.name !== 'administrator')) { %>
+  <h3>Permissions: <%= role.name %></h3>
+  <form method="post" action="/forum/admin/roles/<%= role.name %>/permissions" class="compose"><input type="hidden" name="_csrf" value="<%= it.csrf %>">
+    <fieldset class="tag-pick"><legend><%= role.name %></legend>
+<% for (const p of it.permissions) { %>      <label><input type="checkbox" name="permissions" value="<%= p %>"<% if (role.permissions.includes(p)) { %> checked<% } %>> <%= p %></label>
+<% } %>    </fieldset>
+    <p class="actions"><button type="submit" class="button small">Save permissions</button></p>
+  </form>
+<% } %>
+  <p class="meta">The administrator role always has every permission.</p>
+</section>
+<% } %>

@@ -76,7 +76,7 @@ function browseRoutes({ pool, render }) {
       );
       if (rows[0]) return res.redirect(303, `/forum/t/${req.params.id}/${rows[0].slug}${query({ page: pageOf(Math.ceil(Math.max(1, rows[0].n) / POSTS_PER_PAGE)) })}#p${Number(req.query.post)}`);
     }
-    const data = await getThread(pool, Number(req.params.id), req.query.page);
+    const data = await getThread(pool, Number(req.params.id), req.query.page, { id: req.session?.user?.id, moderator: req.perms.has("report.view") });
     if (!data) return next();
     const base = `/forum/t/${data.thread.id}/${data.thread.slug}`;
     const href = (page) => base + query({ page: pageOf(page) });
