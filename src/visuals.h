@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <dxgi.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -506,6 +507,106 @@ inline float __fastcall get_fov_hook(uintptr_t camera) {
     std::lock_guard<std::mutex> l(fov_mx);
     auto it = camera_fovs.find(camera);
     return it != camera_fovs.end() && it->second.written == now ? it->second.game : now;
+}
+
+inline const std::pair<int, int> EXTRA_RESOLUTIONS[] = {
+    {640, 480}, {800, 600}, {1024, 768}, {1280, 960}, {1600, 1200}, {2048, 1536}, {1280, 1024},
+    {1280, 800}, {1440, 900}, {1680, 1050}, {1920, 1200}, {2560, 1600}, {3840, 2400},
+    {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}, {5120, 2880}, {7680, 4320},
+    {2560, 1080}, {3440, 1440}, {3840, 1600}, {5120, 2160}, {3840, 1080}, {5120, 1440},
+};
+
+inline double refresh_hz(const DXGI_RATIONAL& r) { return r.Denominator ? (double)r.Numerator / r.Denominator : r.Numerator; }
+
+inline std::vector<DXGI_MODE_DESC> merged_modes(const std::vector<DXGI_MODE_DESC>& native) {
+    if (native.empty()) return native;
+    const DXGI_MODE_DESC* base = &native[0];
+    for (auto& m : native)
+        if ((uint64_t)m.Width * m.Height > (uint64_t)base->Width * base->Height) base = &m;
+    std::vector<DXGI_RATIONAL> rates;
+    for (auto& m : native)
+        if (m.Width == base->Width && m.Height == base->Height && m.Format == base->Format &&
+            std::none_of(rates.begin(), rates.end(), [&](const DXGI_RATIONAL& r) { return refresh_hz(r) == refresh_hz(m.RefreshRate); }))
+            rates.push_back(m.RefreshRate);
+    std::vector<DXGI_MODE_DESC> out = native;
+    for (auto [w, h] : EXTRA_RESOLUTIONS) {
+        if (std::any_of(native.begin(), native.end(), [&](const DXGI_MODE_DESC& m) { return m.Width == (UINT)w && m.Height == (UINT)h; })) continue;
+        for (auto& r : rates) {
+            DXGI_MODE_DESC m = *base;
+            m.Width = w, m.Height = h, m.RefreshRate = r;
+            out.push_back(m);
+        }
+    }
+    std::stable_sort(out.begin(), out.end(), [](const DXGI_MODE_DESC& a, const DXGI_MODE_DESC& b) {
+        if (a.Width != b.Width) return a.Width < b.Width;
+        if (a.Height != b.Height) return a.Height < b.Height;
+        return refresh_hz(a.RefreshRate) < refresh_hz(b.RefreshRate);
+    });
+    return out;
+}
+
+inline HRESULT copy_modes(const std::vector<DXGI_MODE_DESC>& merged, UINT* count, DXGI_MODE_DESC* out) {
+    if (!out) {
+        *count = (UINT)merged.size();
+        return S_OK;
+    }
+    UINT n = std::min(*count, (UINT)merged.size());
+    std::copy(merged.begin(), merged.begin() + n, out);
+    *count = n;
+    return n < merged.size() ? DXGI_ERROR_MORE_DATA : S_OK;
+}
+
+using DisplayModesFn = HRESULT(STDMETHODCALLTYPE*)(IDXGIOutput*, DXGI_FORMAT, UINT, UINT*, DXGI_MODE_DESC*);
+const int DISPLAY_MODES_SLOT = 8, RESOLUTION_LOG_LIMIT = 20;
+inline DisplayModesFn display_modes_original = nullptr;
+inline uintptr_t display_modes_slot = 0;
+inline void resolution_log_off(const char*, ...) {}
+inline void (*resolution_log)(const char*, ...) = resolution_log_off;
+
+inline HRESULT STDMETHODCALLTYPE display_modes_hook(IDXGIOutput* self, DXGI_FORMAT format, UINT flags, UINT* count, DXGI_MODE_DESC* out) {
+    if (!count) return display_modes_original(self, format, flags, count, out);
+    UINT native_count = 0;
+    HRESULT hr = display_modes_original(self, format, flags, &native_count, nullptr);
+    if (FAILED(hr)) return hr;
+    std::vector<DXGI_MODE_DESC> native(native_count);
+    if (native_count && FAILED(hr = display_modes_original(self, format, flags, &native_count, native.data()))) return hr;
+    native.resize(native_count);
+    auto merged = merged_modes(native);
+    static std::set<std::pair<size_t, size_t>> logged;
+    if (logged.size() < RESOLUTION_LOG_LIMIT && logged.insert({native.size(), merged.size()}).second)
+        resolution_log("resolutions: %zu modes from the monitor, %zu added", native.size(), merged.size() - native.size());
+    return copy_modes(merged, count, out);
+}
+
+inline bool install_resolution_unlock() {
+    if (display_modes_original) return true;
+    HMODULE dxgi = LoadLibraryA("dxgi.dll");
+    auto create = dxgi ? (HRESULT(WINAPI*)(REFIID, void**))GetProcAddress(dxgi, "CreateDXGIFactory1") : nullptr;
+    IDXGIFactory1* factory = nullptr;
+    IDXGIAdapter1* adapter = nullptr;
+    IDXGIOutput* output = nullptr;
+    const char* failed = !create ? "CreateDXGIFactory1 missing"
+                         : FAILED(create(__uuidof(IDXGIFactory1), (void**)&factory)) ? "no factory"
+                         : FAILED(factory->EnumAdapters1(0, &adapter))               ? "no adapter"
+                         : FAILED(adapter->EnumOutputs(0, &output))                  ? "no output"
+                                                                                     : nullptr;
+    if (!failed) {
+        uintptr_t slot = *(uintptr_t*)output + DISPLAY_MODES_SLOT * sizeof(void*);
+        if (void* previous = game::swap_pointer(slot, (void*)display_modes_hook)) display_modes_original = (DisplayModesFn)previous, display_modes_slot = slot;
+        else failed = "vtable not writable";
+    }
+    if (output) output->Release();
+    if (adapter) adapter->Release();
+    if (factory) factory->Release();
+    resolution_log(failed ? "resolutions: hook failed, %s" : "resolutions: hook ok%s", failed ? failed : "");
+    return !failed;
+}
+
+inline void remove_resolution_unlock() {
+    if (!display_modes_original) return;
+    game::swap_pointer(display_modes_slot, (void*)display_modes_original);
+    display_modes_original = nullptr, display_modes_slot = 0;
+    resolution_log("resolutions: hook removed");
 }
 
 inline bool install_fov_hooks(HMODULE gamedll) {

@@ -35,6 +35,15 @@ template <class T> inline bool wr(uintptr_t a, T v) {
     return true;
 }
 
+inline void* swap_pointer(uintptr_t at, void* value) {
+    DWORD old;
+    if (at < 0x10000 || !VirtualProtect((void*)at, sizeof(void*), PAGE_READWRITE, &old)) return nullptr;
+    void* previous = *(void**)at;
+    *(void**)at = value;
+    VirtualProtect((void*)at, sizeof(void*), old, &old);
+    return previous;
+}
+
 inline void* hook_import(HMODULE module, const char* dll, const char* name, void* replacement) {
     if (!module) return nullptr;
     auto base = (BYTE*)module;
@@ -48,12 +57,7 @@ inline void* hook_import(HMODULE module, const char* dll, const char* name, void
         for (; names->u1.AddressOfData; names++, slots++) {
             if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
             if (strcmp((char*)((IMAGE_IMPORT_BY_NAME*)(base + names->u1.AddressOfData))->Name, name)) continue;
-            void* original = (void*)slots->u1.Function;
-            DWORD old;
-            VirtualProtect(&slots->u1.Function, sizeof(void*), PAGE_READWRITE, &old);
-            slots->u1.Function = (ULONG_PTR)replacement;
-            VirtualProtect(&slots->u1.Function, sizeof(void*), old, &old);
-            return original;
+            return swap_pointer((uintptr_t)&slots->u1.Function, replacement);
         }
     }
     return nullptr;

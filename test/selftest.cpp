@@ -1871,11 +1871,30 @@ int main(int argc, char** argv) {
         CHECK(keys[0x04] == 0);
     }
     {
+        auto mode = [](UINT w, UINT h, UINT hz) { DXGI_MODE_DESC m{}; m.Width = w, m.Height = h, m.RefreshRate = {hz, 1}, m.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; return m; };
+        auto count = [](const std::vector<DXGI_MODE_DESC>& v, UINT w, UINT h, UINT hz) { return std::count_if(v.begin(), v.end(), [&](const DXGI_MODE_DESC& m) { return m.Width == w && m.Height == h && (!hz || m.RefreshRate.Numerator == hz); }); };
+        std::vector<DXGI_MODE_DESC> native = {mode(1920, 1080, 60), mode(2560, 1440, 60), mode(2560, 1440, 144)};
+        auto merged = visuals::merged_modes(native);
+        CHECK(count(merged, 3840, 2160, 60) == 1 && count(merged, 3840, 2160, 144) == 1 && count(merged, 7680, 4320, 144) == 1);
+        CHECK(count(merged, 1920, 1080, 0) == 1 && count(merged, 2560, 1440, 0) == 2);
+        CHECK(std::is_sorted(merged.begin(), merged.end(), [](const DXGI_MODE_DESC& a, const DXGI_MODE_DESC& b) { return std::tie(a.Width, a.Height, a.RefreshRate.Numerator) < std::tie(b.Width, b.Height, b.RefreshRate.Numerator); }));
+        CHECK(merged[0].Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+        CHECK(visuals::merged_modes({}).empty());
+        UINT n = 0;
+        CHECK(visuals::copy_modes(merged, &n, nullptr) == S_OK && n == merged.size());
+        std::vector<DXGI_MODE_DESC> small(4);
+        n = 3;
+        CHECK(visuals::copy_modes(merged, &n, small.data()) == DXGI_ERROR_MORE_DATA && n == 3 && small[3].Width == 0);
+        std::vector<DXGI_MODE_DESC> all(merged.size());
+        n = (UINT)all.size();
+        CHECK(visuals::copy_modes(merged, &n, all.data()) == S_OK && n == merged.size() && all.back().Width == merged.back().Width);
+    }
+    {
         auto saved_cfg = config::cfg;
         config::cfg.spit_keys[2] = 'G';
         config::cfg.esp.on = true, config::cfg.esp.box = false, config::cfg.esp.max_distance = 450, config::cfg.esp.hunter[1] = 0.5f;
         config::cfg.uv.on = true, config::cfg.uv.glow = 2.5f, config::cfg.uv.color[0] = 0.25f;
-        config::cfg.hidden_configs = {"hunter_rage", "survivor_legit"}, config::cfg.allow_older = true;
+        config::cfg.hidden_configs = {"hunter_rage", "survivor_legit"}, config::cfg.allow_older = true, config::cfg.all_resolutions = true;
         std::string ini = config::profile_dir() + "_test.ini";
         CHECK(config::save(ini));
         config::cfg = config::Config();
@@ -1884,6 +1903,7 @@ int main(int argc, char** argv) {
         CHECK(config::cfg.hidden_configs.size() == 2 && config::cfg.hidden_configs[1] == "survivor_legit" && config::cfg.allow_older);
         CHECK(config::cfg.esp.on && !config::cfg.esp.box && config::cfg.esp.max_distance == 450 && config::cfg.esp.hunter[1] == 0.5f);
         CHECK(config::cfg.uv.on && config::cfg.uv.glow == 2.5f && config::cfg.uv.color[0] == 0.25f);
+        CHECK(config::cfg.all_resolutions && config::peek(ini, "all_resolutions") == "1");
         DeleteFileA(ini.c_str());
         config::cfg = saved_cfg;
     }

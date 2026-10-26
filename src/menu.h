@@ -2002,6 +2002,16 @@ inline bool fov_card() {
     return changed;
 }
 
+inline bool screen_card() {
+    bool& on = config::cfg.all_resolutions;
+    begin_card("screen", "SCREEN");
+    bool changed = switch_row("Unlock every resolution", "Every common resolution in the video settings, also ones your monitor lacks.", on);
+    if (changed) on ? (void)visuals::install_resolution_unlock() : visuals::remove_resolution_unlock();
+    note("Sizes larger than your screen need Fullscreen. Applies the next time the game starts.");
+    end_card();
+    return changed;
+}
+
 inline const char* FEATURED_TEXTS[] = {"btz_pounce_interrupted", "HUDMessage_BTZDeath_Killer", "HUDMessage_BTZDeath_Victim", "HUDMessage_BTZDeath_Observer",
                                         "HUDMessage_BTZZombiePounceInterrupt_Interrupter_AdditionalInterrupt",
                                         "HUDMessage_BTZZombiePounceInterrupt_Victim_SelfInterrupt", "btz_invasion_satus_human_killed"};
@@ -2518,6 +2528,7 @@ inline void visuals_page() {
                          "The veins that light up when UV hits the Night Hunter glow in your own color.", config::cfg.hunter_glow,
                          "Only you see it: as a survivor on the hunter you hit, as the Night Hunter on your own arms. Glow scales how bright the veins get.");
     changed |= fov_card();
+    changed |= screen_card();
     changed |= hud_colors_card();
     changed |= crosshair_card();
     changed |= survivor_glow_card();

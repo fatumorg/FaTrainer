@@ -628,6 +628,7 @@ static void download_build(ReleaseInfo latest) {
 
 static void main_thread() {
     logf("--- %s %s, %s loaded (%s)%s%lld", TITLE, VERSION, FATRAINER_EDITION, EDITION_TAG, crash::SESSION_TIME, (long long)time(nullptr));
+    if (config::peek(config::default_path(), "all_resolutions") == "1") visuals::install_resolution_unlock();
     check_last_crash();
     keep_crash_filter();
     log_environment();
