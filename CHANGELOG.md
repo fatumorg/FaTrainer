@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5
+
+Survivor Update
+
+- 2.5 is the last build of 2.5: it comes after 2.5 b26, which updates to it by itself.
+- New: upgrades in the weapon editor. Every weapon has four upgrade slots, each empty or any upgrade the game has (Enforcer up to King and Clicker), also on weapons the game would not upgrade. The game keeps them in your save.
+- New: mods in the weapon editor. Put any of the game's weapon mods on any weapon, also mods the weapon would not take, or remove one. The game keeps the mod in your save.
+- New: effects of a mod. Shock, Impact, Burning, Poison, Bleeding, Freezing, Stun, Explosive and Acid, each off or any level the game has (up to 4, Shock and Impact also 101). Every weapon with that mod gets them, and they come back every time you start the game.
+- New: upgrade slots in the game's own upgrade screen, 0 to 4, for every weapon of a type.
+- New: crossbows, shields and every other weapon open the weapon editor too: stats, rarity, upgrades and mods, with No reload for crossbows.
+- Since 2.4: a Visuals Version with only the looks, HUD colors with Rainbow, Hide and Show for every HUD piece, your own crosshair, Survivor glow, your own texts and Be The Zombie callouts, a language for every text category, field of view, every resolution, melee speed and reach, dropkick angle and height, throwable recharge, Item Dupe, keys for sliders and more actions, a crash window with the log, Start Cheat Engine in the launcher and many fixes. Every 2.5 beta below lists its changes.
+
 ## 2.5 b26
 
 Survivor Update

@@ -23,7 +23,7 @@
 - **Visuals**: player ESP for Be The Zombie and co-op, custom UV light color and glow, custom Night Hunter glow color
 - **Cash / Backpack / Stash / Materials**: set your money and any stack count
 - **Give items**: spawn any weapon, upgrade, consumable, material or blueprint; each item goes into the inventory the game accepts it in
-- **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, upgrades, repairs, rarity
+- **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, repairs, rarity, four upgrade slots with any upgrade, any mod on any weapon, mod effects with levels, upgrade slots per weapon type; crossbows, shields and every other weapon too
 - **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, configs you can create, load, save over, rename and delete, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Nexus Version
 
 ### Install
