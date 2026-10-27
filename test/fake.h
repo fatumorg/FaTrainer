@@ -38,12 +38,20 @@ struct World {
 
     void build() {
         mem = (uint8_t*)VirtualAlloc(nullptr, 64 << 20, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-        uintptr_t names = alloc(ITEM_COUNT * 72), arr = alloc(ITEM_COUNT * 8);
+        uintptr_t names = alloc(ITEM_COUNT * 72), arr = alloc(ITEM_COUNT * 8), melee_vt = game::find_vtable(game::g.base, "ItemDescMelee");
         for (int i = 0; i < ITEM_COUNT; i++) {
             uintptr_t d = alloc(0x600), s = names + i * 72;
-            strcpy((char*)s, ITEMS[i].id);
-            bool firearm = !strncmp(ITEMS[i].id, "Firearm", 7) || strstr(ITEMS[i].id, "Crossbow_");
-            put<uintptr_t>(d, firearm && game::g.vt_firearm_desc ? game::g.vt_firearm_desc : game::g.base + 0x1000);
+            const char* id = ITEMS[i].id;
+            strcpy((char*)s, id);
+            bool firearm = !strncmp(id, "Firearm", 7) || strstr(id, "Crossbow_");
+            uintptr_t vt = firearm && game::g.vt_firearm_desc ? game::g.vt_firearm_desc : game::g.base + 0x1000;
+            if (!strcmp(id, "Melee_MacheteAGen") && melee_vt) vt = melee_vt;
+            if (!strncmp(id, "Craft_Upgrade_", 14) && game::g.vt_upgrade_desc) vt = game::g.vt_upgrade_desc;
+            if (!strncmp(id, "Craftplan_", 10) && strstr(id, "Melee") && game::g.vt_blueprint_desc) {
+                vt = game::g.vt_blueprint_desc;
+                put<uint32_t>(d + game::BLUEPRINT_BASE_ITEMS, 1);
+            }
+            put<uintptr_t>(d, vt);
             put<uintptr_t>(d + 0x18, s);
             if (!std::isnan(ITEMS[i].st[ST_Damage])) put<float>(d + DAMAGE_OFF, ITEMS[i].st[ST_Damage]);
             if (!std::isnan(ITEMS[i].st[ST_Condition])) put<int>(d + CONDITION_OFF, (int)ITEMS[i].st[ST_Condition]);
@@ -66,6 +74,12 @@ struct World {
         backpack = inventory(game::g.vt_inv[0], 14, {{"Throwable_ZaidFlare", 9}, {"Firearm_PistolAGen", 1},
                                                      {"Throwable_ThrowingAxeAGen", 30}, {"Throwable_Molotov", 7},
                                                      {"Melee_MacheteAGen", 1}, {"Special_Hook", 1}});
+        uintptr_t machete = game::rdv<uintptr_t>(game::rdv<uintptr_t>(backpack + 0x40) + 4 * 8), parts = alloc(4 * 8);
+        put<uintptr_t>(parts, desc["Craft_Upgrade_DamL2DurL2BalL2"]);
+        put<uintptr_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_BLUEPRINT, desc["Craftplan_ElectricMelee"]);
+        put<uintptr_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_PARTS, parts);
+        put<uint32_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_PART_COUNT, 2);
+        put<uint8_t>(desc["Melee_MacheteAGen"] + game::DESC_CRAFTING_SLOTS, 1);
         stash = inventory(game::g.vt_inv[0], -1, {{"Melee_WrenchARusty", 1}, {"Melee_KnifeDGen", 1}, {"Throwable_Btz_Flare", 8}});
         inventory(game::g.vt_inv[0], -1, {});
         player = alloc(0x3000);

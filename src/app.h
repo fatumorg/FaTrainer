@@ -101,6 +101,7 @@ inline void request_refresh() {
                 cheats::read_sections();
             });
         logf("stats: %s", game::stat_report().c_str());
+        logf("mods: %s", game::mods_report().c_str());
         logf("cheats: %s", cheats::describe().c_str());
 #else
         logf("hud screens: %zu", game::g.huds.size());

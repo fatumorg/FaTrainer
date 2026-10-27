@@ -1625,12 +1625,22 @@ inline int stat_index(const std::string& key) {
     return -1;
 }
 
+inline const char SLOTS_KEY[] = "CraftingSlots", EFFECT_KEY[] = "Effect";
+inline std::string effect_key(int type) { return EFFECT_KEY + std::to_string(type); }
+inline int effect_type(const std::string& key) {
+    size_t n = strlen(EFFECT_KEY);
+    return key.size() > n && !key.compare(0, n, EFFECT_KEY) ? atoi(key.c_str() + n) : -1;
+}
+
 inline void apply_weapon_edits() {
     std::lock_guard<std::mutex> l(edits_mx);
     for (auto& [id, stats] : weapon_edits) {
         auto d = g.descs.find(id);
         if (d == g.descs.end()) continue;
         for (auto& [key, v] : stats) {
+            int type = effect_type(key);
+            if (key == SLOTS_KEY && game::upgrade_slots(d->second) != (int)v) game::set_upgrade_slots(d->second, (int)v);
+            if (type >= 0 && game::mod_effect_level(d->second, type) != (int)v) game::set_mod_effect(d->second, type, (int)v);
             int s = stat_index(key);
             auto done = g.stat_overrides.find({d->second, s});
             if (s >= 0 && (done == g.stat_overrides.end() || done->second != v)) game::set_stat(d->second, s, v);

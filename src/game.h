@@ -348,6 +348,7 @@ struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
     uintptr_t vt_player = 0, vt_tutorial_player = 0, vt_human = 0, vt_health[3] = {};
     uintptr_t vt_firearm_desc = 0, vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0;
+    uintptr_t vt_upgrade_desc = 0, vt_blueprint_desc = 0, context_ctor = 0, elemental_root = 0;
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds;
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
@@ -425,6 +426,136 @@ inline bool set_rarity(uintptr_t item, uintptr_t desc, int r) {
     if (!own_rarity(c)) ok = has_stat(ST_Color) && set_stat(desc, ST_Color, (float)r) && ok;
     return ok;
 }
+const int ITEM_CONTEXT_OBJECT = 0x58, CONTEXT_SIZE = 0x78, CONTEXT_DESC = 0x08, CONTEXT_WORD = 0x10, CONTEXT_REBUILT_FROM = 0x14;
+const int CONTEXT_CRAFT = 0x20, CONTEXT_BLUEPRINT = 0x28, CONTEXT_PARTS = 0x30, CONTEXT_PART_COUNT = 0x38, MAX_UPGRADES = 4;
+struct TtlVector { uintptr_t* data; uint32_t size, capacity; };
+using ContextCtorFn = uintptr_t(__fastcall*)(void* self, uintptr_t desc, uint32_t word, uintptr_t craft, uintptr_t blueprint, const TtlVector* parts);
+struct ItemMods { uintptr_t blueprint = 0; std::vector<uintptr_t> parts; };
+
+inline bool upgrade_desc(uintptr_t d) { return d && g.vt_upgrade_desc && rdv<uintptr_t>(d) == g.vt_upgrade_desc; }
+const int BLUEPRINT_BASE_ITEMS = 0xc0;
+inline bool weapon_blueprint(uintptr_t d) {
+    return d && g.vt_blueprint_desc && rdv<uintptr_t>(d) == g.vt_blueprint_desc && rdv<uint32_t>(d + BLUEPRINT_BASE_ITEMS) > 0;
+}
+
+inline ItemMods item_mods(uintptr_t item) {
+    uintptr_t ctx = item + ITEM_CONTEXT_OBJECT, data = rdv<uintptr_t>(ctx + CONTEXT_PARTS);
+    ItemMods m{rdv<uintptr_t>(ctx + CONTEXT_BLUEPRINT), {}};
+    uint32_t n = std::min<uint32_t>(rdv<uint32_t>(ctx + CONTEXT_PART_COUNT), MAX_UPGRADES);
+    for (uint32_t i = 0; data && i < n; i++) m.parts.push_back(rdv<uintptr_t>(data + i * 8));
+    return m;
+}
+
+inline bool rebuild_item(uintptr_t item, uintptr_t blueprint, std::vector<uintptr_t> parts) {
+    uintptr_t ctx = item + ITEM_CONTEXT_OBJECT, desc = rdv<uintptr_t>(ctx + CONTEXT_DESC);
+    if (!g.context_ctor || !in_image(rdv<uintptr_t>(ctx)) || !desc_alive(desc) || parts.size() > MAX_UPGRADES) return false;
+    if (blueprint && !weapon_blueprint(blueprint)) return false;
+    for (uintptr_t p : parts)
+        if (p && !upgrade_desc(p)) return false;
+    alignas(16) uint8_t fresh[CONTEXT_SIZE] = {};
+    TtlVector list{parts.data(), (uint32_t)parts.size(), (uint32_t)parts.size()};
+    ((ContextCtorFn)g.context_ctor)(fresh, desc, rdv<uint32_t>(ctx + CONTEXT_WORD), rdv<uintptr_t>(ctx + CONTEXT_CRAFT), blueprint, &list);
+    return wr_bytes(ctx + CONTEXT_REBUILT_FROM, fresh + CONTEXT_REBUILT_FROM, CONTEXT_SIZE - CONTEXT_REBUILT_FROM);
+}
+
+const int SLOT_CRAFTING_SLOTS = 422, DESC_CRAFTING_SLOTS = 0x2c4;
+inline const uint8_t CRAFTING_SLOTS_GETTER[] = {0x0F, 0xB6, 0x81, 0xC4, 0x02, 0x00, 0x00, 0xC3};
+inline bool has_upgrade_slots(uintptr_t desc) {
+    uint8_t code[sizeof CRAFTING_SLOTS_GETTER];
+    uintptr_t getter = rdv<uintptr_t>(rdv<uintptr_t>(desc) + SLOT_CRAFTING_SLOTS * 8);
+    return desc && rd(getter, code, sizeof code) && !memcmp(code, CRAFTING_SLOTS_GETTER, sizeof code);
+}
+inline int upgrade_slots(uintptr_t desc) { return has_upgrade_slots(desc) ? rdv<uint8_t>(desc + DESC_CRAFTING_SLOTS) : -1; }
+inline std::map<uintptr_t, uint8_t> slot_originals;
+inline bool set_upgrade_slots(uintptr_t desc, int n) {
+    if (!has_upgrade_slots(desc) || !desc_alive(desc)) return false;
+    slot_originals.emplace(desc, rdv<uint8_t>(desc + DESC_CRAFTING_SLOTS));
+    return wr<uint8_t>(desc + DESC_CRAFTING_SLOTS, (uint8_t)std::clamp(n, 0, MAX_UPGRADES));
+}
+inline void restore_upgrade_slots(uintptr_t desc) {
+    auto it = slot_originals.find(desc);
+    if (it == slot_originals.end()) return;
+    if (desc_alive(desc)) wr<uint8_t>(desc + DESC_CRAFTING_SLOTS, it->second);
+    slot_originals.erase(it);
+}
+
+const int ELEMENTAL_MANAGER = 0xbb0, ELEMENTAL_TREE = 0x18, ELEMENTAL_NODE_KEY = 0x128, ELEMENTAL_NODE_ENTRY = 0x120;
+const int LEVEL_TREE = 0x68, LEVEL_NODE_KEY = 0xa8, LEVEL_NODE_OBJECT = 0xa0, TREE_LESS = 0, TREE_MORE = 0x10, TREE_DEPTH = 64;
+const int ELEMENTAL_MASKS = 0x58, BLUEPRINT_ELEMENTALS = 0x1b0, BLUEPRINT_MASKS = 0x238, ELEMENTAL_TYPES = 17;
+
+inline uintptr_t tree_find(uintptr_t node, int key_back, uint32_t key) {
+    uintptr_t best = 0;
+    for (int depth = 0; node && depth < TREE_DEPTH; depth++) {
+        if (rdv<uint32_t>(node - key_back) >= key) best = node, node = rdv<uintptr_t>(node + TREE_LESS);
+        else node = rdv<uintptr_t>(node + TREE_MORE);
+    }
+    return best && rdv<uint32_t>(best - key_back) == key ? best : 0;
+}
+inline void tree_keys(uintptr_t node, int key_back, int depth, std::vector<int>& out) {
+    if (!node || depth >= TREE_DEPTH || out.size() >= TREE_DEPTH) return;
+    tree_keys(rdv<uintptr_t>(node + TREE_LESS), key_back, depth + 1, out);
+    out.push_back((int)rdv<uint32_t>(node - key_back));
+    tree_keys(rdv<uintptr_t>(node + TREE_MORE), key_back, depth + 1, out);
+}
+inline uintptr_t elemental_entry(int type) {
+    uintptr_t manager = rdv<uintptr_t>(rdv<uintptr_t>(g.elemental_root) + ELEMENTAL_MANAGER);
+    uintptr_t node = manager ? tree_find(rdv<uintptr_t>(manager + ELEMENTAL_TREE), ELEMENTAL_NODE_KEY, (uint32_t)type) : 0;
+    return node ? node - ELEMENTAL_NODE_ENTRY : 0;
+}
+inline uintptr_t elemental_level(int type, int level) {
+    uintptr_t entry = elemental_entry(type);
+    uintptr_t node = entry && level > 0 ? tree_find(rdv<uintptr_t>(entry + LEVEL_TREE), LEVEL_NODE_KEY, (uint32_t)level) : 0;
+    return node ? node - LEVEL_NODE_OBJECT : 0;
+}
+inline std::vector<int> elemental_levels(int type) {
+    std::vector<int> out;
+    if (uintptr_t entry = elemental_entry(type)) tree_keys(rdv<uintptr_t>(entry + LEVEL_TREE), LEVEL_NODE_KEY, 0, out);
+    return out;
+}
+inline int level_number(uintptr_t level) { return level ? (int)rdv<uint32_t>(level - (LEVEL_NODE_KEY - LEVEL_NODE_OBJECT)) : 0; }
+inline int mod_effect_level(uintptr_t blueprint, int type) {
+    return type >= 0 && type < ELEMENTAL_TYPES ? level_number(rdv<uintptr_t>(blueprint + BLUEPRINT_ELEMENTALS + type * 8)) : 0;
+}
+
+struct ModOriginal { uintptr_t levels[ELEMENTAL_TYPES]; uint64_t masks[2]; };
+inline std::map<uintptr_t, ModOriginal> mod_originals;
+inline void recompute_mod_masks(uintptr_t blueprint, const ModOriginal& original) {
+    uint64_t every[2] = {}, present[2] = {};
+    for (int t = 0; t < ELEMENTAL_TYPES; t++) {
+        uintptr_t entry = elemental_entry(t);
+        if (!entry) continue;
+        bool on = rdv<uintptr_t>(blueprint + BLUEPRINT_ELEMENTALS + t * 8) != 0;
+        for (int m = 0; m < 2; m++) {
+            uint64_t bits = rdv<uint64_t>(entry + ELEMENTAL_MASKS + m * 8);
+            every[m] |= bits;
+            if (on) present[m] |= bits;
+        }
+    }
+    for (int m = 0; m < 2; m++) wr<uint64_t>(blueprint + BLUEPRINT_MASKS + m * 8, (original.masks[m] & ~every[m]) | present[m]);
+}
+inline bool set_mod_effect(uintptr_t blueprint, int type, int level) {
+    if (!weapon_blueprint(blueprint) || !desc_alive(blueprint) || type < 0 || type >= ELEMENTAL_TYPES) return false;
+    uintptr_t object = level > 0 ? elemental_level(type, level) : 0;
+    if (level > 0 && !object) return false;
+    auto [it, fresh] = mod_originals.try_emplace(blueprint);
+    if (fresh && (!rd(blueprint + BLUEPRINT_ELEMENTALS, it->second.levels, sizeof it->second.levels) || !rd(blueprint + BLUEPRINT_MASKS, it->second.masks, sizeof it->second.masks))) {
+        mod_originals.erase(it);
+        return false;
+    }
+    if (!wr<uintptr_t>(blueprint + BLUEPRINT_ELEMENTALS + type * 8, object)) return false;
+    recompute_mod_masks(blueprint, it->second);
+    return true;
+}
+inline void restore_mod(uintptr_t blueprint) {
+    auto it = mod_originals.find(blueprint);
+    if (it == mod_originals.end()) return;
+    if (desc_alive(blueprint)) {
+        wr_bytes(blueprint + BLUEPRINT_ELEMENTALS, it->second.levels, sizeof it->second.levels);
+        wr_bytes(blueprint + BLUEPRINT_MASKS, it->second.masks, sizeof it->second.masks);
+    }
+    mod_originals.erase(it);
+}
+
 inline void reapply_stats() {
     for (auto& [key, v] : g.stat_overrides)
         if (get_stat(key.first, key.second) != v) write_stat(key.first, key.second, v);
@@ -505,6 +636,9 @@ inline ClassStats calibrate_classes(const std::vector<std::pair<uintptr_t, const
     return out;
 }
 
+inline const char CONTEXT_CTOR_CODE[] = "E8 ? ? ? ? 48 8B D0 48 8D 4D 18 E8 ? ? ? ? 48 8B 4C 24 78";
+inline const char ELEMENTAL_ROOT_CODE[] = "48 8B 0D ? ? ? ? 48 8B 91 B0 0B 00 00 48 85 D2";
+
 inline bool resolve_classes(uintptr_t base) {
     std::lock_guard<std::mutex> l(mx);
     g.base = base;
@@ -524,6 +658,10 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_logical_player = find_vtable(base, "LogicalPlayer");
     g.vt_logical_level = find_vtable(base, "LogicalLevel");
     g.vt_hud = find_vtable(base, "HUDScreenBase");
+    g.vt_upgrade_desc = find_vtable(base, "ItemDescWeaponModification");
+    g.vt_blueprint_desc = find_vtable(base, "ItemDescCraftPlan");
+    if (auto hits = find_code(base, CONTEXT_CTOR_CODE, 2); hits.size() == 1) g.context_ctor = rip_target(hits[0], 1, 5);
+    if (auto hits = find_code(base, ELEMENTAL_ROOT_CODE, 2); hits.size() == 1) g.elemental_root = rip_target(hits[0], 3, 7);
     g.player_control = g.vt_player ? base_offset(base, g.vt_player, "IControlObject") : -1;
     g.human_control = g.vt_human ? base_offset(base, g.vt_human, "IControlObject") : -1;
     g.sensor_control = g.vt_prison_sensor ? base_offset(base, g.vt_prison_sensor, "IControlObject") : -1;
@@ -661,6 +799,16 @@ inline std::string stat_report() {
         out += b;
     }
     return out;
+}
+
+inline std::string mods_report() {
+    int upgrades = 0, blueprints = 0, weapons = 0;
+    for (auto& [id, d] : g.descs) upgrades += upgrade_desc(d), blueprints += weapon_blueprint(d), weapons += has_upgrade_slots(d);
+    std::string levels;
+    for (int t : {0, 1, 2, 3, 4, 5, 6, 8, 11}) levels += " " + std::to_string(t) + ":" + std::to_string(elemental_levels(t).size());
+    char b[200];
+    snprintf(b, sizeof b, "context %s, %d upgrades, %d mods, %d weapon types, levels%s", g.context_ctor ? "ok" : "missing", upgrades, blueprints, weapons, levels.c_str());
+    return b;
 }
 
 inline Kind default_target(const char* id) {

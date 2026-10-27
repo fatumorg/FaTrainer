@@ -350,7 +350,7 @@ inline int cat_of(const char* id) {
     auto has = [&](const char* p) { return s.find(p) != std::string::npos; };
     if (!strncmp(id, "Craftplan_", 10)) return C_BLUEPRINTS;
     if (has("Upgrade") || !strncmp(id, "CWU_", 4)) return C_UPGRADES;
-    if (has("Firearm") || has("Bow") || has("Ammo") || has("Melee")) return C_WEAPONS;
+    if (has("Firearm") || has("Bow") || has("bow") || has("Ammo") || has("Melee")) return C_WEAPONS;
     if (has("Throwable")) return C_THROWABLE;
     if (has("Medkit") || has("Potion") || has("Booster")) return C_HEALING;
     if (has("Craft")) return C_CRAFTING;
@@ -402,7 +402,8 @@ const float NO_RELOAD_MAGAZINE = 999, NO_RELOAD_TIME = 0.05f;
 inline bool editable(const game::Item& it) {
     if (!it.info) return false;
     int c = cat_of(it.info->id);
-    return c == C_WEAPONS || c == C_THROWABLE || !strncmp(it.info->id, "Flashlight_", 11) || !strncmp(it.info->id, "Special_Hook", 12);
+    return c == C_WEAPONS || c == C_THROWABLE || !strncmp(it.info->id, "Flashlight_", 11) || !strncmp(it.info->id, "Special_Hook", 12) ||
+           game::upgrade_slots(game::item_desc(it)) >= 0;
 }
 
 inline void open_editor(const game::Item& it, const std::string& id) {
@@ -428,10 +429,19 @@ inline void edit_stat(int stat, float v) {
 
 inline float game_value(int stat) { return g_edit_info ? g_edit_info->st[stat] : NAN; }
 
+inline void forget_edit(const std::string& id, const std::string& key) {
+    auto it = config::cfg.weapon_edits.find(id);
+    if (it != config::cfg.weapon_edits.end() && it->second.erase(key) && it->second.empty()) config::cfg.weapon_edits.erase(it);
+}
+
+inline bool key_edited(const std::string& id, const std::string& key) {
+    auto it = config::cfg.weapon_edits.find(id);
+    return it != config::cfg.weapon_edits.end() && it->second.count(key);
+}
+
 inline void reset_stat(int stat) {
     float original = game_value(stat);
-    auto it = config::cfg.weapon_edits.find(g_edit_id);
-    if (it != config::cfg.weapon_edits.end() && it->second.erase(STAT_KEYS[stat]) && it->second.empty()) config::cfg.weapon_edits.erase(it);
+    forget_edit(g_edit_id, STAT_KEYS[stat]);
     remember_edits();
     if (std::isnan(original)) return;
     uintptr_t desc = g_edit_desc;
@@ -442,10 +452,7 @@ inline void reset_stat(int stat) {
     });
 }
 
-inline bool edited(int stat) {
-    auto it = config::cfg.weapon_edits.find(g_edit_id);
-    return it != config::cfg.weapon_edits.end() && it->second.count(STAT_KEYS[stat]);
-}
+inline bool edited(int stat) { return key_edited(g_edit_id, STAT_KEYS[stat]); }
 
 struct EditRow { int stat; const char* name; const char* fmt; float mul; };
 inline const EditRow EDIT_ROWS[] = {{ST_Damage, "Damage", "%.1f", 2},           {ST_Condition, "Durability", "%.0f", 10},
@@ -527,12 +534,210 @@ inline void rarity_picker() {
     ImGui::Dummy({0, S(10)});
 }
 
+struct ModChoice { uintptr_t desc; std::string id, name; };
+inline std::vector<ModChoice> g_upgrade_choices, g_blueprint_choices;
+inline size_t g_choice_descs = 0;
+
+inline void refresh_mod_choices() {
+    if (game::g.descs.size() == g_choice_descs) return;
+    g_choice_descs = game::g.descs.size();
+    g_upgrade_choices.clear(), g_blueprint_choices.clear();
+    for (auto& [id, d] : game::g.descs) {
+        auto* info = game::str_at(game::rdv<uintptr_t>(d + game::g.desc_name));
+        std::string name = info && info->name[0] && info->name[0] != '&' ? info->name : game::readable(id);
+        if (game::upgrade_desc(d)) g_upgrade_choices.push_back({d, id, name});
+        else if (game::weapon_blueprint(d)) g_blueprint_choices.push_back({d, id, name});
+    }
+    for (auto* list : {&g_upgrade_choices, &g_blueprint_choices})
+        std::sort(list->begin(), list->end(), [](const ModChoice& a, const ModChoice& b) { return a.name < b.name; });
+}
+
+inline const ModChoice* find_choice(const std::vector<ModChoice>& list, uintptr_t desc) {
+    for (auto& c : list)
+        if (c.desc == desc) return &c;
+    return nullptr;
+}
+
+inline bool mod_combo(const char* id, uintptr_t current, const std::vector<ModChoice>& list, const char* none, uintptr_t& picked, float width) {
+    const ModChoice* now = find_choice(list, current);
+    ImGui::SetNextItemWidth(width);
+    bool changed = false;
+    if (ImGui::BeginCombo(id, current ? now ? now->name.c_str() : "Unknown" : none, ImGuiComboFlags_HeightLarge)) {
+        if (ImGui::Selectable(none, !current)) picked = 0, changed = true;
+        for (auto& c : list) {
+            ImGui::PushID((void*)c.desc);
+            if (ImGui::Selectable(c.name.c_str(), c.desc == current)) picked = c.desc, changed = true;
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    return changed && picked != current;
+}
+
+inline void rebuild_edited_item(uintptr_t blueprint, const std::vector<uintptr_t>& parts, const std::string& what) {
+    uintptr_t item = g_edit_item;
+    std::string id = g_edit_id;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        bool done = game::rebuild_item(item, blueprint, parts);
+        logf("edit: %s %s: %s", id.c_str(), what.c_str(), done ? "done" : "refused");
+        if (!done) toast("The game refused that change. Press Refresh and try again.");
+    });
+}
+
+inline void edit_slots(int n) {
+    n = std::clamp(n, 0, game::MAX_UPGRADES);
+    logf("edit: %s upgrade slots -> %d", g_edit_id.c_str(), n);
+    uintptr_t desc = g_edit_desc;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        game::set_upgrade_slots(desc, n);
+    });
+    config::cfg.weapon_edits[g_edit_id][cheats::SLOTS_KEY] = (float)n;
+    remember_edits();
+}
+
+inline void reset_slots() {
+    forget_edit(g_edit_id, cheats::SLOTS_KEY);
+    remember_edits();
+    uintptr_t desc = g_edit_desc;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        game::restore_upgrade_slots(desc);
+    });
+}
+
+inline bool mods_editable() { return game::g.context_ctor && game::upgrade_slots(g_edit_desc) >= 0; }
+
+inline void upgrades_editor() {
+    if (!mods_editable()) return;
+    refresh_mod_choices();
+    game::ItemMods mods = game::item_mods(g_edit_item);
+    caps("UPGRADES OF THIS ONE");
+    ImGui::Dummy({0, S(2)});
+    float gap = S(8), w = (ImGui::GetContentRegionAvail().x - gap * (game::MAX_UPGRADES - 1)) / game::MAX_UPGRADES;
+    for (int i = 0; i < game::MAX_UPGRADES; i++) {
+        if (i) ImGui::SameLine(0, gap);
+        uintptr_t now = i < (int)mods.parts.size() ? mods.parts[i] : 0, picked = now;
+        char id[16];
+        snprintf(id, sizeof id, "##upgrade%d", i);
+        if (!mod_combo(id, now, g_upgrade_choices, "Empty slot", picked, w)) continue;
+        auto parts = mods.parts;
+        if ((int)parts.size() <= i) parts.resize(i + 1, 0);
+        parts[i] = picked;
+        while (!parts.empty() && !parts.back()) parts.pop_back();
+        const ModChoice* c = find_choice(g_upgrade_choices, picked);
+        rebuild_edited_item(mods.blueprint, parts, "upgrade " + std::to_string(i + 1) + " -> " + (c ? c->id : "empty"));
+    }
+    ImGui::Dummy({0, S(4)});
+    int slots = game::upgrade_slots(g_edit_desc);
+    bool changed = key_edited(g_edit_id, cheats::SLOTS_KEY);
+    float bw = ImGui::GetFrameHeight();
+    ImGui::AlignTextToFramePadding();
+    label("Slots in the game's upgrade screen, every one of this type");
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - bw * 2 - S(150));
+    ImGui::BeginDisabled(slots <= 0);
+    if (ImGui::Button("-##slots", {bw, 0})) edit_slots(slots - 1);
+    ImGui::EndDisabled();
+    ImGui::SameLine(0, S(4));
+    ImGui::Button(std::to_string(slots).c_str(), {S(40), 0});
+    ImGui::SameLine(0, S(4));
+    ImGui::BeginDisabled(slots >= game::MAX_UPGRADES);
+    if (ImGui::Button("+##slots", {bw, 0})) edit_slots(slots + 1);
+    ImGui::EndDisabled();
+    ImGui::SameLine(0, S(6));
+    ImGui::BeginDisabled(!changed);
+    if (ImGui::Button("Undo##slots", {S(92), 0})) reset_slots();
+    ImGui::EndDisabled();
+    ImGui::Dummy({0, S(10)});
+}
+
+struct EffectType { int type; const char* name; };
+inline const EffectType WEAPON_EFFECTS[] = {{1, "Shock"},    {2, "Impact"},    {4, "Burning"}, {3, "Poison"}, {0, "Bleeding"},
+                                            {5, "Freezing"}, {11, "Stun"},     {8, "Explosive"}, {6, "Acid"}};
+
+inline void edit_effect(const ModChoice& mod, int type, int level) {
+    logf("edit: mod %s effect %d -> level %d", mod.id.c_str(), type, level);
+    uintptr_t blueprint = mod.desc;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        if (!game::set_mod_effect(blueprint, type, level)) logf("edit: effect %d level %d refused", type, level);
+    });
+    config::cfg.weapon_edits[mod.id][cheats::effect_key(type)] = (float)level;
+    remember_edits();
+}
+
+inline void reset_effects(const ModChoice& mod) {
+    for (auto& e : WEAPON_EFFECTS) forget_edit(mod.id, cheats::effect_key(e.type));
+    remember_edits();
+    uintptr_t blueprint = mod.desc;
+    on_game_thread([=] {
+        std::lock_guard<std::mutex> l(game::mx);
+        game::restore_mod(blueprint);
+    });
+}
+
+inline const std::vector<int>& effect_levels(int type) {
+    static std::map<int, std::vector<int>> known;
+    auto& levels = known[type];
+    if (levels.empty()) levels = game::elemental_levels(type);
+    return levels;
+}
+
+inline void mod_editor() {
+    if (!mods_editable()) return;
+    refresh_mod_choices();
+    game::ItemMods mods = game::item_mods(g_edit_item);
+    caps("MOD OF THIS ONE");
+    ImGui::Dummy({0, S(2)});
+    uintptr_t picked = mods.blueprint;
+    if (mod_combo("##mod", mods.blueprint, g_blueprint_choices, "No mod", picked, -FLT_MIN)) {
+        const ModChoice* c = find_choice(g_blueprint_choices, picked);
+        rebuild_edited_item(picked, mods.parts, std::string("mod -> ") + (c ? c->id : "none"));
+    }
+    const ModChoice* mod = find_choice(g_blueprint_choices, mods.blueprint);
+    if (!mod) {
+        note("A mod gives the weapon its effects. Here any mod fits any weapon.");
+        ImGui::Dummy({0, S(6)});
+        return;
+    }
+    ImGui::Dummy({0, S(8)});
+    caps("EFFECTS OF THIS MOD, EVERY WEAPON WITH IT");
+    ImGui::Dummy({0, S(2)});
+    bool any_level = false;
+    for (auto& e : WEAPON_EFFECTS) {
+        auto& levels = effect_levels(e.type);
+        if (levels.empty()) continue;
+        any_level = true;
+        int now = game::mod_effect_level(mod->desc, e.type);
+        ImGui::PushID(e.type);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(e.name);
+        ImGui::SameLine(S(120));
+        if (chip("Off", now == 0) && now != 0) edit_effect(*mod, e.type, 0);
+        for (int level : levels) {
+            ImGui::SameLine(0, S(6));
+            std::string text = "Level " + std::to_string(level);
+            if (chip(text.c_str(), now == level) && now != level) edit_effect(*mod, e.type, level);
+        }
+        ImGui::PopID();
+    }
+    if (!any_level) note("Effect levels show up once your save is loaded.");
+    bool edited_mod = false;
+    for (auto& e : WEAPON_EFFECTS) edited_mod |= key_edited(mod->id, cheats::effect_key(e.type));
+    ImGui::Dummy({0, S(2)});
+    ImGui::BeginDisabled(!edited_mod);
+    if (ImGui::Button("Undo effect edits", {0, ImGui::GetFrameHeight()})) reset_effects(*mod);
+    ImGui::EndDisabled();
+    ImGui::Dummy({0, S(10)});
+}
+
 inline bool has_own_stat(int stat);
 
 inline void editor_extras() {
     const char* id = g_edit_id.c_str();
     bool gun = has_own_stat(ST_AmmoCount) && game::firearm_desc(g_edit_desc);
-    bool bow = strstr(id, "Bow") != nullptr, melee = g_edit_info && g_edit_info->melee;
+    bool bow = lower(g_edit_id).find("bow") != std::string::npos, melee = g_edit_info && g_edit_info->melee;
     bool flashlight = !strncmp(id, "Flashlight_", 11), hook = !strncmp(id, "Special_Hook", 12);
     if (!gun && !bow && !melee && !flashlight && !hook) return;
     caps("EXTRAS");
@@ -596,16 +801,20 @@ inline void editor_popup() {
         ImGui::Dummy({0, S(10)});
     }
     rarity_picker();
+    upgrades_editor();
+    mod_editor();
     editor_extras();
     if (rows.empty()) note("No editable stats found for this item. Press Refresh after loading your save and check fatrainer.log.");
-    else note("Stat edits change every item of this type and come back each time you start the game. Rarity changes only this one.");
+    else note("Stat edits and upgrade slots change every item of this type and come back each time you start the game. Rarity, upgrades and the mod change only this one.");
     ImGui::EndChild();
     ImGui::Dummy({0, S(4)});
     bool any = config::cfg.weapon_edits.count(g_edit_id) > 0;
     ImGui::BeginDisabled(!any);
-    if (ImGui::Button("Undo every edit", {0, ImGui::GetFrameHeight()}))
+    if (ImGui::Button("Undo every edit", {0, ImGui::GetFrameHeight()})) {
         for (auto& r : EDIT_ROWS)
             if (edited(r.stat)) reset_stat(r.stat);
+        if (key_edited(g_edit_id, cheats::SLOTS_KEY)) reset_slots();
+    }
     ImGui::EndDisabled();
     ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - S(120));
     if (accent_button("Done", {S(120), 0})) ImGui::CloseCurrentPopup();

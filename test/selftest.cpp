@@ -185,6 +185,34 @@ static void __fastcall fake_remove_skill(uintptr_t container, uint16_t index) {
     fake_store_learned(container);
 }
 
+static uintptr_t fake_part_store[game::MAX_UPGRADES], fake_cache_object[4];
+static uintptr_t __fastcall fake_context_ctor(void* self, uintptr_t desc, uint32_t word, uintptr_t craft, uintptr_t blueprint, const game::TtlVector* parts) {
+    auto* c = (uint8_t*)self;
+    memcpy(c + game::CONTEXT_DESC, &desc, 8);
+    memcpy(c + game::CONTEXT_WORD, &word, 4);
+    *(int*)(c + 0x14) = 7;
+    memcpy(c + game::CONTEXT_CRAFT, &craft, 8);
+    memcpy(c + game::CONTEXT_BLUEPRINT, &blueprint, 8);
+    uint32_t n = std::max<uint32_t>(parts->size, 2);
+    memset(fake_part_store, 0, sizeof fake_part_store);
+    memcpy(fake_part_store, parts->data, parts->size * 8);
+    uintptr_t store = (uintptr_t)fake_part_store, cache = parts->size ? (uintptr_t)fake_cache_object : 0;
+    memcpy(c + game::CONTEXT_PARTS, &store, 8);
+    memcpy(c + game::CONTEXT_PART_COUNT, &n, 4);
+    memcpy(c + game::CONTEXT_PART_COUNT + 4, &n, 4);
+    *(uint32_t*)(c + 0x40) = 0x4c;
+    memcpy(c + 0x48, &cache, 8);
+    return (uintptr_t)self;
+}
+
+static uintptr_t fake_tree_node(uintptr_t key_back, uint32_t key, uintptr_t less, uintptr_t more) {
+    uintptr_t block = w.alloc(0x200), node = block + 0x180;
+    w.put<uint32_t>(node - key_back, key);
+    w.put<uintptr_t>(node + game::TREE_LESS, less);
+    w.put<uintptr_t>(node + game::TREE_MORE, more);
+    return node;
+}
+
 int main(int argc, char** argv) {
     CHECK(newer_version("2.1", "2.0") && newer_version("2.0.1", "2.0") && newer_version("10.0", "9.9"));
     CHECK(!newer_version("2.0", "2.0") && !newer_version("2.0.0", "2.0") && !newer_version("1.9", "2.0") && !newer_version("", "2.0") && !newer_version("2.x", "2.0"));
@@ -975,6 +1003,82 @@ int main(int argc, char** argv) {
         CHECK(cheats::uv_flare_id("Throwable_Btz_Flare") && cheats::uv_flare_id("Throwable_ZaidFlare") && !cheats::uv_flare_id("Throwable_Smoke_Flare") && !cheats::uv_flare_id(nullptr));
     }
     CHECK(cheats::vt_throw_controller && cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
+    {
+        CHECK(game::g.context_ctor == game::g.base + 0x745130 && game::g.elemental_root == game::g.base + 0x1c16348);
+        CHECK(game::g.vt_upgrade_desc && game::g.vt_blueprint_desc);
+        uintptr_t pistol = w.desc["Firearm_PistolAGen"], gauze = w.desc["Craft_Gauze"];
+        CHECK(game::has_upgrade_slots(pistol) && game::upgrade_slots(pistol) == 0 && game::upgrade_slots(gauze) == -1);
+        CHECK(game::set_upgrade_slots(pistol, 3) && game::upgrade_slots(pistol) == 3);
+        CHECK(game::set_upgrade_slots(pistol, 9) && game::upgrade_slots(pistol) == 4 && !game::set_upgrade_slots(gauze, 2));
+        game::restore_upgrade_slots(pistol);
+        CHECK(game::upgrade_slots(pistol) == 0 && game::slot_originals.empty());
+
+        uintptr_t king = w.desc["Craft_Upgrade_DamL2DurL2BalL2"], dam = w.desc["Craft_Upgrade_Dam"], mod = w.desc["Craftplan_ElectricMelee"];
+        CHECK(game::upgrade_desc(king) && game::upgrade_desc(dam) && !game::upgrade_desc(gauze) && game::weapon_blueprint(mod) && !game::weapon_blueprint(king));
+        CHECK(!game::weapon_blueprint(w.desc["Craftplan_Molotov"]) && game::upgrade_slots(w.desc["Melee_MacheteAGen"]) == 1);
+
+        uintptr_t saved_ctor = game::g.context_ctor;
+        game::g.context_ctor = (uintptr_t)&fake_context_ctor;
+        uintptr_t item = w.item("Melee_MacheteAGen", 1), ctx = item + game::ITEM_CONTEXT_OBJECT, craft = 0x1234;
+        w.put<uint32_t>(ctx + game::CONTEXT_WORD, 0x5a);
+        w.put<uintptr_t>(ctx + game::CONTEXT_CRAFT, craft);
+        CHECK(game::item_mods(item).blueprint == 0 && game::item_mods(item).parts.empty());
+        CHECK(game::rebuild_item(item, mod, {0, king}));
+        auto mods = game::item_mods(item);
+        CHECK(mods.blueprint == mod && mods.parts.size() == 2 && mods.parts[0] == 0 && mods.parts[1] == king);
+        CHECK(game::rdv<uintptr_t>(ctx) == game::g.base + 0x1000 && game::rdv<uintptr_t>(ctx + game::CONTEXT_DESC) == w.desc["Melee_MacheteAGen"]);
+        CHECK(game::rdv<uint32_t>(ctx + game::CONTEXT_WORD) == 0x5a && game::rdv<uintptr_t>(ctx + game::CONTEXT_CRAFT) == craft && game::rdv<int>(ctx + 0x14) == 7);
+        CHECK(game::rdv<uintptr_t>(ctx + 0x48) == (uintptr_t)fake_cache_object);
+        CHECK(!game::rebuild_item(item, king, {}) && !game::rebuild_item(item, 0, {gauze}) && !game::rebuild_item(item, 0, {dam, dam, dam, dam, dam}));
+        CHECK(game::item_mods(item).blueprint == mod);
+        CHECK(game::rebuild_item(item, 0, {dam, dam, dam, dam}) && game::item_mods(item).parts.size() == 4 && !game::item_mods(item).blueprint);
+        game::g.context_ctor = 0;
+        CHECK(!game::rebuild_item(item, mod, {}));
+        game::g.context_ctor = saved_ctor;
+
+        uintptr_t shock_levels = fake_tree_node(game::LEVEL_NODE_KEY, 2, fake_tree_node(game::LEVEL_NODE_KEY, 1, 0, 0),
+                                                fake_tree_node(game::LEVEL_NODE_KEY, 3, 0, fake_tree_node(game::LEVEL_NODE_KEY, 101, 0, 0)));
+        uintptr_t burn_levels = fake_tree_node(game::LEVEL_NODE_KEY, 1, 0, fake_tree_node(game::LEVEL_NODE_KEY, 4, fake_tree_node(game::LEVEL_NODE_KEY, 2, 0, 0), 0));
+        uintptr_t shock = fake_tree_node(game::ELEMENTAL_NODE_KEY, 1, 0, 0), burn = fake_tree_node(game::ELEMENTAL_NODE_KEY, 4, 0, 0);
+        uintptr_t elementals = fake_tree_node(game::ELEMENTAL_NODE_KEY, 3, shock, burn);
+        w.put<uintptr_t>(shock - game::ELEMENTAL_NODE_ENTRY + game::LEVEL_TREE, shock_levels);
+        w.put<uintptr_t>(burn - game::ELEMENTAL_NODE_ENTRY + game::LEVEL_TREE, burn_levels);
+        w.put<uint64_t>(shock - game::ELEMENTAL_NODE_ENTRY + game::ELEMENTAL_MASKS, 0x2);
+        w.put<uint64_t>(burn - game::ELEMENTAL_NODE_ENTRY + game::ELEMENTAL_MASKS, 0x10);
+        w.put<uint64_t>(burn - game::ELEMENTAL_NODE_ENTRY + game::ELEMENTAL_MASKS + 8, 0x4);
+        uintptr_t manager = w.alloc(0x40), holder = w.alloc(0x1000), root = w.alloc(8);
+        w.put<uintptr_t>(manager + game::ELEMENTAL_TREE, elementals);
+        w.put<uintptr_t>(holder + game::ELEMENTAL_MANAGER, manager);
+        w.put<uintptr_t>(root, holder);
+        uintptr_t saved_root = game::g.elemental_root;
+        game::g.elemental_root = root;
+        CHECK(game::elemental_entry(1) == shock - game::ELEMENTAL_NODE_ENTRY && game::elemental_entry(3) && !game::elemental_entry(2) && !game::elemental_entry(9));
+        CHECK(game::elemental_levels(1) == std::vector<int>({1, 2, 3, 101}) && game::elemental_levels(4) == std::vector<int>({1, 2, 4}) && game::elemental_levels(2).empty());
+        CHECK(game::level_number(game::elemental_level(1, 3)) == 3 && game::level_number(game::elemental_level(4, 2)) == 2);
+        CHECK(!game::elemental_level(1, 4) && !game::elemental_level(4, 3) && !game::elemental_level(1, 0));
+
+        w.put<uintptr_t>(mod + game::BLUEPRINT_ELEMENTALS + 8, game::elemental_level(1, 1));
+        w.put<uint64_t>(mod + game::BLUEPRINT_MASKS, 0x102);
+        CHECK(game::mod_effect_level(mod, 1) == 1 && game::mod_effect_level(mod, 4) == 0 && game::mod_effect_level(mod, 40) == 0);
+        CHECK(game::set_mod_effect(mod, 4, 2) && game::mod_effect_level(mod, 4) == 2);
+        CHECK(game::rdv<uint64_t>(mod + game::BLUEPRINT_MASKS) == 0x112 && game::rdv<uint64_t>(mod + game::BLUEPRINT_MASKS + 8) == 0x4);
+        CHECK(game::set_mod_effect(mod, 1, 0) && game::mod_effect_level(mod, 1) == 0 && game::rdv<uint64_t>(mod + game::BLUEPRINT_MASKS) == 0x110);
+        CHECK(!game::set_mod_effect(mod, 1, 4) && !game::set_mod_effect(mod, 17, 1) && !game::set_mod_effect(king, 1, 1));
+        CHECK(game::set_mod_effect(mod, 1, 101) && game::mod_effect_level(mod, 1) == 101);
+        game::restore_mod(mod);
+        CHECK(game::mod_effect_level(mod, 1) == 1 && game::mod_effect_level(mod, 4) == 0 && game::rdv<uint64_t>(mod + game::BLUEPRINT_MASKS) == 0x102);
+        CHECK(game::rdv<uint64_t>(mod + game::BLUEPRINT_MASKS + 8) == 0 && game::mod_originals.empty());
+
+        CHECK(cheats::effect_type(cheats::effect_key(11)) == 11 && cheats::effect_type("Effect") == -1 && cheats::effect_type("Damage") == -1);
+        cheats::set_weapon_edits({{"Firearm_PistolAGen", {{cheats::SLOTS_KEY, 2}}}, {"Craftplan_ElectricMelee", {{cheats::effect_key(4), 4}, {cheats::effect_key(1), 0}}}});
+        cheats::apply_weapon_edits();
+        CHECK(game::upgrade_slots(pistol) == 2 && game::mod_effect_level(mod, 4) == 4 && game::mod_effect_level(mod, 1) == 0);
+        cheats::set_weapon_edits({});
+        game::restore_mod(mod);
+        game::restore_upgrade_slots(pistol);
+        CHECK(game::upgrade_slots(pistol) == 0 && game::mod_effect_level(mod, 1) == 1);
+        game::g.elemental_root = saved_root;
+    }
     {
         const uintptr_t FN = 0x4ae0c0, SIZE = 0x164;
         auto* copy = (uint8_t*)VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
