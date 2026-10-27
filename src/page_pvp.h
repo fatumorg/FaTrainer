@@ -59,8 +59,8 @@ inline void rank_row(const char* label, bool zombie, const char* const* names) {
 inline void rank_card(bool zombie) {
     if (cheats::pvp_rank(zombie) < 0) return;
     begin_card(zombie ? "rank_hunter" : "rank_survivor", "RANK");
-    note(zombie ? "Your Be The Zombie rank as the Night Hunter. Grayed out while another player is the Night Hunter. The game may adjust it again after your next Be The Zombie match."
-                : "Your Be The Zombie rank as a survivor. Grayed out while you play the Night Hunter. The game may adjust it again after your next Be The Zombie match.");
+    note(zombie ? "Your Be The Zombie rank as the Night Hunter. Grayed out while another player is the Night Hunter. The game may change it after your next Be The Zombie match."
+                : "Your Be The Zombie rank as a survivor. Grayed out while you play the Night Hunter. The game may change it after your next Be The Zombie match.");
     ImGui::Dummy({0, S(4)});
     if (ImGui::BeginTable("ranks", 3, ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));
@@ -74,9 +74,6 @@ inline void rank_card(bool zombie) {
 }
 
 inline void zombie_page() {
-    begin_card("about");
-    note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match.");
-    end_card();
     begin_card("hunter", "HUNTER");
     cheat_switch("god", "Hunter god mode");
     cheat_switch("z_energy");
@@ -91,7 +88,6 @@ inline void zombie_page() {
     cheat_switch("z_camo");
     end_card();
     begin_card("reach", "ATTACK REACH");
-    note("Slide right to reach further. At Max the pounce also hits targets that are not in front of you. Each player's game decides its own attacks.");
     tweak_sliders(cheats::G_ZOMBIE);
     end_card();
     spit_keys_card();
@@ -104,7 +100,6 @@ inline void survivor_page() {
     cheat_switch("one_hit_hunter");
     end_card();
     begin_card("reach", "REACH AND THROWABLES");
-    note("Slide right to reach further. At Max the dropkick and death from above also hit targets that are not in front of you. Each player's game decides its own attacks.");
     tweak_sliders(cheats::G_HUMAN);
     end_card();
     rank_card(false);

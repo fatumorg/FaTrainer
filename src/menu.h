@@ -684,7 +684,7 @@ inline void upgrades_editor() {
     bool changed = key_edited(g_edit_id, cheats::SLOTS_KEY);
     float bw = ImGui::GetFrameHeight();
     ImGui::AlignTextToFramePadding();
-    label("Slots in the game's upgrade screen, every one of this type");
+    label("Upgrade slots, every one of this type");
     ImGui::SameLine(ImGui::GetContentRegionMax().x - bw * 2 - S(150));
     ImGui::BeginDisabled(slots <= 0);
     if (ImGui::Button("-##slots", {bw, 0})) edit_slots(slots - 1);
@@ -749,7 +749,7 @@ inline void mod_editor() {
     }
     const ModChoice* mod = find_choice(g_blueprint_choices, mods.mod);
     if (!mod) {
-        note("A mod gives the weapon its effects. Here any mod fits any weapon.");
+        note("Any mod fits any weapon.");
         ImGui::Dummy({0, S(6)});
         return;
     }
@@ -986,7 +986,7 @@ inline void give_page() {
     static char filter[64] = "";
     static int cat = C_ALL, amount = 1, target = -1;
     static bool show_test = false;
-    note("Choose an amount and press Give. Each item goes where the game keeps it (backpack, materials, ammo...), so it shows up in your inventory right away.");
+    note("Auto puts each item where the game keeps it: backpack, materials, ammo...");
     ImGui::Dummy({0, S(2)});
     search_box("##gf", "Search every item in the game...", filter, sizeof filter);
     for (int c = 0; c < C_COUNT; c++) {
@@ -1069,7 +1069,6 @@ inline void cash_page() {
     ImGui::SameLine();
     if (accent_button("Set")) set_cash(custom);
     end_card();
-    note("Type an amount and press Set, or use the quick buttons. The new amount shows in the game's inventory screen.");
 }
 
 inline void tweak_slider(cheats::Tweak& t) {
@@ -1163,7 +1162,7 @@ inline void combat_page() {
     cheat_switch("one_hit");
     ImGui::Dummy({0, S(4)});
     kill_all_button();
-    note("Kills every zombie and human within 80 m the way the game's own scripts do, so quest objectives count them. Friendly NPCs nearby die too.");
+    note("Kills every zombie and human within 80 m. Quest objectives count them. Friendly NPCs nearby die too.");
     end_card();
     begin_card("supplies", "AMMO & SUPPLIES");
     cheat_switch("ammo");
@@ -1177,7 +1176,6 @@ inline void combat_page() {
     ImGui::Dummy({0, S(4)});
     tweak_sliders(cheats::G_WEAPONS);
     end_card();
-    note("To change damage, durability, rarity and more of one weapon, press Edit next to it on the Backpack or Stash page. Weapon stat edits from the Backpack and Stash pages stay applied while the trainer runs.");
 }
 
 inline std::string key_name(int vk) {
@@ -1403,7 +1401,7 @@ inline void skill_tree_card() {
     if (tabs.empty() || !cheats::add_skill_fn && !sample) return;
     begin_card("skilltree", "SKILL TREE");
     note("Click a skill to learn it, click it again to remove it. Learning a skill also learns the skills it needs; removing one also removes the skills that need it. "
-         "Skills with levels: click adds a level, right click takes one away. Changes go into your save like skills you buy in the game.");
+         "Skills with levels: click adds a level, right click takes one away. Changes go into your save.");
     ImGui::Dummy({0, S(6)});
     static int tab = 0;
     tab = std::clamp(tab, 0, (int)tabs.size() - 1);
@@ -1557,7 +1555,7 @@ inline void skills_page() {
     auto trees = tree_views();
     if (trees.empty()) return empty_state("Your skill trees could not be read yet. Wait until your save has fully loaded, then press Refresh.");
     begin_card("trees", "SKILL POINTS");
-    note("Each level is one skill point to spend in the game's skill menu. +1 point gives you exactly the XP for the next level, like playing would. "
+    note("+1 point gives you exactly the XP for the next level. "
          "Drag an XP bar to set the XP within a level. Free skill points - and + add points without changing the level; they last until you close the game.");
     end_card();
     float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
@@ -1731,10 +1729,10 @@ inline void own_config_tile(const std::string& name, const config::Profile& p, f
         ImGui::SetCursorScreenPos({right - S(62) - S(72) - S(56) - gap * 2, b.y - pad - bh});
         if (ImGui::Button("Save", {S(56), 0})) {
             bool ok = config::save_profile(name, cheats::current_profile());
-            toast(ok ? "Saved what is on now into " + name : std::string("Could not save the config"));
+            toast(ok ? "Saved what is on into " + name : std::string("Could not save the config"));
             own_configs(true);
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace this config with the cheats and sliders that are on now");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace this config with the cheats and sliders that are on");
         ImGui::SameLine(0, gap);
         if (ImGui::Button("Rename", {S(72), 0})) renaming = name, snprintf(rename_to, sizeof rename_to, "%s", name.c_str()), confirm_delete.clear();
         ImGui::SameLine(0, gap);
@@ -1768,7 +1766,7 @@ inline void new_config_tile(float w, float h) {
         if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         float tw = f_tile->CalcTextSizeA(big, FLT_MAX, 0, "+ New config").x;
         dl->AddText(f_tile, big, {(a.x + b.x - tw) / 2, (a.y + b.y) / 2 - big}, C(T.accent), "+ New config");
-        const char* hint = "Saves the cheats and sliders that are on now.";
+        const char* hint = "Saves the cheats and sliders that are on.";
         float hw = f_small->CalcTextSizeA(small, FLT_MAX, 0, hint).x;
         dl->AddText(f_small, small, {(a.x + b.x - hw) / 2, (a.y + b.y) / 2 + S(8)}, C(T.soft), hint);
     } else {
@@ -1801,7 +1799,7 @@ inline void new_config_tile(float w, float h) {
 
 inline void configs_card() {
     begin_card("configs", "CONFIGS");
-    note("Built-in configs for Be The Zombie and your own. Legit stays believable to the other players, Rage holds nothing back. Loading a config turns everything else off; "
+    note("Legit stays believable to the other players, Rage holds nothing back. Loading a config turns everything else off; "
          "the built-in ones also set the player ESP. Your configs are saved in fatrainer_configs next to the game.");
     ImGui::Dummy({0, S(4)});
     float gap = S(12), w = (ImGui::GetContentRegionAvail().x - gap) / 2, h = S(206);
@@ -2037,7 +2035,7 @@ inline bool hud_colors_card() {
         changed |= part_row(part.label, part.key, c.hud_parts, true);
     }
     note(visuals::hud_found() ? "Only you see these colors. A piece's own color wins over the whole HUD tint. Hide makes that piece invisible until you show it again; the game's own animations still play on the pieces you color."
-                              : "Load into the game to see the colors; the trainer finds the HUD once it is on screen and after a Refresh.");
+                              : "Load into the game to see the colors.");
     end_card();
     return changed;
 }
@@ -2045,7 +2043,7 @@ inline bool hud_colors_card() {
 inline bool survivor_glow_card() {
     bool changed = false;
     begin_card("survivor_glow", "SURVIVOR GLOW");
-    note("As the Night Hunter you see survivors glow through walls with your sense. Pick your own color for each kind of glow; it keeps the glow's brightness.");
+    note("Your own color for each survivor glow you see as the Night Hunter, at the glow's own brightness.");
     ImGui::Dummy({0, S(4)});
     for (auto& g : visuals::SURVIVOR_GLOWS) changed |= part_row(g.label, g.key, config::cfg.survivor_glow, false);
     end_card();
@@ -2058,7 +2056,7 @@ inline bool btz_colors_card() {
     note("Colors of the Night Hunter's spits and glow, kept at the game's own brightness. Only you see them, as the hunter or as a survivor.");
     ImGui::Dummy({0, S(4)});
     for (auto& b : visuals::BTZ_COLORS) changed |= part_row(b.label, b.key, config::cfg.btz_colors, false);
-    note("A spit takes its new color the next time it is thrown. Spits load with the match, so the trainer colors them a few seconds after they first appear.");
+    note("A spit takes the color the next time it is thrown, starting a few seconds after the first spits of a match appear.");
     end_card();
     return changed;
 }
@@ -2130,7 +2128,7 @@ inline bool crosshair_card() {
     ImGui::EndDisabled();
     auto game = config::cfg.hud_parts.find("crosshair");
     bool hide_game = game != config::cfg.hud_parts.end() && game->second.hidden;
-    if (switch_row("Hide the game's crosshair", "Same as Hide next to Crosshair under HUD colors.", hide_game)) {
+    if (switch_row("Hide the game's crosshair", nullptr, hide_game)) {
         auto& h = config::cfg.hud_parts["crosshair"];
         if (game == config::cfg.hud_parts.end()) memcpy(h.color, config::cfg.accent, sizeof h.color);
         h.hidden = hide_game, changed = true;
@@ -2156,11 +2154,11 @@ inline bool fov_card() {
     float game = visuals::game_fov, shown = visuals::shown_fov;
     if (std::isfinite(game) && std::isfinite(shown)) {
         char now[96];
-        snprintf(now, sizeof now, "NOW %.0f DEGREES, THE GAME ASKS FOR %.0f", shown, game);
+        snprintf(now, sizeof now, "%.0f DEGREES, THE GAME ASKS FOR %.0f", shown, game);
         ImGui::Dummy({0, S(2)});
         caps(now);
     }
-    note("Scales the field of view the game picks, so sprinting and aiming still zoom like before. Changes live, also with the menu open.");
+    note("Scales the field of view the game picks, so sprinting and aiming still zoom.");
     end_card();
     return changed;
 }
@@ -2352,7 +2350,7 @@ inline bool language_card() {
         const std::string& shown_game = visuals::text_language.empty() ? visuals::started_language : visuals::text_language;
         const char* g = visuals::game_language_name(shown_game);
         const char* v = visuals::game_language_name(visuals::started_voice);
-        std::string now = std::string("NOW: GAME ") + (g ? g : shown_game.c_str()) + (v ? std::string(", VOICES ") + v : std::string());
+        std::string now = std::string("IN USE: GAME ") + (g ? g : shown_game.c_str()) + (v ? std::string(", VOICES ") + v : std::string());
         for (auto& ch : now) ch = (char)toupper((unsigned char)ch);
         caps(now.c_str());
     }
@@ -2873,7 +2871,7 @@ inline void prison_page() {
     end_card();
     route_card();
     begin_card("position", "YOUR POSITION");
-    note("Save where you stand and jump back to it later. Works everywhere, not only in the prison.");
+    note("Save where you stand and jump back to it later.");
     ImGui::Dummy({0, S(2)});
     if (ImGui::Button("Save position")) save_position();
     ImGui::SameLine();
@@ -2972,10 +2970,9 @@ inline void setting_label(const char* text) {
 
 inline const char* edition_story() {
 #if FATRAINER_VISUALS
-    return "You have the Visuals Version: it only changes how the game looks to you, with the UV light, Night Hunter and survivor glow, HUD colors, a custom crosshair and texts. It has no cheats and never connects to the internet. "
-           "Install and update it with the FaTrainer launcher, or put xinput1_3.dll next to DyingLightGame.exe yourself.";
+    return "Changes only how the game looks to you. It has no cheats and never connects to the internet.";
 #else
-    return "You have the Fatum Version, downloaded from the FaTrainer website or GitHub. It runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
+    return "Runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
            "If a newer one is out, the trainer turns itself off until you press Play in FaTrainer again, unless Use older versions is on. "
            "With Beta builds on it also asks for the beta build. Nothing else is sent anywhere.";
 #endif
@@ -3098,8 +3095,7 @@ inline void keybinds_page() {
         }
         end_card();
     }
-    note("Press a cheat's key while the menu is closed to turn it on or off, or an action's key to run it. A slider's key sets it to Max and the next press puts back what you had. "
-         "A message at the bottom of the screen says which. Spit keys are on the Night Hunter page.");
+    note("Press a cheat's key while the menu is closed to turn it on or off, or an action's key to run it. A slider's key sets it to Max and the next press puts back what you had.");
     if (changed) save_config();
 }
 
@@ -3157,7 +3153,7 @@ inline void settings_page() {
     bool older = c.allow_older;
     if (switch_row("Use older versions", "Keep this version working after a newer one is out. The update notice still shows.", older)) c.allow_older = older, changed = true;
     bool beta = c.beta;
-    if (switch_row("Beta builds", "Optional. Also update to the beta build, the version being worked on right now, when it is newer than the latest release. It may have bugs. Takes effect the next time the game starts.", beta))
+    if (switch_row("Beta builds", "Also update to the beta build when it is newer than the latest release. It may have bugs. Takes effect the next time the game starts.", beta))
         c.beta = beta, changed = true;
 #endif
     end_card();
