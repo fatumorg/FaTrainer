@@ -29,7 +29,7 @@ inline std::map<void*, bool> is_mouse;
 inline AsyncKeyFn real_async_key, real_key_state;
 inline KeyboardFn real_keyboard_state;
 
-struct Injected { BYTE dik; DWORD until; bool down_sent, up_sent; };
+struct Injected { BYTE at; bool mouse; DWORD until; bool down_sent, up_sent; };
 inline std::mutex inject_mx;
 inline std::vector<Injected> injected;
 inline DWORD injected_sequence = 0x40000000;
@@ -37,19 +37,24 @@ const DWORD INJECT_FORGET = 1000;
 
 inline bool held(BYTE dik) { return GetAsyncKeyState(MapVirtualKeyW(dik, MAPVK_VSC_TO_VK)) & 0x8000; }
 
-inline void press(BYTE dik, DWORD ms) {
+inline void inject(BYTE at, bool mouse, DWORD ms) {
     std::lock_guard<std::mutex> l(inject_mx);
-    injected.push_back({dik, GetTickCount() + ms, false, false});
+    injected.push_back({at, mouse, GetTickCount() + ms, false, false});
 }
 
-inline void add_injected_state(BYTE* keys) {
+inline void press(BYTE dik, DWORD ms) { inject(dik, false, ms); }
+inline void click(BYTE button, DWORD ms) {
+    if (button < 8) inject(DIMOFS_BUTTON0 + button, true, ms);
+}
+
+inline void add_injected_state(BYTE* state, DWORD size = 256, bool mouse = false) {
     std::lock_guard<std::mutex> l(inject_mx);
     DWORD now = GetTickCount();
     for (auto& k : injected)
-        if ((LONG)(k.until - now) > 0) keys[k.dik] = 0x80;
+        if (k.mouse == mouse && k.at < size && (LONG)(k.until - now) > 0) state[k.at] = 0x80;
 }
 
-inline void add_injected_events(BYTE* data, DWORD size, DWORD* count, DWORD capacity) {
+inline void add_injected_events(BYTE* data, DWORD size, DWORD* count, DWORD capacity, bool mouse = false) {
     std::lock_guard<std::mutex> l(inject_mx);
     DWORD now = GetTickCount();
     auto emit = [&](BYTE dik, bool down) {
@@ -62,8 +67,9 @@ inline void add_injected_events(BYTE* data, DWORD size, DWORD* count, DWORD capa
         return true;
     };
     for (auto& k : injected) {
-        if (!k.down_sent) k.down_sent = emit(k.dik, true);
-        if (k.down_sent && !k.up_sent && (LONG)(k.until - now) <= 0) k.up_sent = held(k.dik) || emit(k.dik, false);
+        if (k.mouse != mouse) continue;
+        if (!k.down_sent) k.down_sent = emit(k.at, true);
+        if (k.down_sent && !k.up_sent && (LONG)(k.until - now) <= 0) k.up_sent = (!mouse && held(k.at)) || emit(k.at, false);
     }
     injected.erase(std::remove_if(injected.begin(), injected.end(),
                                   [&](const Injected& k) { return k.up_sent || (LONG)(now - k.until) > (LONG)INJECT_FORGET; }),
@@ -90,7 +96,8 @@ inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
     HRESULT r = patch_for(device)->get_state(device, size, data);
     if (FAILED(r) || !data) return r;
     if (!blocked) {
-        if (size == 256 && !mouse_device(device)) add_injected_state((BYTE*)data);
+        bool mouse = mouse_device(device);
+        if (mouse ? size >= sizeof(DIMOUSESTATE) : size == 256) add_injected_state((BYTE*)data, size, mouse);
         return r;
     }
     if (size >= sizeof(DIMOUSESTATE) && mouse_device(device)) wheel += ((DIMOUSESTATE*)data)->lZ;
@@ -104,7 +111,7 @@ inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA*
     if (FAILED(r) || !data || !count || (flags & DIGDD_PEEK)) return r;
     bool mouse = mouse_device(device);
     if (!blocked) {
-        if (!mouse) add_injected_events((BYTE*)data, size, count, capacity);
+        add_injected_events((BYTE*)data, size, count, capacity, mouse);
         return r;
     }
     DWORD kept = 0;

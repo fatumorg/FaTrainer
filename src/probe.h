@@ -231,6 +231,13 @@ inline std::string run(const std::string& line) {
         if (t) t->factor = f;
         return out + (t ? "  set\n" : "  no such tweak\n");
     }
+    if (c == "key" || c == "mouse") {
+        unsigned code = 0, ms = 100;
+        if (sscanf(p.s, c == "key" ? "%x %u" : "%u %u", &code, &ms) < 1 || code > (c == "key" ? 0xffu : 7u)) return out + "  bad input\n";
+        if (c == "key") input::press((BYTE)code, ms);
+        else input::click((BYTE)code, ms);
+        return out + "  pressed\n";
+    }
     if (c == "findtext") {
         std::string want = p.s;
         for (auto& ch : want) ch = (char)tolower((unsigned char)ch);
