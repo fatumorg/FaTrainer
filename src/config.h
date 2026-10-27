@@ -363,7 +363,9 @@ inline void load(const std::string& path) {
         else if (k == "cheat_key") {
             size_t c = v.find(',');
             int vk = c == std::string::npos ? 0 : atoi(v.c_str() + c + 1);
-            if (vk > 0 && vk < 256) cfg.cheat_keys[v.substr(0, c)] = vk;
+            std::string key = v.substr(0, c);
+            if (key == "go_saved_position") key = "go_last_position";
+            if (vk > 0 && vk < 256) cfg.cheat_keys[key] = vk;
         }
         else if (k == "esp") {
             int f[10] = {};

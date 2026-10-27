@@ -6,6 +6,9 @@
 #include "color.h"
 #include "imgui.h"
 #include "imgui_internal.h"
+#if !FATRAINER_VISUALS
+#include "teleport.h"
+#endif
 
 namespace menu {
 
@@ -2723,20 +2726,7 @@ inline void go_to(cheats::Vec3 to) {
     });
 }
 
-inline void save_position() {
-    on_game_thread([] {
-        std::lock_guard<std::mutex> l(game::mx);
-        cheats::saved_position = cheats::player_position();
-        cheats::has_saved_position = std::isfinite(cheats::saved_position.x);
-        toast(cheats::has_saved_position ? "Position saved" : "Your position could not be read");
-    });
-}
-
-inline void go_to_saved_position() {
-    if (!cheats::has_saved_position) return toast("No saved position yet");
-    go_to(cheats::saved_position);
-    toast("Back at the saved position");
-}
+#include "page_teleport.h"
 
 inline void refill_now() {
     on_game_thread([] {
@@ -2757,7 +2747,7 @@ inline const KeyAction KEY_ACTIONS[] = {
     {REFILL_KEY, "Refill health & stamina", refill_now},
     {"kill_nearby", "Kill all enemies nearby", kill_nearby},
     {"save_position", "Save position", save_position},
-    {"go_saved_position", "Go to saved position", go_to_saved_position},
+    {"go_last_position", "Go to last saved position", go_last_position},
     {"esp", "Player ESP on / off", toggle_esp},
 };
 
@@ -2875,9 +2865,7 @@ inline void prison_page() {
     ImGui::Dummy({0, S(2)});
     if (ImGui::Button("Save position")) save_position();
     ImGui::SameLine();
-    ImGui::BeginDisabled(!cheats::has_saved_position);
-    if (accent_button("Go to saved position")) go_to_saved_position();
-    ImGui::EndDisabled();
+    if (accent_button("Go to last saved position")) go_last_position();
     end_card();
 }
 
@@ -2917,6 +2905,7 @@ inline const Page PAGES[] = {
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "last_wish", "supplies", "durability", "item_dupe", "melee_speed", "flare_speed"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
+    {"teleport", "Teleport", "Saved positions on each map", teleport_page, always, "CHEATS", {}},
     {"survivor", "Survivor", "Your attacks, defenses and auto cheats as a survivor", survivor_page, always, "BE THE ZOMBIE",
      {"dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge"}},
     {"zombie", "Night Hunter", "Your abilities, attack reach and spit keys as the Night Hunter", zombie_page, always, "BE THE ZOMBIE",

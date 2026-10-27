@@ -700,6 +700,10 @@ static void main_thread() {
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
     cheats::locate_engine(engine);
+    {
+        std::lock_guard<std::mutex> l(game::mx);
+        logf("saved positions: %s", teleport::load_spots(teleport::spots_path()) ? "loaded" : "none yet");
+    }
     visuals::locate((uintptr_t)gamedll);
     logf("hud colors: %s, color hooks %d/5, hide hook %s", visuals::locate_engine(engine) && visuals::hud_element_offset >= 0 ? "ready" : "not found", visuals::install_color_hooks(engine, gamedll), visuals::install_opacity_hook(engine) ? "ok" : "missing");
     logf("fov hooks: %s", visuals::install_fov_hooks(gamedll) ? "ok" : "not found");

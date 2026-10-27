@@ -11,6 +11,7 @@
 #include "version.h"
 #include "../installer/logic.h"
 #include "cheat_engine.h"
+#include "teleport.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -2198,6 +2199,32 @@ int main(int argc, char** argv) {
         cheats::melee_reach_original = saved_reach;
         cheats::vt_melee_controller = saved_controller_vt;
         cheats::side_settle_ms = settle;
+    }
+
+    {
+        teleport::Spot s{"Tower roof", {1.5f, -2.25f, 300}}, back;
+        std::string level;
+        CHECK(teleport::format_spot("Harran", s) == "spot=Harran|Tower roof|1.50,-2.25,300.00");
+        CHECK(teleport::parse_spot("spot=Harran|Tower roof|1.50,-2.25,300.00", level, back) && level == "Harran" && back.name == "Tower roof" && back.pos.z == 300.0f);
+        CHECK(!teleport::parse_spot("spot=Harran|x|1,2", level, back) && !teleport::parse_spot("spot=Harran||1,2,3", level, back));
+        CHECK(teleport::parse_spot("spot=|x|1,2,3", level, back) && level.empty() && back.name == "x");
+        CHECK(teleport::format_spot("Harran", {"a|b", {0, 0, 0}}) == "spot=Harran|ab|0.00,0.00,0.00");
+        CHECK(!teleport::parse_spot("spot=Harran|x|1,2,1e30", level, back) && !teleport::parse_spot("garbage", level, back));
+        CHECK(teleport::next_name({{"Position 1", {}}, {"Position 3", {}}}) == "Position 2" && teleport::next_name({}) == "Position 1");
+        CHECK(teleport::distance_text({0, 0, 0}, {0, 0, 840}) == "840 m" && teleport::distance_text({0, 0, 0}, {1400, 0, 0}) == "1.4 km");
+        std::ofstream("selftest_positions.ini") << "spot=Harran|A|1,2,3\nbroken line\nspot=Harran|B|4,5,6\nspot=Following|C|7,8,9\n";
+        CHECK(teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"].size() == 2 && teleport::spots["Following"].size() == 1);
+        CHECK(teleport::save_spots("selftest_positions.ini") && teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"][1].name == "B");
+        remove("selftest_positions.ini");
+        char tmp[MAX_PATH];
+        GetTempPathA(MAX_PATH, tmp);
+        std::string old = std::string(tmp) + "fatrainer_selftest_keys.ini";
+        auto kept = config::cfg;
+        std::ofstream(old) << "cheat_key=go_saved_position,117\ncheat_key=save_position,116\n";
+        config::load(old);
+        CHECK(config::cfg.cheat_keys.size() == 2 && config::cfg.cheat_keys["go_last_position"] == 117 && config::cfg.cheat_keys["save_position"] == 116);
+        remove(old.c_str());
+        config::cfg = kept;
     }
 
     CHECK(config::profile_name("  PvP: hunter/../x  ") == "PvP hunterx");

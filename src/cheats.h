@@ -1745,8 +1745,6 @@ inline bool position_of(uintptr_t control, Vec3* out) {
 struct Section { uintptr_t sensor; int type; int stage; bool last; Vec3 pos; };
 enum { SENSOR_START = 1, SENSOR_STAGE = 2, SENSOR_REWARD = 3, SENSOR_EVAC = 4 };
 inline std::vector<Section> prison_sections;
-inline Vec3 saved_position{};
-inline bool has_saved_position = false;
 inline DWORD last_prison_tick = 0;
 
 inline uintptr_t follow_jump(uintptr_t fn) {
