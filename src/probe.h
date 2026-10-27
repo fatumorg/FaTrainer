@@ -306,6 +306,58 @@ inline std::string run(const std::string& line) {
         snprintf(b, sizeof b, "  %s %.0f %.0f %.1f %.0f\n", best < 1e9f ? "target" : "none", bx - 1280, by - 720, bd, bh);
         return out + b;
     }
+    auto desc_id = [](uintptr_t d) -> std::string {
+        auto* info = d ? game::str_at(rdv<uintptr_t>(d + game::g.desc_name)) : nullptr;
+        return d ? info ? info->id : "?" : "-";
+    };
+    auto desc_named = [](const char* id) -> uintptr_t {
+        auto d = game::g.descs.find(id);
+        return d == game::g.descs.end() ? 0 : d->second;
+    };
+    if (c == "items") {
+        for (auto& inv : game::g.invs) {
+            if (inv.kind != game::K_BACKPACK && inv.kind != game::K_STASH) continue;
+            for (auto& it : inv.items) {
+                auto m = game::item_mods(it.addr);
+                std::string parts;
+                for (auto part : m.parts) parts += " " + desc_id(part);
+                snprintf(b, sizeof b, "  %s %llx %s slots %d rarity %d mod %s parts%s cache %llx\n", game::KIND_NAMES[inv.kind], (unsigned long long)it.addr,
+                         desc_id(game::item_desc(it)).c_str(), game::upgrade_slots(game::item_desc(it)), game::rarity(it.addr, game::item_desc(it)),
+                         desc_id(m.mod).c_str(), parts.c_str(), (unsigned long long)rdv<uintptr_t>(it.addr + 0xa0));
+                out += b;
+            }
+        }
+        return out + "  " + game::mods_report() + "\n";
+    }
+    if (c == "upgrade" || c == "mod") {
+        uintptr_t item = p.expr();
+        int slot = 0;
+        char id[96] = {};
+        if (c == "upgrade") sscanf(p.s, "%d %95s", &slot, id);
+        else sscanf(p.s, "%95s", id);
+        auto m = game::item_mods(item);
+        uintptr_t d = strcmp(id, "none") ? desc_named(id) : 0;
+        if (c == "mod") m.mod = d;
+        else if (slot >= 0 && slot < game::MAX_UPGRADES) {
+            if ((int)m.parts.size() <= slot) m.parts.resize(slot + 1, 0);
+            m.parts[slot] = d;
+        }
+        snprintf(b, sizeof b, "  rebuild %s\n", game::rebuild_item(item, m.mod, m.parts) ? "done" : "refused");
+        return out + b;
+    }
+    if (c == "effect") {
+        char id[96] = {};
+        int type = 0, level = 0;
+        sscanf(p.s, "%95s %d %d", id, &type, &level);
+        uintptr_t d = desc_named(id);
+        bool done = level >= 0 && game::set_mod_effect(d, type, level);
+        std::string now;
+        for (int t = 0; t < game::ELEMENTAL_TYPES; t++)
+            if (int l = game::mod_effect_level(d, t)) now += " " + std::to_string(t) + ":" + std::to_string(l);
+        snprintf(b, sizeof b, "  %s, effects%s masks %llx %llx\n", done ? "set" : "unchanged", now.c_str(), (unsigned long long)rdv<uint64_t>(d + game::BLUEPRINT_MASKS),
+                 (unsigned long long)rdv<uint64_t>(d + game::BLUEPRINT_MASKS + 8));
+        return out + b;
+    }
     if (c == "give") {
         char id[96] = {};
         int n = 1, kind = game::K_BACKPACK;

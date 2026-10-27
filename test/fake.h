@@ -46,7 +46,8 @@ struct World {
             bool firearm = !strncmp(id, "Firearm", 7) || strstr(id, "Crossbow_");
             uintptr_t vt = firearm && game::g.vt_firearm_desc ? game::g.vt_firearm_desc : game::g.base + 0x1000;
             if (!strcmp(id, "Melee_MacheteAGen") && melee_vt) vt = melee_vt;
-            if (!strncmp(id, "Craft_Upgrade_", 14) && game::g.vt_upgrade_desc) vt = game::g.vt_upgrade_desc;
+            if (!strncmp(id, "Craft_", 6) && game::g.vt_upgrade_desc) vt = game::g.vt_upgrade_desc;
+            if (!strncmp(id, "Craft_Upgrade_", 14)) put<uint32_t>(d + game::UPGRADE_EFFECT_COUNT, 3);
             if (!strncmp(id, "Craftplan_", 10) && strstr(id, "Melee") && game::g.vt_blueprint_desc) {
                 vt = game::g.vt_blueprint_desc;
                 put<uint32_t>(d + game::BLUEPRINT_BASE_ITEMS, 1);
@@ -76,7 +77,7 @@ struct World {
                                                      {"Melee_MacheteAGen", 1}, {"Special_Hook", 1}});
         uintptr_t machete = game::rdv<uintptr_t>(game::rdv<uintptr_t>(backpack + 0x40) + 4 * 8), parts = alloc(4 * 8);
         put<uintptr_t>(parts, desc["Craft_Upgrade_DamL2DurL2BalL2"]);
-        put<uintptr_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_BLUEPRINT, desc["Craftplan_ElectricMelee"]);
+        put<uintptr_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_MOD, desc["Craftplan_ElectricMelee"]);
         put<uintptr_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_PARTS, parts);
         put<uint32_t>(machete + game::ITEM_CONTEXT_OBJECT + game::CONTEXT_PART_COUNT, 2);
         put<uint8_t>(desc["Melee_MacheteAGen"] + game::DESC_CRAFTING_SLOTS, 1);

@@ -1640,7 +1640,7 @@ inline void apply_weapon_edits() {
         for (auto& [key, v] : stats) {
             int type = effect_type(key);
             if (key == SLOTS_KEY && game::upgrade_slots(d->second) != (int)v) game::set_upgrade_slots(d->second, (int)v);
-            if (type >= 0 && game::mod_effect_level(d->second, type) != (int)v) game::set_mod_effect(d->second, type, (int)v);
+            if (type >= 0 && game::mod_effect_level(d->second, type) != (int)v && game::set_mod_effect(d->second, type, (int)v)) game::rebuild_items_with_mod(d->second);
             int s = stat_index(key);
             auto done = g.stat_overrides.find({d->second, s});
             if (s >= 0 && (done == g.stat_overrides.end() || done->second != v)) game::set_stat(d->second, s, v);

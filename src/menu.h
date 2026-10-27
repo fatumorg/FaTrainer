@@ -574,12 +574,12 @@ inline bool mod_combo(const char* id, uintptr_t current, const std::vector<ModCh
     return changed && picked != current;
 }
 
-inline void rebuild_edited_item(uintptr_t blueprint, const std::vector<uintptr_t>& parts, const std::string& what) {
+inline void rebuild_edited_item(uintptr_t mod, const std::vector<uintptr_t>& parts, const std::string& what) {
     uintptr_t item = g_edit_item;
     std::string id = g_edit_id;
     on_game_thread([=] {
         std::lock_guard<std::mutex> l(game::mx);
-        bool done = game::rebuild_item(item, blueprint, parts);
+        bool done = game::rebuild_item(item, mod, parts);
         logf("edit: %s %s: %s", id.c_str(), what.c_str(), done ? "done" : "refused");
         if (!done) toast("The game refused that change. Press Refresh and try again.");
     });
@@ -627,7 +627,7 @@ inline void upgrades_editor() {
         parts[i] = picked;
         while (!parts.empty() && !parts.back()) parts.pop_back();
         const ModChoice* c = find_choice(g_upgrade_choices, picked);
-        rebuild_edited_item(mods.blueprint, parts, "upgrade " + std::to_string(i + 1) + " -> " + (c ? c->id : "empty"));
+        rebuild_edited_item(mods.mod, parts, "upgrade " + std::to_string(i + 1) + " -> " + (c ? c->id : "empty"));
     }
     ImGui::Dummy({0, S(4)});
     int slots = game::upgrade_slots(g_edit_desc);
@@ -661,7 +661,8 @@ inline void edit_effect(const ModChoice& mod, int type, int level) {
     uintptr_t blueprint = mod.desc;
     on_game_thread([=] {
         std::lock_guard<std::mutex> l(game::mx);
-        if (!game::set_mod_effect(blueprint, type, level)) logf("edit: effect %d level %d refused", type, level);
+        if (!game::set_mod_effect(blueprint, type, level)) return logf("edit: effect %d level %d refused", type, level);
+        logf("edit: %d items with this mod rebuilt", game::rebuild_items_with_mod(blueprint));
     });
     config::cfg.weapon_edits[mod.id][cheats::effect_key(type)] = (float)level;
     remember_edits();
@@ -674,6 +675,7 @@ inline void reset_effects(const ModChoice& mod) {
     on_game_thread([=] {
         std::lock_guard<std::mutex> l(game::mx);
         game::restore_mod(blueprint);
+        game::rebuild_items_with_mod(blueprint);
     });
 }
 
@@ -690,12 +692,12 @@ inline void mod_editor() {
     game::ItemMods mods = game::item_mods(g_edit_item);
     caps("MOD OF THIS ONE");
     ImGui::Dummy({0, S(2)});
-    uintptr_t picked = mods.blueprint;
-    if (mod_combo("##mod", mods.blueprint, g_blueprint_choices, "No mod", picked, -FLT_MIN)) {
+    uintptr_t picked = mods.mod;
+    if (mod_combo("##mod", mods.mod, g_blueprint_choices, "No mod", picked, -FLT_MIN)) {
         const ModChoice* c = find_choice(g_blueprint_choices, picked);
         rebuild_edited_item(picked, mods.parts, std::string("mod -> ") + (c ? c->id : "none"));
     }
-    const ModChoice* mod = find_choice(g_blueprint_choices, mods.blueprint);
+    const ModChoice* mod = find_choice(g_blueprint_choices, mods.mod);
     if (!mod) {
         note("A mod gives the weapon its effects. Here any mod fits any weapon.");
         ImGui::Dummy({0, S(6)});

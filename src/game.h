@@ -427,12 +427,16 @@ inline bool set_rarity(uintptr_t item, uintptr_t desc, int r) {
     return ok;
 }
 const int ITEM_CONTEXT_OBJECT = 0x58, CONTEXT_SIZE = 0x78, CONTEXT_DESC = 0x08, CONTEXT_WORD = 0x10, CONTEXT_REBUILT_FROM = 0x14;
-const int CONTEXT_CRAFT = 0x20, CONTEXT_BLUEPRINT = 0x28, CONTEXT_PARTS = 0x30, CONTEXT_PART_COUNT = 0x38, MAX_UPGRADES = 4;
+const int CONTEXT_MOD = 0x20, CONTEXT_BLUEPRINT = 0x28, CONTEXT_PARTS = 0x30, CONTEXT_PART_COUNT = 0x38, MAX_UPGRADES = 4;
 struct TtlVector { uintptr_t* data; uint32_t size, capacity; };
-using ContextCtorFn = uintptr_t(__fastcall*)(void* self, uintptr_t desc, uint32_t word, uintptr_t craft, uintptr_t blueprint, const TtlVector* parts);
-struct ItemMods { uintptr_t blueprint = 0; std::vector<uintptr_t> parts; };
+using ContextCtorFn = uintptr_t(__fastcall*)(void* self, uintptr_t desc, uint32_t word, uintptr_t mod, uintptr_t blueprint, const TtlVector* parts);
+struct ItemMods { uintptr_t mod = 0; std::vector<uintptr_t> parts; };
 
-inline bool upgrade_desc(uintptr_t d) { return d && g.vt_upgrade_desc && rdv<uintptr_t>(d) == g.vt_upgrade_desc; }
+const int UPGRADE_EFFECT_COUNT = 0x238, MAX_UPGRADE_EFFECTS = 64;
+inline bool upgrade_desc(uintptr_t d) {
+    uint32_t effects = rdv<uint32_t>(d + UPGRADE_EFFECT_COUNT);
+    return d && g.vt_upgrade_desc && rdv<uintptr_t>(d) == g.vt_upgrade_desc && effects > 0 && effects <= MAX_UPGRADE_EFFECTS;
+}
 const int BLUEPRINT_BASE_ITEMS = 0xc0;
 inline bool weapon_blueprint(uintptr_t d) {
     return d && g.vt_blueprint_desc && rdv<uintptr_t>(d) == g.vt_blueprint_desc && rdv<uint32_t>(d + BLUEPRINT_BASE_ITEMS) > 0;
@@ -440,21 +444,24 @@ inline bool weapon_blueprint(uintptr_t d) {
 
 inline ItemMods item_mods(uintptr_t item) {
     uintptr_t ctx = item + ITEM_CONTEXT_OBJECT, data = rdv<uintptr_t>(ctx + CONTEXT_PARTS);
-    ItemMods m{rdv<uintptr_t>(ctx + CONTEXT_BLUEPRINT), {}};
+    ItemMods m{rdv<uintptr_t>(ctx + CONTEXT_MOD), {}};
     uint32_t n = std::min<uint32_t>(rdv<uint32_t>(ctx + CONTEXT_PART_COUNT), MAX_UPGRADES);
     for (uint32_t i = 0; data && i < n; i++) m.parts.push_back(rdv<uintptr_t>(data + i * 8));
     return m;
 }
 
-inline bool rebuild_item(uintptr_t item, uintptr_t blueprint, std::vector<uintptr_t> parts) {
+inline bool rebuild_item(uintptr_t item, uintptr_t mod, std::vector<uintptr_t> parts) {
     uintptr_t ctx = item + ITEM_CONTEXT_OBJECT, desc = rdv<uintptr_t>(ctx + CONTEXT_DESC);
     if (!g.context_ctor || !in_image(rdv<uintptr_t>(ctx)) || !desc_alive(desc) || parts.size() > MAX_UPGRADES) return false;
-    if (blueprint && !weapon_blueprint(blueprint)) return false;
+    if (mod && !weapon_blueprint(mod)) return false;
     for (uintptr_t p : parts)
         if (p && !upgrade_desc(p)) return false;
     alignas(16) uint8_t fresh[CONTEXT_SIZE] = {};
     TtlVector list{parts.data(), (uint32_t)parts.size(), (uint32_t)parts.size()};
-    ((ContextCtorFn)g.context_ctor)(fresh, desc, rdv<uint32_t>(ctx + CONTEXT_WORD), rdv<uintptr_t>(ctx + CONTEXT_CRAFT), blueprint, &list);
+    ((ContextCtorFn)g.context_ctor)(fresh, desc, rdv<uint32_t>(ctx + CONTEXT_WORD), mod, rdv<uintptr_t>(ctx + CONTEXT_BLUEPRINT), &list);
+    uintptr_t got;
+    memcpy(&got, fresh + CONTEXT_MOD, sizeof got);
+    if (got != mod) return false;
     return wr_bytes(ctx + CONTEXT_REBUILT_FROM, fresh + CONTEXT_REBUILT_FROM, CONTEXT_SIZE - CONTEXT_REBUILT_FROM);
 }
 
@@ -658,7 +665,7 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_logical_player = find_vtable(base, "LogicalPlayer");
     g.vt_logical_level = find_vtable(base, "LogicalLevel");
     g.vt_hud = find_vtable(base, "HUDScreenBase");
-    g.vt_upgrade_desc = find_vtable(base, "ItemDescWeaponModification");
+    g.vt_upgrade_desc = find_vtable(base, "ItemDescCraftPart");
     g.vt_blueprint_desc = find_vtable(base, "ItemDescCraftPlan");
     if (auto hits = find_code(base, CONTEXT_CTOR_CODE, 2); hits.size() == 1) g.context_ctor = rip_target(hits[0], 1, 5);
     if (auto hits = find_code(base, ELEMENTAL_ROOT_CODE, 2); hits.size() == 1) g.elemental_root = rip_target(hits[0], 3, 7);
@@ -917,6 +924,21 @@ inline bool live_inventory(uintptr_t inv) {
     for (uintptr_t v : g.vt_inv)
         if (v && vt == v) return true;
     return false;
+}
+
+inline int rebuild_items_with_mod(uintptr_t mod) {
+    int rebuilt = 0;
+    for (auto& inv : g.invs) {
+        if (!live_inventory(inv.obj)) continue;
+        uintptr_t arr = rdv<uintptr_t>(inv.obj + 0x40);
+        uint32_t n = rdv<uint32_t>(inv.obj + 0x48);
+        for (uint32_t i = 0; i < n && i < 4000; i++) {
+            uintptr_t item = rdv<uintptr_t>(arr + i * 8);
+            ItemMods m = item_mods(item);
+            if (mod && m.mod == mod && rebuild_item(item, mod, m.parts)) rebuilt++;
+        }
+    }
+    return rebuilt;
 }
 
 inline int give_anywhere(Kind first, uintptr_t desc, int amount) {

@@ -185,13 +185,14 @@ static void __fastcall fake_remove_skill(uintptr_t container, uint16_t index) {
     fake_store_learned(container);
 }
 
-static uintptr_t fake_part_store[game::MAX_UPGRADES], fake_cache_object[4];
-static uintptr_t __fastcall fake_context_ctor(void* self, uintptr_t desc, uint32_t word, uintptr_t craft, uintptr_t blueprint, const game::TtlVector* parts) {
+static uintptr_t fake_part_store[game::MAX_UPGRADES], fake_cache_object[4], fake_random_mod = 0;
+static uintptr_t __fastcall fake_context_ctor(void* self, uintptr_t desc, uint32_t word, uintptr_t mod, uintptr_t blueprint, const game::TtlVector* parts) {
+    if (!mod) mod = fake_random_mod;
     auto* c = (uint8_t*)self;
     memcpy(c + game::CONTEXT_DESC, &desc, 8);
     memcpy(c + game::CONTEXT_WORD, &word, 4);
     *(int*)(c + 0x14) = 7;
-    memcpy(c + game::CONTEXT_CRAFT, &craft, 8);
+    memcpy(c + game::CONTEXT_MOD, &mod, 8);
     memcpy(c + game::CONTEXT_BLUEPRINT, &blueprint, 8);
     uint32_t n = std::max<uint32_t>(parts->size, 2);
     memset(fake_part_store, 0, sizeof fake_part_store);
@@ -1019,19 +1020,22 @@ int main(int argc, char** argv) {
 
         uintptr_t saved_ctor = game::g.context_ctor;
         game::g.context_ctor = (uintptr_t)&fake_context_ctor;
-        uintptr_t item = w.item("Melee_MacheteAGen", 1), ctx = item + game::ITEM_CONTEXT_OBJECT, craft = 0x1234;
+        uintptr_t item = w.item("Melee_MacheteAGen", 1), ctx = item + game::ITEM_CONTEXT_OBJECT, recipe = 0x1234;
         w.put<uint32_t>(ctx + game::CONTEXT_WORD, 0x5a);
-        w.put<uintptr_t>(ctx + game::CONTEXT_CRAFT, craft);
-        CHECK(game::item_mods(item).blueprint == 0 && game::item_mods(item).parts.empty());
+        w.put<uintptr_t>(ctx + game::CONTEXT_BLUEPRINT, recipe);
+        CHECK(game::item_mods(item).mod == 0 && game::item_mods(item).parts.empty());
         CHECK(game::rebuild_item(item, mod, {0, king}));
         auto mods = game::item_mods(item);
-        CHECK(mods.blueprint == mod && mods.parts.size() == 2 && mods.parts[0] == 0 && mods.parts[1] == king);
+        CHECK(mods.mod == mod && mods.parts.size() == 2 && mods.parts[0] == 0 && mods.parts[1] == king);
         CHECK(game::rdv<uintptr_t>(ctx) == game::g.base + 0x1000 && game::rdv<uintptr_t>(ctx + game::CONTEXT_DESC) == w.desc["Melee_MacheteAGen"]);
-        CHECK(game::rdv<uint32_t>(ctx + game::CONTEXT_WORD) == 0x5a && game::rdv<uintptr_t>(ctx + game::CONTEXT_CRAFT) == craft && game::rdv<int>(ctx + 0x14) == 7);
+        CHECK(game::rdv<uint32_t>(ctx + game::CONTEXT_WORD) == 0x5a && game::rdv<uintptr_t>(ctx + game::CONTEXT_BLUEPRINT) == recipe && game::rdv<int>(ctx + 0x14) == 7);
         CHECK(game::rdv<uintptr_t>(ctx + 0x48) == (uintptr_t)fake_cache_object);
         CHECK(!game::rebuild_item(item, king, {}) && !game::rebuild_item(item, 0, {gauze}) && !game::rebuild_item(item, 0, {dam, dam, dam, dam, dam}));
-        CHECK(game::item_mods(item).blueprint == mod);
-        CHECK(game::rebuild_item(item, 0, {dam, dam, dam, dam}) && game::item_mods(item).parts.size() == 4 && !game::item_mods(item).blueprint);
+        CHECK(game::item_mods(item).mod == mod);
+        CHECK(game::rebuild_item(item, 0, {dam, dam, dam, dam}) && game::item_mods(item).parts.size() == 4 && !game::item_mods(item).mod);
+        fake_random_mod = mod;
+        CHECK(!game::rebuild_item(item, 0, {}) && game::item_mods(item).parts.size() == 4);
+        fake_random_mod = 0;
         game::g.context_ctor = 0;
         CHECK(!game::rebuild_item(item, mod, {}));
         game::g.context_ctor = saved_ctor;
@@ -1071,8 +1075,14 @@ int main(int argc, char** argv) {
 
         CHECK(cheats::effect_type(cheats::effect_key(11)) == 11 && cheats::effect_type("Effect") == -1 && cheats::effect_type("Damage") == -1);
         cheats::set_weapon_edits({{"Firearm_PistolAGen", {{cheats::SLOTS_KEY, 2}}}, {"Craftplan_ElectricMelee", {{cheats::effect_key(4), 4}, {cheats::effect_key(1), 0}}}});
+        uintptr_t machete_ctx = game::rdv<uintptr_t>(game::rdv<uintptr_t>(w.backpack + 0x40) + 4 * 8) + game::ITEM_CONTEXT_OBJECT;
+        CHECK(game::rdv<uintptr_t>(machete_ctx + game::CONTEXT_MOD) == mod && game::rdv<int>(machete_ctx + 0x14) == 0);
+        game::g.context_ctor = (uintptr_t)&fake_context_ctor;
         cheats::apply_weapon_edits();
         CHECK(game::upgrade_slots(pistol) == 2 && game::mod_effect_level(mod, 4) == 4 && game::mod_effect_level(mod, 1) == 0);
+        CHECK(game::rdv<int>(machete_ctx + 0x14) == 7 && game::rdv<uintptr_t>(machete_ctx + game::CONTEXT_MOD) == mod);
+        CHECK(game::rebuild_items_with_mod(mod) == 1 && game::rebuild_items_with_mod(king) == 0 && game::rebuild_items_with_mod(0) == 0);
+        game::g.context_ctor = saved_ctor;
         cheats::set_weapon_edits({});
         game::restore_mod(mod);
         game::restore_upgrade_slots(pistol);
