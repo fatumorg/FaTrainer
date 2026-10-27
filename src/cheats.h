@@ -2702,6 +2702,7 @@ inline void tick() {
     install_var_hook();
     apply_dfa_fall_speed();
     apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
+    visuals::apply_spit_colors(logf_hook);
     apply_overrides();
     if (!player) return;
     read_skill_levels();

@@ -92,7 +92,7 @@ struct Config {
     UvLight uv, hunter_glow;
     HudColor hud_tint;
     std::map<std::string, HudColor> hud_parts;
-    std::map<std::string, HudColor> survivor_glow;
+    std::map<std::string, HudColor> survivor_glow, btz_colors;
     std::map<std::string, float> rainbow;
     Crosshair crosshair;
     std::map<std::string, std::string> texts;
@@ -317,6 +317,7 @@ inline float* color_of(const std::string& key) {
         return it == m.end() ? nullptr : it->second.color;
     };
     if (float* c = in(cfg.hud_parts, "hud.")) return c;
+    if (float* c = in(cfg.btz_colors, "btz.")) return c;
     return in(cfg.survivor_glow, "glow.");
 }
 
@@ -330,6 +331,7 @@ inline void load(const std::string& path) {
     cfg.cheat_keys.clear();
     cfg.hud_parts.clear();
     cfg.survivor_glow.clear();
+    cfg.btz_colors.clear();
     cfg.rainbow.clear();
     cfg.texts.clear();
     cfg.game_language.clear(), cfg.voice_language.clear(), cfg.subtitle_language.clear(), cfg.kind_languages.clear();
@@ -406,7 +408,7 @@ inline void load(const std::string& path) {
                        &x.color[1], &x.color[2]) == 10)
                 x.on = on != 0, x.outline = outline != 0, x.style = std::clamp(x.style, 0, CROSSHAIR_STYLES - 1);
         }
-        else if (k == "hud" || k == "text" || k == "survivor_glow" || k == "rainbow") {
+        else if (k == "hud" || k == "text" || k == "survivor_glow" || k == "btz_color" || k == "rainbow") {
             size_t c = v.find(',');
             if (c == std::string::npos || !c) continue;
             std::string key = v.substr(0, c);
@@ -414,7 +416,7 @@ inline void load(const std::string& path) {
             if (k == "text") cfg.texts[key] = game_colors(unescape_text(v.substr(c + 1)));
             else if (k == "rainbow") cfg.rainbow[key] = std::clamp((float)atof(v.c_str() + c + 1), RAINBOW_FASTEST, RAINBOW_SLOWEST);
             else if (int fields = read_hud_color(v.c_str() + c + 1, h); fields && k == "hud") read_hud_part(key, h, fields);
-            else if (fields) cfg.survivor_glow[key] = h;
+            else if (fields) (k == "btz_color" ? cfg.btz_colors : cfg.survivor_glow)[key] = h;
         }
         else if (k == "hidden_config") {
             if (std::find(cfg.hidden_configs.begin(), cfg.hidden_configs.end(), v) == cfg.hidden_configs.end()) cfg.hidden_configs.push_back(v);
@@ -475,6 +477,7 @@ inline bool save(const std::string& path) {
     fprintf(f, "hud_tint=%d,%.3f,%.3f,%.3f\n", cfg.hud_tint.on, cfg.hud_tint.color[0], cfg.hud_tint.color[1], cfg.hud_tint.color[2]);
     for (auto& [part, h] : cfg.hud_parts) fprintf(f, "hud=%s,%d,%.3f,%.3f,%.3f,%d\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2], h.hidden);
     for (auto& [variant, h] : cfg.survivor_glow) fprintf(f, "survivor_glow=%s,%d,%.3f,%.3f,%.3f\n", variant.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
+    for (auto& [part, h] : cfg.btz_colors) fprintf(f, "btz_color=%s,%d,%.3f,%.3f,%.3f\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
     for (auto& [key, seconds] : cfg.rainbow) fprintf(f, "rainbow=%s,%.1f\n", key.c_str(), seconds);
     const auto& x = cfg.crosshair;
     fprintf(f, "crosshair=%d,%d,%.1f,%.1f,%.1f,%.2f,%d,%.3f,%.3f,%.3f\n", x.on, x.style, x.size, x.thickness, x.gap, x.opacity, x.outline, x.color[0], x.color[1],

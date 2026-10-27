@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.1 b1
+
+Night Colors Update
+
+- New: upgrade slots hold more than upgrades. Each slot of the weapon editor lists every upgrade and every blueprint (weapon mod), and its search finds any other item of the game, also ones the game never allows there. A blueprint in a slot adds its effects to the weapon on top of the weapon's own mod; other items sit in the slot without an effect.
+- New: Be The Zombie colors (Visuals). Your own color for the Toxic, UV Suppressor, Sense Suppressor and Horde Summoner spits (flight trail, splash, splats and motion trail), the Night Hunter's veins in UV light and the hunter's fill light. Every color keeps the game's brightness, has Rainbow, and is in the Visuals Version too.
+- This is a beta build. Neither change has been tried in a match yet: if a spit keeps its color or an item in a slot causes trouble, send the log (fatrainer.log).
+
 ## 2.5
 
 Survivor Update

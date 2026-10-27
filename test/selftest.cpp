@@ -206,6 +206,8 @@ static uintptr_t __fastcall fake_context_ctor(void* self, uintptr_t desc, uint32
     return (uintptr_t)self;
 }
 
+static void quiet(const char*, ...) {}
+
 static uintptr_t fake_tree_node(uintptr_t key_back, uint32_t key, uintptr_t less, uintptr_t more) {
     uintptr_t block = w.alloc(0x200), node = block + 0x180;
     w.put<uint32_t>(node - key_back, key);
@@ -1230,6 +1232,93 @@ int main(int argc, char** argv) {
         horde.on = false;
         CHECK(read_vec3("v3_btz_human_glow_color_cth") == (std::vector<float>{1, 2, 3}));
         config::cfg.survivor_glow.clear();
+        config::cfg.btz_colors["uv_block"] = {true, {0, 0, 1}};
+        config::cfg.btz_colors["toxic"] = {true, {1, 0, 0}};
+        CHECK(read_vec3("v3_btz_zombie_uv_block_color") == (std::vector<float>{0, 0, 3}) && read_vec3("v3_btz_zombie_uv_block_color_fpp") == (std::vector<float>{0, 0, 3}));
+        CHECK(read_vec3("f_btz_zombie_fill_light_color") == (std::vector<float>{1, 2, 3}) && visuals::var_colors_on());
+        config::cfg.btz_colors["uv_block"].on = false;
+        CHECK(read_vec3("v3_btz_zombie_uv_block_color") == (std::vector<float>{1, 2, 3}) && !visuals::var_colors_on());
+        config::cfg.btz_colors.clear();
+    }
+
+    {
+        using visuals::fx;
+        auto kept_fx = fx;
+        fx = visuals::FxState();
+        std::string engine_path = argv[1];
+        engine_path = engine_path.substr(0, engine_path.find_last_of("/\\") + 1) + "engine_x64_rwdi.dll";
+        HMODULE engine = LoadLibraryExA(engine_path.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES);
+        CHECK(engine && visuals::fx_find_manager(quiet) && fx.global == (uintptr_t)engine + 0xa3ef28);
+        CHECK(std::all_of(std::begin(fx.vtables), std::end(fx.vtables), [](uintptr_t v) { return v != 0; }));
+        fx = visuals::FxState();
+        fx.resolved = true;
+        CHECK(visuals::fx_base("Data\\FX/Toxic_Spit_Trail_Sequence.FX") == "toxic_spit_trail_sequence" && visuals::fx_base("camo") == "camo");
+        uintptr_t vt_manager = w.alloc(8), vt_particle = w.alloc(8), vt_sequence = w.alloc(8);
+        fx.manager_vtable = vt_manager, fx.vtables[0] = vt_particle, fx.vtables[2] = vt_sequence;
+        uintptr_t manager = w.alloc(0x200), global = w.alloc(8);
+        w.put<uintptr_t>(global, manager);
+        w.put<uintptr_t>(manager, vt_manager);
+        fx.global = global;
+        auto named_def = [&](uintptr_t vt, const char* name) {
+            uintptr_t def = w.alloc(0x200), text = w.alloc(64);
+            w.put<uintptr_t>(def, vt);
+            memcpy((void*)text, name, strlen(name) + 1);
+            w.put<uintptr_t>(def + visuals::FX_DEF_NAME, text);
+            return def;
+        };
+        auto in_map = [&](int map, std::vector<uintptr_t> defs) {
+            uintptr_t first = 0;
+            for (size_t i = defs.size(); i-- > 0;) {
+                uintptr_t node = w.alloc(0x30) + 0x10;
+                w.put<uintptr_t>(node - visuals::FX_NODE_DEF, defs[i]);
+                w.put<uintptr_t>(node + game::TREE_MORE, first);
+                first = node;
+            }
+            w.put<uintptr_t>(manager + map, first);
+            w.put<uint32_t>(manager + map + visuals::FX_MAP_COUNT, (uint32_t)defs.size());
+        };
+        auto with_keys = [&](uintptr_t def, int at, std::vector<float> colors) {
+            uintptr_t keys = w.alloc(colors.size() / 8 * visuals::FX_KEY_SIZE);
+            for (size_t k = 0; k < colors.size() / 8; k++) {
+                memcpy((void*)(keys + k * visuals::FX_KEY_SIZE + visuals::FX_KEY_MIN), &colors[k * 8], 16);
+                memcpy((void*)(keys + k * visuals::FX_KEY_SIZE + visuals::FX_KEY_MAX), &colors[k * 8 + 4], 16);
+            }
+            w.put<uintptr_t>(def + at, keys);
+            w.put<uint32_t>(def + at + visuals::FX_TRACK_COUNT, (uint32_t)(colors.size() / 8));
+            return keys;
+        };
+        auto key = [](uintptr_t keys, int k, int at) {
+            float* c = (float*)(keys + k * visuals::FX_KEY_SIZE + at);
+            return std::vector<float>{c[0], c[1], c[2], c[3]};
+        };
+        uintptr_t spit_particle = named_def(vt_particle, "toxic_spit_trail_particle"), other = named_def(vt_particle, "fire_sparks");
+        uintptr_t spit_keys = with_keys(spit_particle, 0xc0, {0.5f, 1, 0.5f, 1, 0.25f, 0.5f, 0.25f, 0.5f, 0, 2, 0, 1, 0, 1, 0, 1});
+        uintptr_t other_keys = with_keys(other, 0xc0, {1, 0.5f, 0, 1, 1, 0.5f, 0, 1});
+        uintptr_t sequence = named_def(vt_sequence, "Toxic_Spit_Trail_Sequence.fx"), element = w.alloc(0xd8);
+        w.put<uintptr_t>(element + visuals::FX_ELEMENT_DEFS[0], spit_particle);
+        w.put<uintptr_t>(element + visuals::FX_ELEMENT_DEFS[1], sequence);
+        w.put<uintptr_t>(sequence + visuals::FX_ELEMENTS, element + visuals::FX_ELEMENT_NODE);
+        in_map(0x48, {spit_particle, other});
+        in_map(0x78, {sequence});
+        visuals::apply_spit_colors(quiet);
+        CHECK(fx.tracks.empty() && fx.keys.empty());
+        config::cfg.btz_colors["toxic"] = {true, {1, 0, 0}};
+        visuals::apply_spit_colors(quiet);
+        CHECK(fx.tracks.size() == 1 && fx.tracks[0].def == spit_particle);
+        CHECK(key(spit_keys, 0, visuals::FX_KEY_MIN) == (std::vector<float>{1, 0, 0, 1}) && key(spit_keys, 0, visuals::FX_KEY_MAX) == (std::vector<float>{0.5f, 0, 0, 0.5f}));
+        CHECK(key(spit_keys, 1, visuals::FX_KEY_MIN) == (std::vector<float>{2, 0, 0, 1}) && key(other_keys, 0, visuals::FX_KEY_MIN) == (std::vector<float>{1, 0.5f, 0, 1}));
+        config::cfg.btz_colors["toxic"].color[0] = 0, config::cfg.btz_colors["toxic"].color[2] = 1;
+        visuals::apply_spit_colors(quiet);
+        CHECK(key(spit_keys, 0, visuals::FX_KEY_MIN) == (std::vector<float>{0, 0, 1, 1}));
+        config::cfg.btz_colors["toxic"].on = false;
+        visuals::apply_spit_colors(quiet);
+        CHECK(key(spit_keys, 0, visuals::FX_KEY_MIN) == (std::vector<float>{0.5f, 1, 0.5f, 1}) && key(spit_keys, 1, visuals::FX_KEY_MAX) == (std::vector<float>{0, 1, 0, 1}));
+        config::cfg.btz_colors["toxic"].on = true;
+        w.put<uintptr_t>(spit_particle, vt_sequence);
+        visuals::apply_spit_colors(quiet);
+        CHECK(key(spit_keys, 0, visuals::FX_KEY_MIN) == (std::vector<float>{0.5f, 1, 0.5f, 1}));
+        config::cfg.btz_colors.clear();
+        fx = kept_fx;
     }
 
     {
@@ -1584,6 +1673,7 @@ int main(int argc, char** argv) {
         config::cfg.hud_parts["radar"] = {true, {0.0f, 1.0f, 0.0f}, true};
         config::cfg.rainbow["hud.radar"] = 4.5f;
         config::cfg.survivor_glow["uv"] = {true, {1.0f, 0.0f, 0.0f}};
+        config::cfg.btz_colors["horde_spit"] = {true, {0.0f, 0.5f, 1.0f}};
         config::cfg.crosshair = {true, false, config::CIRCLE, 12, 3, 5, 0.8f, {0.1f, 0.2f, 0.3f}};
         config::cfg.texts["btz_pounce_interrupted"] = "Nope, line\none, a=b \\ done";
         config::cfg.texts["HUDMessage_BTZDeath_Killer"] = "Zabi\xc5\x82" "e\xc5\x9b %s";
@@ -1594,6 +1684,8 @@ int main(int argc, char** argv) {
         CHECK(config::cfg.hud_parts.size() == 2 && config::cfg.hud_parts["stamina"].on && config::cfg.hud_parts["stamina"].color[0] == 1.0f);
         CHECK(config::cfg.hud_parts["radar"].hidden && !config::cfg.hud_parts["stamina"].hidden && config::cfg.rainbow["hud.radar"] == 4.5f);
         CHECK(config::cfg.survivor_glow["uv"].on && config::cfg.survivor_glow["uv"].color[0] == 1.0f);
+        CHECK(config::cfg.btz_colors.size() == 1 && config::cfg.btz_colors["horde_spit"].on && config::cfg.btz_colors["horde_spit"].color[1] == 0.5f);
+        CHECK(config::color_of("btz.horde_spit") == config::cfg.btz_colors["horde_spit"].color && !config::color_of("btz.missing"));
         const auto& x = config::cfg.crosshair;
         CHECK(x.on && !x.outline && x.style == config::CIRCLE && x.size == 12 && x.gap == 5 && x.opacity == 0.8f && x.color[2] == 0.3f);
         CHECK(config::color_of("hud.radar") == config::cfg.hud_parts["radar"].color && config::color_of("glow.uv") == config::cfg.survivor_glow["uv"].color);

@@ -2110,7 +2110,7 @@ inline bool part_row(const char* label, const std::string& key, std::map<std::st
     ImGui::BeginDisabled(!on);
     float shown[3] = {1, 1, 1};
     if (it != colors.end()) memcpy(shown, it->second.color, sizeof shown);
-    std::string color_key = (&colors == &c.hud_parts ? "hud." : "glow.") + key;
+    std::string color_key = (&colors == &c.hud_parts ? "hud." : &colors == &c.btz_colors ? "btz." : "glow.") + key;
     if (color_field(color_key.c_str(), shown)) memcpy(colors[key].color, shown, sizeof shown), changed = true;
     ImGui::EndDisabled();
     bool hidden = it != colors.end() && it->second.hidden;
@@ -2157,6 +2157,17 @@ inline bool survivor_glow_card() {
     note("As the Night Hunter you see survivors glow through walls with your sense. Pick your own color for each kind of glow; it keeps the glow's brightness.");
     ImGui::Dummy({0, S(4)});
     for (auto& g : visuals::SURVIVOR_GLOWS) changed |= part_row(g.label, g.key, config::cfg.survivor_glow, false);
+    end_card();
+    return changed;
+}
+
+inline bool btz_colors_card() {
+    bool changed = false;
+    begin_card("btz_colors", "BE THE ZOMBIE COLORS");
+    note("Colors of the Night Hunter's spits and glow, kept at the game's own brightness. Only you see them, as the hunter or as a survivor.");
+    ImGui::Dummy({0, S(4)});
+    for (auto& b : visuals::BTZ_COLORS) changed |= part_row(b.label, b.key, config::cfg.btz_colors, false);
+    note("A spit takes its new color the next time it is thrown. Spits load with the match, so the trainer colors them a few seconds after they first appear.");
     end_card();
     return changed;
 }
@@ -2793,6 +2804,7 @@ inline void visuals_page() {
     changed |= hud_colors_card();
     changed |= crosshair_card();
     changed |= survivor_glow_card();
+    changed |= btz_colors_card();
     if (changed) save_config();
 }
 

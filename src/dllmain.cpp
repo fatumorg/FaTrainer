@@ -328,6 +328,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
             std::lock_guard<std::mutex> l(game::mx);
             visuals::install_var_hook(visuals::tools_global, false, nullptr);
             visuals::apply_uv_light(config::cfg.uv.on, config::cfg.uv.color, config::cfg.uv.glow);
+            visuals::apply_spit_colors(logf);
 #else
             cheats::tick();
 #endif

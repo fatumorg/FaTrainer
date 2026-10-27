@@ -4,12 +4,13 @@ cd "$(dirname "$0")"
 IM=third_party/imgui
 GLFW=third_party/glfw
 VER=$(sed -n 's/^#define INSTALLER_VERSION "\(.*\)"/\1/p' src/version.h)
+IFS=. read -r MAJOR MINOR PATCH <<< "${VER%% *}"
 RC=$(mktemp -d)
 trap 'rm -rf "$RC"' EXIT
 version_header() {
   mkdir -p "$RC/$1"
-  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_STRING "%s"\n#define VER_FILETYPE VFT_APP\n#define VER_DESCRIPTION "FaTrainer launcher (%s)"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s.exe"\n' \
-    "${VER%%.*}" "${VER#*.}" "$VER" "$2" "$3" "$3" > "$RC/$1/version_values.h"
+  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_PATCH %s\n#define VER_STRING "%s"\n#define VER_FILETYPE VFT_APP\n#define VER_DESCRIPTION "FaTrainer launcher (%s)"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s.exe"\n' \
+    "$MAJOR" "$MINOR" "${PATCH:-0}" "$VER" "$2" "$3" "$3" > "$RC/$1/version_values.h"
 }
 version_header fatum "Fatum Version" FaTrainer
 export RC

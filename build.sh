@@ -5,12 +5,13 @@ cd "$(dirname "$0")"
 IM=third_party/imgui
 VER=$(sed -n 's/^#define FATRAINER_VERSION "\(.*\)"/\1/p' src/version.h)
 NUM=${VER%% *}
+IFS=. read -r MAJOR MINOR PATCH <<< "$NUM"
 RC=$(mktemp -d)
 trap 'rm -rf "$RC"' EXIT
 version_header() {
   mkdir -p "$RC/$1"
-  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_STRING "%s"\n#define VER_FILETYPE %s\n#define VER_DESCRIPTION "%s"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s"\n' \
-    "${NUM%%.*}" "${NUM#*.}" "$VER" "$2" "$3" "$4" "$5" > "$RC/$1/version_values.h"
+  printf '#define VER_MAJOR %s\n#define VER_MINOR %s\n#define VER_PATCH %s\n#define VER_STRING "%s"\n#define VER_FILETYPE %s\n#define VER_DESCRIPTION "%s"\n#define VER_INTERNAL "%s"\n#define VER_FILENAME "%s"\n' \
+    "$MAJOR" "$MINOR" "${PATCH:-0}" "$VER" "$2" "$3" "$4" "$5" > "$RC/$1/version_values.h"
 }
 version_header dll VFT_DLL "FaTrainer | Dying Light" xinput1_3 xinput1_3.dll
 export RC

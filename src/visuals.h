@@ -72,19 +72,48 @@ inline const SurvivorGlow SURVIVOR_GLOWS[] = {
     {"sense", "Hit by Sense Suppressor", {"v3_btz_human_glow_color_camo", "v3_btz_human_glow_color_camo_spit"}},
 };
 
-inline const config::HudColor* survivor_glow_for(const char* var) {
+struct BtzColor { const char* key; const char* label; std::vector<const char*> vars, fx; };
+inline const BtzColor BTZ_COLORS[] = {
+    {"uv_block", "Veins in UV light", {"v3_btz_zombie_uv_block_color", "v3_btz_zombie_uv_block_color_fpp"}, {}},
+    {"fill_light", "Night Hunter fill light", {"f_btz_zombie_fill_light_color"}, {}},
+    {"toxic", "Toxic spit",
+     {},
+     {"toxic_spit_trail_sequence", "toxic_spit_sequence", "toxic_spit_trace", "toxic_spit_splash_trace", "hunter_spit_toxic_motion_trail",
+      "toxic_spit_floor", "toxic_spit_wall"}},
+    {"uv_spit", "UV Suppressor spit",
+     {},
+     {"btz_spit_fly_black_sequence", "disable_flashlight_explosion_sequence", "disable_flash_light_trace", "disable_flash_light_splash_trace",
+      "disable_flash_light_splash_hit_trace", "hunter_spit_ld_motion_trail"}},
+    {"sense_spit", "Sense Suppressor spit",
+     {},
+     {"camo_spit_trail_sequence", "camo_spit_sequence", "camo_spit_trace", "camo_spit_splash_trace", "camo_spit_splash_hit_trace",
+      "hunter_spit_camo_motion_trail"}},
+    {"horde_spit", "Horde Summoner spit",
+     {},
+     {"horde_control_explosion_sequence", "control_the_horde_trace", "control_the_horde_splash_trace", "control_the_horde_splash_hit_trace",
+      "hunter_spit_cth_motion_trail"}},
+};
+
+inline const config::HudColor* chosen(const std::map<std::string, config::HudColor>& colors, const char* key) {
+    auto it = colors.find(key);
+    return it != colors.end() && it->second.on ? &it->second : nullptr;
+}
+
+inline const config::HudColor* var_color_for(const char* var) {
     for (auto& g : SURVIVOR_GLOWS)
         for (const char* name : g.vars)
-            if (!strcmp(var, name)) {
-                auto it = config::cfg.survivor_glow.find(g.key);
-                return it != config::cfg.survivor_glow.end() && it->second.on ? &it->second : nullptr;
-            }
+            if (!strcmp(var, name)) return chosen(config::cfg.survivor_glow, g.key);
+    for (auto& b : BTZ_COLORS)
+        for (const char* name : b.vars)
+            if (!strcmp(var, name)) return chosen(config::cfg.btz_colors, b.key);
     return nullptr;
 }
 
-inline bool survivor_glow_on() {
+inline bool var_colors_on() {
     for (auto& [key, g] : config::cfg.survivor_glow)
         if (g.on) return true;
+    for (auto& b : BTZ_COLORS)
+        if (!b.vars.empty() && chosen(config::cfg.btz_colors, b.key)) return true;
     return false;
 }
 
@@ -93,7 +122,7 @@ inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintpt
     auto& glow = config::cfg.hunter_glow;
     const char* s = name ? *(const char**)name : nullptr;
     if (!v || !s) return v;
-    const config::HudColor* survivor = glow.on && hunter_glow_var(s) ? nullptr : survivor_glow_for(s);
+    const config::HudColor* survivor = glow.on && hunter_glow_var(s) ? nullptr : var_color_for(s);
     if (!survivor && !(glow.on && hunter_glow_var(s))) return v;
     float c[3] = {v[0], v[1], v[2]};
     tint(c, survivor ? survivor->color : glow.color, survivor ? 1.0f : glow.glow);
@@ -104,7 +133,7 @@ inline float* tinted_var_vec3(uintptr_t self, float* out, uintptr_t name, uintpt
 inline void install_var_hook(uintptr_t root, bool floats_wanted, VarFloatFn scaled_float) {
     uintptr_t object = rdv<uintptr_t>(root), current = rdv<uintptr_t>(object);
     uintptr_t ours = (uintptr_t)&var_vtable[1];
-    if (!current || current == ours || !(floats_wanted || config::cfg.hunter_glow.on || survivor_glow_on())) return;
+    if (!current || current == ours || !(floats_wanted || config::cfg.hunter_glow.on || var_colors_on())) return;
     for (size_t n = VAR_SLOTS + 1; n > SLOT_VAR_VEC3 + 1; n /= 2)
         if (rd(current - 8, var_vtable, n * 8)) {
             original_var_float = (VarFloatFn)var_vtable[1 + SLOT_VAR_FLOAT];
@@ -154,6 +183,130 @@ inline void apply_uv_light(bool on, const float color[3], float glow) {
             game::wr_bytes(desc + FLASH_COLORS[0], now, sizeof now);
     }
     uv_applied = true;
+}
+
+struct FxClass { const char* name; int map; std::vector<int> tracks; };
+inline const FxClass FX_CLASSES[] = {
+    {"CFXParticleDef", 0x48, {0xc0}},     {"CFXStandardDef", 0x60, {0xb0}}, {"CFXSequenceDef", 0x78, {}},
+    {"CFXFlareDef", 0x90, {0x98, 0x120, 0x1d8}}, {"CFXTraceDef", 0xa8, {0x98}}, {"CFXBlurTrailDef", 0xc0, {0x68}},
+    {"CFXLightDef", 0xf0, {0x68}},
+};
+const int FX_CLASS_COUNT = sizeof FX_CLASSES / sizeof FX_CLASSES[0];
+const char FX_MANAGER_CODE[] = "4C 8B 3D ? ? ? ? B9 A0 00 00 00 48 8B EA";
+const int FX_MAP_COUNT = 0x8, FX_NODE_DEF = 8, FX_DEF_NAME = 8, FX_TRACK_COUNT = 8, FX_KEY_SIZE = 0x3c, FX_KEY_MIN = 0x10, FX_KEY_MAX = 0x20;
+const int FX_ELEMENTS = 0x70, FX_ELEMENT_NODE = 0xc8, FX_ELEMENT_DEFS[] = {0x10, 0x18};
+const int FX_MAX_KEYS = 256, FX_MAX_NODES = 40000, FX_MAX_ELEMENTS = 64, FX_MAX_DEPTH = 4, FX_TREE_DEPTH = 64;
+const DWORD FX_REBUILD_MS = 3000;
+
+struct FxTrack { uintptr_t def, vtable; int at; size_t color; };
+struct FxKeys { std::vector<uint8_t> original, written; };
+struct FxState {
+    bool resolved = false;
+    uintptr_t global = 0, manager_vtable = 0, vtables[FX_CLASS_COUNT] = {}, manager = 0;
+    uint32_t counts[FX_CLASS_COUNT] = {};
+    DWORD built_at = 0;
+    std::vector<FxTrack> tracks;
+    std::map<uintptr_t, FxKeys> keys;
+};
+inline FxState fx;
+
+inline std::string fx_base(std::string name) {
+    for (char& ch : name) ch = (char)tolower((unsigned char)ch);
+    size_t slash = name.find_last_of("/\\");
+    if (slash != std::string::npos) name = name.substr(slash + 1);
+    if (name.size() > 3 && !name.compare(name.size() - 3, 3, ".fx")) name.resize(name.size() - 3);
+    return name;
+}
+
+inline int fx_class_of(uintptr_t def) {
+    uintptr_t vt = rdv<uintptr_t>(def);
+    for (int i = 0; vt && i < FX_CLASS_COUNT; i++)
+        if (fx.vtables[i] == vt) return i;
+    return -1;
+}
+
+inline void fx_collect(uintptr_t def, size_t color, int depth, std::set<uintptr_t>& seen) {
+    int cls = fx_class_of(def);
+    if (cls < 0 || depth > FX_MAX_DEPTH || !seen.insert(def).second) return;
+    for (int at : FX_CLASSES[cls].tracks) fx.tracks.push_back({def, fx.vtables[cls], at, color});
+    uintptr_t node = FX_CLASSES[cls].tracks.empty() ? rdv<uintptr_t>(def + FX_ELEMENTS) : 0;
+    for (int n = 0; node && n < FX_MAX_ELEMENTS; n++, node = rdv<uintptr_t>(node))
+        for (int at : FX_ELEMENT_DEFS) fx_collect(rdv<uintptr_t>(node - FX_ELEMENT_NODE + at), color, depth + 1, seen);
+}
+
+template <class F> inline void fx_each_def(uintptr_t node, int depth, int& budget, F&& f) {
+    if (!node || depth >= FX_TREE_DEPTH || budget-- <= 0) return;
+    fx_each_def(rdv<uintptr_t>(node + game::TREE_LESS), depth + 1, budget, f);
+    f(rdv<uintptr_t>(node - FX_NODE_DEF));
+    fx_each_def(rdv<uintptr_t>(node + game::TREE_MORE), depth + 1, budget, f);
+}
+
+inline void fx_rebuild() {
+    std::map<std::string, size_t> wanted;
+    for (size_t c = 0; c < std::size(BTZ_COLORS); c++)
+        for (const char* name : BTZ_COLORS[c].fx) wanted[name] = c;
+    fx.tracks.clear();
+    std::set<uintptr_t> seen;
+    int budget = FX_MAX_NODES;
+    for (int i = 0; i < FX_CLASS_COUNT; i++)
+        fx_each_def(rdv<uintptr_t>(fx.manager + FX_CLASSES[i].map), 0, budget, [&](uintptr_t def) {
+            char name[96] = {};
+            uintptr_t text = rdv<uintptr_t>(def + FX_DEF_NAME);
+            if (!text || !rd(text, name, sizeof name - 1)) return;
+            auto it = wanted.find(fx_base(name));
+            if (it != wanted.end()) fx_collect(def, it->second, 0, seen);
+        });
+}
+
+inline bool fx_find_manager(void (*log)(const char*, ...)) {
+    if (fx.resolved) return fx.global && fx.manager_vtable;
+    HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");
+    if (!engine) return false;
+    fx.resolved = true;
+    uintptr_t base = (uintptr_t)engine;
+    for (int i = 0; i < FX_CLASS_COUNT; i++) fx.vtables[i] = game::find_vtable(base, FX_CLASSES[i].name);
+    auto hit = game::find_code(base, FX_MANAGER_CODE);
+    fx.global = hit.empty() ? 0 : game::rip_target(hit[0], 3, 7);
+    fx.manager_vtable = game::find_vtable(base, "CFXDefinitionManager");
+    log("fx: definition manager %s, %d of %d classes", fx.global && fx.manager_vtable ? "found" : "missing",
+         (int)std::count_if(std::begin(fx.vtables), std::end(fx.vtables), [](uintptr_t v) { return v != 0; }), FX_CLASS_COUNT);
+    return fx.global && fx.manager_vtable;
+}
+
+inline void tint_fx_keys(std::vector<uint8_t>& keys, const float color[3]) {
+    for (size_t k = 0; k + FX_KEY_SIZE <= keys.size(); k += FX_KEY_SIZE)
+        for (int at : {FX_KEY_MIN, FX_KEY_MAX}) tint((float*)(keys.data() + k + at), color, 1.0f);
+}
+
+inline void apply_spit_colors(void (*log)(const char*, ...)) {
+    bool wanted = false;
+    for (auto& b : BTZ_COLORS) wanted |= !b.fx.empty() && chosen(config::cfg.btz_colors, b.key);
+    if ((!wanted && fx.keys.empty()) || !fx_find_manager(log)) return;
+    uintptr_t manager = rdv<uintptr_t>(fx.global);
+    if (!manager || rdv<uintptr_t>(manager) != fx.manager_vtable) return;
+    uint32_t counts[FX_CLASS_COUNT];
+    for (int i = 0; i < FX_CLASS_COUNT; i++) counts[i] = rdv<uint32_t>(manager + FX_CLASSES[i].map + FX_MAP_COUNT);
+    bool changed = manager != fx.manager || memcmp(counts, fx.counts, sizeof counts);
+    if (changed && GetTickCount() - fx.built_at >= FX_REBUILD_MS) {
+        fx.manager = manager, fx.built_at = GetTickCount();
+        memcpy(fx.counts, counts, sizeof counts);
+        fx_rebuild();
+        log("fx: %zu spit color tracks", fx.tracks.size());
+    }
+    for (auto& t : fx.tracks) {
+        if (rdv<uintptr_t>(t.def) != t.vtable) continue;
+        uintptr_t keys = rdv<uintptr_t>(t.def + t.at);
+        uint32_t n = rdv<uint32_t>(t.def + t.at + FX_TRACK_COUNT);
+        if (!keys || !n || n > FX_MAX_KEYS) continue;
+        std::vector<uint8_t> now(n * FX_KEY_SIZE);
+        if (!rd(keys, now.data(), now.size())) continue;
+        auto& k = fx.keys[keys];
+        if (k.original.size() != now.size() || (now != k.original && now != k.written)) k.original = now, k.written.clear();
+        std::vector<uint8_t> want = k.original;
+        if (const config::HudColor* c = chosen(config::cfg.btz_colors, BTZ_COLORS[t.color].key)) tint_fx_keys(want, c->color);
+        if (now != want) game::wr_bytes(keys, want.data(), want.size());
+        k.written = want;
+    }
 }
 
 enum UiKind { UI_NONE, UI_VIEW, UI_TEXT };
