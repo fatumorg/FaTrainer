@@ -1030,8 +1030,11 @@ int main(int argc, char** argv) {
         CHECK(game::rdv<uintptr_t>(ctx) == game::g.base + 0x1000 && game::rdv<uintptr_t>(ctx + game::CONTEXT_DESC) == w.desc["Melee_MacheteAGen"]);
         CHECK(game::rdv<uint32_t>(ctx + game::CONTEXT_WORD) == 0x5a && game::rdv<uintptr_t>(ctx + game::CONTEXT_BLUEPRINT) == recipe && game::rdv<int>(ctx + 0x14) == 7);
         CHECK(game::rdv<uintptr_t>(ctx + 0x48) == (uintptr_t)fake_cache_object);
-        CHECK(!game::rebuild_item(item, king, {}) && !game::rebuild_item(item, 0, {gauze}) && !game::rebuild_item(item, 0, {dam, dam, dam, dam, dam}));
+        CHECK(!game::rebuild_item(item, king, {}) && !game::rebuild_item(item, 0, {0x1234}) && !game::rebuild_item(item, 0, {dam, dam, dam, dam, dam}));
         CHECK(game::item_mods(item).mod == mod);
+        CHECK(game::rebuild_item(item, mod, {mod, gauze, w.desc["Melee_MacheteAGen"]}));
+        mods = game::item_mods(item);
+        CHECK(mods.mod == mod && mods.parts == std::vector<uintptr_t>({mod, gauze, w.desc["Melee_MacheteAGen"]}));
         CHECK(game::rebuild_item(item, 0, {dam, dam, dam, dam}) && game::item_mods(item).parts.size() == 4 && !game::item_mods(item).mod);
         fake_random_mod = mod;
         CHECK(!game::rebuild_item(item, 0, {}) && game::item_mods(item).parts.size() == 4);

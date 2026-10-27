@@ -455,7 +455,7 @@ inline bool rebuild_item(uintptr_t item, uintptr_t mod, std::vector<uintptr_t> p
     if (!g.context_ctor || !in_image(rdv<uintptr_t>(ctx)) || !desc_alive(desc) || parts.size() > MAX_UPGRADES) return false;
     if (mod && !weapon_blueprint(mod)) return false;
     for (uintptr_t p : parts)
-        if (p && !upgrade_desc(p)) return false;
+        if (p && !desc_alive(p)) return false;
     alignas(16) uint8_t fresh[CONTEXT_SIZE] = {};
     TtlVector list{parts.data(), (uint32_t)parts.size(), (uint32_t)parts.size()};
     ((ContextCtorFn)g.context_ctor)(fresh, desc, rdv<uint32_t>(ctx + CONTEXT_WORD), mod, rdv<uintptr_t>(ctx + CONTEXT_BLUEPRINT), &list);

@@ -534,21 +534,22 @@ inline void rarity_picker() {
     ImGui::Dummy({0, S(10)});
 }
 
-struct ModChoice { uintptr_t desc; std::string id, name; };
-inline std::vector<ModChoice> g_upgrade_choices, g_blueprint_choices;
+struct ModChoice { uintptr_t desc; std::string id, name, find; };
+inline std::vector<ModChoice> g_upgrade_choices, g_blueprint_choices, g_item_choices;
 inline size_t g_choice_descs = 0;
 
 inline void refresh_mod_choices() {
     if (game::g.descs.size() == g_choice_descs) return;
     g_choice_descs = game::g.descs.size();
-    g_upgrade_choices.clear(), g_blueprint_choices.clear();
+    g_upgrade_choices.clear(), g_blueprint_choices.clear(), g_item_choices.clear();
     for (auto& [id, d] : game::g.descs) {
         auto* info = game::str_at(game::rdv<uintptr_t>(d + game::g.desc_name));
         std::string name = info && info->name[0] && info->name[0] != '&' ? info->name : game::readable(id);
         if (game::upgrade_desc(d)) g_upgrade_choices.push_back({d, id, name});
         else if (game::weapon_blueprint(d)) g_blueprint_choices.push_back({d, id, name});
+        g_item_choices.push_back({d, id, name, lower(name + " " + id)});
     }
-    for (auto* list : {&g_upgrade_choices, &g_blueprint_choices})
+    for (auto* list : {&g_upgrade_choices, &g_blueprint_choices, &g_item_choices})
         std::sort(list->begin(), list->end(), [](const ModChoice& a, const ModChoice& b) { return a.name < b.name; });
 }
 
@@ -556,6 +557,55 @@ inline const ModChoice* find_choice(const std::vector<ModChoice>& list, uintptr_
     for (auto& c : list)
         if (c.desc == desc) return &c;
     return nullptr;
+}
+
+inline const ModChoice* find_part(uintptr_t desc) {
+    for (auto* list : {&g_upgrade_choices, &g_blueprint_choices, &g_item_choices})
+        if (const ModChoice* c = find_choice(*list, desc)) return c;
+    return nullptr;
+}
+
+inline bool slot_combo(const char* id, uintptr_t current, uintptr_t& picked, float width) {
+    static char filter[64];
+    const ModChoice* now = find_part(current);
+    static const char* auto_find = getenv("DLT_SLOT");
+    if (auto_find && !strcmp(id, "##upgrade1")) ImGui::OpenPopupEx(ImHashStr("##ComboPopup", 0, ImGui::GetID(id)));
+    ImGui::SetNextItemWidth(width);
+    ImGui::SetNextWindowSizeConstraints({std::max(width, S(320)), 0}, {FLT_MAX, FLT_MAX});
+    bool changed = false;
+    if (!ImGui::BeginCombo(id, current ? now ? now->name.c_str() : "Unknown" : "Empty slot", ImGuiComboFlags_HeightLarge)) return false;
+    if (ImGui::IsWindowAppearing()) {
+        snprintf(filter, sizeof filter, "%s", auto_find ? auto_find : "");
+        auto_find = nullptr;
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##find", "Find any item", filter, sizeof filter);
+    auto choice = [&](const ModChoice& c) {
+        ImGui::PushID((void*)c.desc);
+        if (ImGui::Selectable(c.name.c_str(), c.desc == current)) picked = c.desc, changed = true;
+        ImGui::PopID();
+    };
+    if (ImGui::Selectable("Empty slot", !current)) picked = 0, changed = true;
+    std::string f = lower(filter);
+    if (f.empty()) {
+        ImGui::SeparatorText("Upgrades");
+        for (auto& c : g_upgrade_choices) choice(c);
+        ImGui::SeparatorText("Blueprints");
+        for (auto& c : g_blueprint_choices) choice(c);
+    } else {
+        static std::vector<const ModChoice*> hits;
+        hits.clear();
+        for (auto& c : g_item_choices)
+            if (c.find.find(f) != std::string::npos) hits.push_back(&c);
+        if (hits.empty()) label("No item matches");
+        ImGuiListClipper clip;
+        clip.Begin((int)hits.size());
+        while (clip.Step())
+            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) choice(*hits[i]);
+    }
+    ImGui::EndCombo();
+    return changed && picked != current;
 }
 
 inline bool mod_combo(const char* id, uintptr_t current, const std::vector<ModChoice>& list, const char* none, uintptr_t& picked, float width) {
@@ -621,12 +671,12 @@ inline void upgrades_editor() {
         uintptr_t now = i < (int)mods.parts.size() ? mods.parts[i] : 0, picked = now;
         char id[16];
         snprintf(id, sizeof id, "##upgrade%d", i);
-        if (!mod_combo(id, now, g_upgrade_choices, "Empty slot", picked, w)) continue;
+        if (!slot_combo(id, now, picked, w)) continue;
         auto parts = mods.parts;
         if ((int)parts.size() <= i) parts.resize(i + 1, 0);
         parts[i] = picked;
         while (!parts.empty() && !parts.back()) parts.pop_back();
-        const ModChoice* c = find_choice(g_upgrade_choices, picked);
+        const ModChoice* c = find_part(picked);
         rebuild_edited_item(mods.mod, parts, "upgrade " + std::to_string(i + 1) + " -> " + (c ? c->id : "empty"));
     }
     ImGui::Dummy({0, S(4)});
