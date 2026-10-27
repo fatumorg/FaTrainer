@@ -1239,99 +1239,6 @@ inline void capture_note() {
     if (g_capturing_key) note("Esc cancels, Backspace or Delete removes the key. The menu key and F8 cannot be used.");
 }
 
-inline void spit_keys_card() {
-    begin_card("spit_keys", "SPIT KEYS");
-    note("Pick your own key for each spit type. The trainer presses the game's key for it (1 to 4) when you press yours while the menu is closed.");
-    for (int i = 0; i < config::SPIT_KEYS; i++) {
-        ImGui::PushID(i);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(SPIT_NAMES[i]);
-        ImGui::SameLine(S(220));
-        int& vk = config::cfg.spit_keys[i];
-        if (key_button("spit", vk)) {
-            if (vk) take_key_from_others(vk, "spit");
-            save_config();
-        }
-        ImGui::SameLine(0, S(12));
-        label((std::string("game key ") + SPIT_GAME_KEY_NAMES[i]).c_str());
-        ImGui::PopID();
-    }
-    capture_note();
-    end_card();
-}
-
-inline void zombie_page() {
-    begin_card("about");
-    note("For Be The Zombie matches, where you play the Night Hunter and invade another player's game. Turn these on before or during a match. "
-         "Built-in Legit and Rage configs are on the PvP page and in Settings.");
-    end_card();
-    begin_card("hunter", "HUNTER");
-    cheat_switch("god", "Hunter god mode");
-    cheat_switch("z_energy");
-    ImGui::Dummy({0, S(4)});
-    tweak_slider(*cheats::find_tweak("damage_taken"));
-    tweak_sliders(cheats::G_HUNTER);
-    end_card();
-    begin_card("abilities", "ABILITIES");
-    cheat_switch("z_cooldowns");
-    cheat_switch("z_spits");
-    cheat_switch("z_pound_hits");
-    cheat_switch("z_camo");
-    end_card();
-    spit_keys_card();
-    note("Attack ranges and aim angles are on the PvP page.");
-}
-
-inline const char* SURVIVOR_RANKS[] = {"Prey", "Casualty", "Endangered", "Underdog", "Runner", "Contender",
-                                       "Challenger", "Fighter", "Dominant", "Ruthless", "Indomitable", "Ultimate Survivor"};
-inline const char* HUNTER_RANKS[] = {"Walker", "Runner", "Biter", "Bolter", "Stalker", "Beast",
-                                     "Mauler", "Juggernaut", "Widow Maker", "Carnivore", "Hunter", "Apex Predator"};
-
-inline void rank_row(const char* label, bool zombie, const char* const* names) {
-    int points = cheats::pvp_rank(zombie);
-    if (points < 0) return;
-    int title = cheats::rank_title(points);
-    ImGui::PushID(label);
-    ImGui::TableNextRow(0, S(44));
-    ImGui::BeginDisabled(zombie ? cheats::hunter_is_someone_else() : cheats::playing_hunter());
-    ImGui::TableNextColumn();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::TableNextColumn();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(names[title]);
-    ImGui::SameLine(0, S(6));
-    ImGui::TextDisabled("%s pts", thousands(points).c_str());
-    ImGui::TableNextColumn();
-    struct Step { const char* text; int target; };
-    for (Step st : {Step{"Lowest", 0}, Step{"-1", title - 1}, Step{"+1", title + 1}, Step{"Highest", cheats::RANK_TITLES}}) {
-        if (ImGui::Button(st.text, {S(st.text[0] == '-' || st.text[0] == '+' ? 56 : 84), 0})) {
-            int target = st.target;
-            on_game_thread([=] { std::lock_guard<std::mutex> l(game::mx); cheats::set_pvp_title(zombie, target); });
-        }
-        ImGui::SameLine(0, S(6));
-    }
-    ImGui::NewLine();
-    ImGui::EndDisabled();
-    ImGui::PopID();
-}
-
-inline void ranks_card() {
-    if (cheats::pvp_rank(false) < 0 && cheats::pvp_rank(true) < 0) return;
-    begin_card("ranks", "BE THE ZOMBIE RANKS");
-    note("Your PvP rank as a survivor and as the Night Hunter. In a Be The Zombie match the side you are not playing is grayed out. The game may adjust it again after your next Be The Zombie match.");
-    ImGui::Dummy({0, S(4)});
-    if (ImGui::BeginTable("ranks", 3, ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, S(130));
-        ImGui::TableSetupColumn("rank", ImGuiTableColumnFlags_WidthFixed, S(210));
-        ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthStretch);
-        rank_row("Survivor", false, SURVIVOR_RANKS);
-        rank_row("Night Hunter", true, HUNTER_RANKS);
-        ImGui::EndTable();
-    }
-    end_card();
-}
-
 struct TreeView { const char* name; int type, level, max; float progress, points; uint32_t xp, span; };
 
 inline std::vector<TreeView> tree_views() {
@@ -1660,7 +1567,6 @@ inline void skills_page() {
         if (i % 2 || i + 1 == trees.size()) ImGui::Dummy({0, S(4)});
     }
     skill_tree_card();
-    ranks_card();
 }
 
 inline void apply_preset(const cheats::Preset& p) {
@@ -1917,21 +1823,6 @@ inline void configs_card() {
         ImGui::Dummy({0, S(6)});
         if (ImGui::Button(("Restore built-in configs (" + std::to_string(hidden.size()) + ")").c_str())) hidden.clear(), save_config();
     }
-    end_card();
-}
-
-inline void pvp_page() {
-    configs_card();
-    begin_card("about");
-    note("Slide right to reach further. At Max the pounce, dropkick and death from above also hit targets that are not in front of you. Each player's game decides its own attacks.");
-    end_card();
-    begin_card("zombie", "AS THE NIGHT HUNTER");
-    tweak_sliders(cheats::G_ZOMBIE);
-    end_card();
-    begin_card("human", "AS A SURVIVOR");
-    cheat_switch("dodge_spit");
-    cheat_switch("one_hit_hunter");
-    tweak_sliders(cheats::G_HUMAN);
     end_card();
 }
 
@@ -3016,6 +2907,9 @@ struct Page {
 inline bool always() { return true; }
 inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
+#if !FATRAINER_VISUALS
+#include "page_pvp.h"
+#endif
 inline const Page PAGES[] = {
 #if FATRAINER_VISUALS
     {"visuals", "Visuals", "Colors, HUD, field of view and glow", visuals_page, always, "LOOK", {}},
@@ -3025,24 +2919,25 @@ inline const Page PAGES[] = {
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "last_wish", "supplies", "durability", "item_dupe", "melee_speed", "flare_speed"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
-    {"zombie", "Night Hunter", "Be The Zombie abilities", zombie_page, always, "CHEATS", {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo"}},
-    {"pvp", "PvP", "Configs and how far your attacks reach in Be The Zombie", pvp_page, always, "MODES",
-     {"z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge"}},
-    {"visuals", "Visuals", "Player ESP, colors, HUD, field of view and glow", visuals_page, always, "MODES", {}},
-    {"texts", "Texts", "Game language and your own texts", texts_page, always, "MODES", {}},
-    {"prison", "Prison", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
+    {"survivor", "Survivor", "Your attacks, defenses and auto cheats as a survivor", survivor_page, always, "BE THE ZOMBIE",
+     {"dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge"}},
+    {"zombie", "Night Hunter", "Your abilities, attack reach and spit keys as the Night Hunter", zombie_page, always, "BE THE ZOMBIE",
+     {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo", "z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit"}},
+    {"dlc", "DLC Modes", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
+    {"visuals", "Visuals", "Player ESP, colors, HUD, field of view and glow", visuals_page, always, "LOOK", {}},
+    {"texts", "Texts", "Game language and your own texts", texts_page, always, "LOOK", {}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
     {"backpack", "Backpack", "Items you carry. Press Edit to change a weapon", [] { inventory_page(game::K_BACKPACK); }, always, "ITEMS", {}},
     {"stash", "Stash", "Items stored in your stash. Press Edit to change a weapon", [] { inventory_page(game::K_STASH); }, always, "ITEMS", {}},
     {"materials", "Materials", "Crafting parts and consumables", [] { inventory_page(game::K_MATERIALS); }, always, "ITEMS", {}},
     {"tools", "Tools", "Special items", [] { inventory_page(game::K_TOOLS); }, has_tools, "ITEMS", {}},
     {"give", "Give items", "Spawn any item in the game", give_page, always, "ITEMS", {}},
-    {"keys", "Keybinds", "Keys for cheats and sliders", keybinds_page, always, "", {}},
+    {"keys", "Keybinds", "Keys for cheats and sliders", keybinds_page, always, "MENU", {}},
 #endif
 #if FATRAINER_VISUALS
-    {"settings", "Settings", "Look, menu key and version", settings_page, always, "", {}},
+    {"settings", "Settings", "Look, menu key and version", settings_page, always, "MENU", {}},
 #else
-    {"settings", "Settings", "Look, controls, configs and version", settings_page, always, "", {}},
+    {"settings", "Settings", "Look, controls, configs and version", settings_page, always, "MENU", {}},
 #endif
 };
 

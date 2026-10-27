@@ -204,12 +204,18 @@ inline bool rename_callout_set(const std::string& from, const std::string& to) {
     return !to.empty() && MoveFileA(callout_path(from).c_str(), callout_path(to).c_str());
 }
 
+inline std::string migrate_page_id(const std::string& id) {
+    return id == "pvp" ? "survivor" : id == "prison" ? "dlc" : id;
+}
+
 inline void normalize(const std::vector<std::string>& known) {
     std::vector<PageEntry> out;
-    for (auto& p : cfg.pages)
+    for (auto& p : cfg.pages) {
+        p.id = migrate_page_id(p.id);
         if (std::find(known.begin(), known.end(), p.id) != known.end() &&
             std::none_of(out.begin(), out.end(), [&](auto& o) { return o.id == p.id; }))
             out.push_back(p);
+    }
     for (size_t k = 0; k < known.size(); k++) {
         auto has = [&](const std::string& id) { return std::find_if(out.begin(), out.end(), [&](auto& o) { return o.id == id; }); };
         if (has(known[k]) != out.end()) continue;
@@ -427,7 +433,7 @@ inline void load(const std::string& path) {
         }
         else if (k == "page") {
             size_t c = v.find(',');
-            cfg.pages.push_back({v.substr(0, c), c == std::string::npos || v.substr(c + 1) != "0"});
+            cfg.pages.push_back({migrate_page_id(v.substr(0, c)), c == std::string::npos || v.substr(c + 1) != "0"});
         }
     }
     fclose(f);

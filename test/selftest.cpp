@@ -1645,6 +1645,10 @@ int main(int argc, char** argv) {
     config::cfg.pages = {{"player", true}, {"combat", true}, {"give", true}, {"settings", true}};
     config::normalize({"player", "combat", "prison", "give", "settings"});
     CHECK(config::cfg.pages[2].id == "prison" && config::cfg.pages[3].id == "give");
+    CHECK(config::migrate_page_id("pvp") == "survivor" && config::migrate_page_id("prison") == "dlc" && config::migrate_page_id("player") == "player");
+    config::cfg.pages = {{"prison", false}, {"pvp", true}, {"survivor", true}, {"player", true}};
+    config::normalize({"player", "survivor", "dlc", "settings"});
+    CHECK(config::cfg.pages.size() == 4 && config::cfg.pages[0].id == "dlc" && !config::cfg.pages[0].visible && config::cfg.pages[1].id == "survivor" && config::cfg.pages[2].id == "player" && config::cfg.pages[3].id == "settings");
     {
         float rgb[3] = {1.0f, 0.5f, 0.0f};
         CHECK(color::to_hex(rgb) == "#FF8000");
