@@ -97,7 +97,7 @@ inline Cheat CHEATS[] = {
     {"dodge_spit", "Dodge spit",
      "Steps you aside from spit that would hit you, after a human reaction time.",
      {}, {}},
-    {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health, so your next hit kills him. His own game decides his health in a real match.",
+    {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",
      {}, {}},
 };
 
