@@ -2366,6 +2366,48 @@ int main(int argc, char** argv) {
 
     {
         auto kept = config::cfg;
+        const config::Config fresh;
+        const auto& stock = fresh.look;
+        config::cfg = config::Config();
+        auto& l = config::cfg.look;
+        l.density = config::DENSITY_COMPACT, l.font = config::FONT_MONO, l.text_size = 1.2f, l.card_style = config::CARD_FLAT;
+        l.checkboxes = true, l.descriptions = false, l.open_at = config::OPEN_RIGHT, l.sidebar_width = 280, l.style = config::STYLE_DOCK;
+        config::cfg.window_at[0] = 0.25f, config::cfg.window_at[1] = 0.75f;
+        std::string ini = config::profile_dir() + "_menu.ini";
+        CHECK(config::save(ini));
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(l.density == config::DENSITY_COMPACT && l.font == config::FONT_MONO && l.text_size == 1.2f && l.card_style == config::CARD_FLAT);
+        CHECK(l.checkboxes && !l.descriptions && l.open_at == config::OPEN_RIGHT && l.sidebar_width == 280 && l.style == config::STYLE_DOCK);
+        CHECK(config::cfg.window_at[0] == 0.25f && config::cfg.window_at[1] == 0.75f);
+        CHECK(config::visual_lines().find("menu=") == std::string::npos);
+        CHECK(config::save_visual_config("selftest menu look"));
+        l = config::Look();
+        CHECK(config::load_visual_config("selftest menu look") && l.font == stock.font && l.style == stock.style && l.text_size == stock.text_size);
+        std::ofstream(config::visual_config_path("selftest menu look")) << "menu=1,2,1.2,2,1,0,3,280,3\nfov=1.3\n";
+        CHECK(config::load_visual_config("selftest menu look") && config::cfg.fov == 1.3f && l.font == stock.font && l.sidebar_width == stock.sidebar_width);
+        CHECK(config::delete_visual_config("selftest menu look"));
+        RemoveDirectoryA(config::visual_config_dir().c_str());
+        config::cfg = config::Config();
+        std::ofstream(ini) << "menu=1,2,1.2\nlook=nan,1,0,0,1\ndim=nan\nscale=inf\nfov=nan\nwindow_at=nan,0.5\n";
+        config::load(ini);
+        CHECK(l.density == stock.density && l.font == stock.font && l.text_size == stock.text_size && l.checkboxes == stock.checkboxes);
+        CHECK(l.opacity == stock.opacity && l.skyline == stock.skyline && config::cfg.dim == fresh.dim && config::cfg.scale == fresh.scale);
+        CHECK(config::cfg.fov == fresh.fov && config::cfg.window_at[0] == fresh.window_at[0] && config::cfg.window_at[1] == fresh.window_at[1]);
+        std::ofstream(ini) << "menu=1,2,nan,1,1,0,2,250,1\nmenu=1,1,1.1,1,1,0,2,inf,1\n";
+        config::load(ini);
+        CHECK(l.density == stock.density && l.text_size == stock.text_size && l.sidebar_width == stock.sidebar_width && l.open_at == stock.open_at);
+        std::ofstream(ini) << "menu=9,-4,7,9,1,1,9,9999,-2\nwindow_at=3,-1\n";
+        config::load(ini);
+        CHECK(l.density == config::DENSITY_COMPACT && l.font == config::FONT_DEFAULT && l.text_size == config::TEXT_SIZE_MAX && l.card_style == config::CARD_FLAT);
+        CHECK(l.open_at == config::OPEN_RIGHT && l.sidebar_width == config::SIDEBAR_MAX && l.style == config::STYLE_CLASSIC);
+        CHECK(config::cfg.window_at[0] == 1 && config::cfg.window_at[1] == 0);
+        DeleteFileA(ini.c_str());
+        config::cfg = kept;
+    }
+
+    {
+        auto kept = config::cfg;
         cheats::all_off();
         cheats::find("god")->on = true;
         config::cfg.fov = 1.2f, config::cfg.crosshair.on = false;

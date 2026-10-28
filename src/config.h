@@ -67,11 +67,24 @@ struct UvLight {
 const int SPIT_KEYS = 4;
 
 enum Motion { MOTION_OFF, MOTION_SUBTLE, MOTION_FULL };
+enum Density { DENSITY_COMFORTABLE, DENSITY_COMPACT };
+enum MenuFont { FONT_DEFAULT, FONT_CONDENSED, FONT_MONO, MENU_FONTS };
+enum CardStyle { CARD_FILLED, CARD_OUTLINED, CARD_FLAT };
+enum OpenAt { OPEN_CENTER, OPEN_REMEMBER, OPEN_LEFT, OPEN_RIGHT };
+enum MenuStyle { STYLE_CLASSIC, STYLE_RAIL, STYLE_TABS, STYLE_DOCK };
+const float TEXT_SIZE_MIN = 0.8f, TEXT_SIZE_MAX = 1.3f, SIDEBAR_MIN = 190, SIDEBAR_MAX = 320;
 
 struct Look {
     float opacity = 0.97f, roundness = 1.0f;
     int motion = MOTION_FULL;
     bool skyline = true, glow = true;
+    int density = DENSITY_COMFORTABLE, font = FONT_DEFAULT;
+    float text_size = 1.0f;
+    int card_style = CARD_FILLED;
+    bool checkboxes = false, descriptions = true;
+    int open_at = OPEN_REMEMBER;
+    float sidebar_width = 236;
+    int style = STYLE_CLASSIC;
 };
 
 struct Config {
@@ -79,6 +92,7 @@ struct Config {
     float dim = 0.6f;
     float scale = 1.0f;
     float window[2] = {};
+    float window_at[2] = {0.5f, 0.5f};
     int menu_key = VK_INSERT;
     bool remember_cheats = true;
     bool allow_older = false;
@@ -109,6 +123,14 @@ struct Config {
 };
 
 inline Config cfg;
+
+inline bool read_float(const char* text, float& out) {
+    char* end = nullptr;
+    float f = strtof(text, &end);
+    if (end == text || !std::isfinite(f)) return false;
+    out = f;
+    return true;
+}
 
 inline std::string default_path() {
     char p[MAX_PATH];
@@ -334,7 +356,7 @@ inline bool read_visual_line(const std::string& k, const std::string& v) {
     }
     else if (k == "all_resolutions") cfg.all_resolutions = v == "1";
     else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
-    else if (k == "fov") cfg.fov = std::clamp((float)atof(v.c_str()), FOV_MIN, FOV_MAX);
+    else if (k == "fov") read_float(v.c_str(), cfg.fov), cfg.fov = std::clamp(cfg.fov, FOV_MIN, FOV_MAX);
     else if (k == "crosshair") {
         auto& x = cfg.crosshair;
         int on = 0, outline = 1;
@@ -510,9 +532,14 @@ inline void load(const std::string& path) {
         std::string k = s.substr(0, eq), v = s.substr(eq + 1);
         if (read_visual_line(k, v)) continue;
         if (k == "accent") sscanf(v.c_str(), "%f,%f,%f", &cfg.accent[0], &cfg.accent[1], &cfg.accent[2]);
-        else if (k == "dim") cfg.dim = (float)atof(v.c_str());
-        else if (k == "scale") cfg.scale = (float)atof(v.c_str());
+        else if (k == "dim") read_float(v.c_str(), cfg.dim);
+        else if (k == "scale") read_float(v.c_str(), cfg.scale);
         else if (k == "window") sscanf(v.c_str(), "%f,%f", &cfg.window[0], &cfg.window[1]);
+        else if (k == "window_at") {
+            float x, y;
+            if (sscanf(v.c_str(), "%f,%f", &x, &y) == 2 && std::isfinite(x) && std::isfinite(y))
+                cfg.window_at[0] = std::clamp(x, 0.0f, 1.0f), cfg.window_at[1] = std::clamp(y, 0.0f, 1.0f);
+        }
         else if (k == "menu_key") cfg.menu_key = atoi(v.c_str());
         else if (k == "spit_key") {
             int i = -1, vk = 0;
@@ -537,10 +564,23 @@ inline void load(const std::string& path) {
             if (vk > 0 && vk < 256 && c > 0) cfg.config_keys[v.substr(0, c)] = vk;
         }
         else if (k == "look") {
-            int motion = MOTION_FULL, skyline = 1, glow = 1;
+            float opacity, roundness;
+            int motion, skyline, glow;
             auto& l = cfg.look;
-            if (sscanf(v.c_str(), "%f,%f,%d,%d,%d", &l.opacity, &l.roundness, &motion, &skyline, &glow) == 5)
-                l.motion = motion, l.skyline = skyline != 0, l.glow = glow != 0;
+            if (sscanf(v.c_str(), "%f,%f,%d,%d,%d", &opacity, &roundness, &motion, &skyline, &glow) == 5 && std::isfinite(opacity) && std::isfinite(roundness))
+                l.opacity = opacity, l.roundness = roundness, l.motion = motion, l.skyline = skyline != 0, l.glow = glow != 0;
+        }
+        else if (k == "menu") {
+            int density, font, card, checkboxes, descriptions, open_at, style;
+            float text_size, sidebar;
+            auto& l = cfg.look;
+            if (sscanf(v.c_str(), "%d,%d,%f,%d,%d,%d,%d,%f,%d", &density, &font, &text_size, &card, &checkboxes, &descriptions, &open_at, &sidebar, &style) == 9 &&
+                std::isfinite(text_size) && std::isfinite(sidebar)) {
+                l.density = std::clamp(density, (int)DENSITY_COMFORTABLE, (int)DENSITY_COMPACT), l.font = std::clamp(font, 0, MENU_FONTS - 1);
+                l.text_size = std::clamp(text_size, TEXT_SIZE_MIN, TEXT_SIZE_MAX), l.card_style = std::clamp(card, (int)CARD_FILLED, (int)CARD_FLAT);
+                l.checkboxes = checkboxes != 0, l.descriptions = descriptions != 0, l.open_at = std::clamp(open_at, (int)OPEN_CENTER, (int)OPEN_RIGHT);
+                l.sidebar_width = std::clamp(sidebar, SIDEBAR_MIN, SIDEBAR_MAX), l.style = std::clamp(style, (int)STYLE_CLASSIC, (int)STYLE_DOCK);
+            }
         }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "allow_older") cfg.allow_older = v == "1";
@@ -604,6 +644,7 @@ inline bool save(const std::string& path) {
             (int)cfg.remember_cheats, (int)cfg.allow_older, (int)cfg.beta);
     fprintf(f, "cheat_engine=%d\n", (int)cfg.cheat_engine);
     if (cfg.window[0] > 0 && cfg.window[1] > 0) fprintf(f, "window=%.0f,%.0f\n", cfg.window[0], cfg.window[1]);
+    fprintf(f, "window_at=%.3f,%.3f\n", cfg.window_at[0], cfg.window_at[1]);
     for (auto& h : cfg.hidden_configs) fprintf(f, "hidden_config=%s\n", h.c_str());
     for (auto& p : cfg.pages) fprintf(f, "page=%s,%d\n", p.id.c_str(), (int)p.visible);
     if (cfg.remember_cheats)
@@ -623,7 +664,10 @@ inline bool save(const std::string& path) {
     for (auto& [kind, code] : cfg.kind_languages) fprintf(f, "text_language=%s,%s\n", kind.c_str(), code.c_str());
     for (auto& [id, stats] : cfg.weapon_edits)
         for (auto& [stat, value] : stats) fprintf(f, "weapon_edit=%s,%s,%g\n", id.c_str(), stat.c_str(), value);
-    fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);
+    const auto& l = cfg.look;
+    fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", l.opacity, l.roundness, l.motion, l.skyline, l.glow);
+    fprintf(f, "menu=%d,%d,%.2f,%d,%d,%d,%d,%.0f,%d\n", l.density, l.font, l.text_size, l.card_style, l.checkboxes, l.descriptions, l.open_at, l.sidebar_width,
+            l.style);
     fclose(f);
     return true;
 }
