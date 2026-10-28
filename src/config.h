@@ -68,7 +68,7 @@ const int SPIT_KEYS = 4;
 
 enum Motion { MOTION_OFF, MOTION_SUBTLE, MOTION_FULL };
 enum Density { DENSITY_COMFORTABLE, DENSITY_COMPACT };
-enum MenuFont { FONT_DEFAULT, FONT_CONDENSED, FONT_MONO, MENU_FONTS };
+enum MenuFont { FONT_DEFAULT, FONT_WIDE, FONT_MONO, MENU_FONTS };
 enum CardStyle { CARD_FILLED, CARD_OUTLINED, CARD_FLAT };
 enum OpenAt { OPEN_CENTER, OPEN_REMEMBER, OPEN_LEFT, OPEN_RIGHT };
 enum MenuStyle { STYLE_CLASSIC, STYLE_RAIL, STYLE_TABS, STYLE_DOCK };
@@ -356,7 +356,9 @@ inline bool read_visual_line(const std::string& k, const std::string& v) {
     }
     else if (k == "all_resolutions") cfg.all_resolutions = v == "1";
     else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
-    else if (k == "fov") read_float(v.c_str(), cfg.fov), cfg.fov = std::clamp(cfg.fov, FOV_MIN, FOV_MAX);
+    else if (k == "fov") {
+        if (read_float(v.c_str(), cfg.fov)) cfg.fov = std::clamp(cfg.fov, FOV_MIN, FOV_MAX);
+    }
     else if (k == "crosshair") {
         auto& x = cfg.crosshair;
         int on = 0, outline = 1;

@@ -2384,7 +2384,7 @@ int main(int argc, char** argv) {
         CHECK(config::save_visual_config("selftest menu look"));
         l = config::Look();
         CHECK(config::load_visual_config("selftest menu look") && l.font == stock.font && l.style == stock.style && l.text_size == stock.text_size);
-        std::ofstream(config::visual_config_path("selftest menu look")) << "menu=1,2,1.2,2,1,0,3,280,3\nfov=1.3\n";
+        std::ofstream(config::visual_config_path("selftest menu look")) << "menu=1,2,1.2,2,1,0,3,280,3\nfov=1.3\nfov=nan\n";
         CHECK(config::load_visual_config("selftest menu look") && config::cfg.fov == 1.3f && l.font == stock.font && l.sidebar_width == stock.sidebar_width);
         CHECK(config::delete_visual_config("selftest menu look"));
         RemoveDirectoryA(config::visual_config_dir().c_str());

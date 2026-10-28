@@ -300,7 +300,8 @@ inline bool drag_bar(const char* id, float frac, ImU32 color, float& picked) {
 inline void stat_tile(const char* id, const char* name, float value, float full, ImU32 color, float width,
                       const std::function<void(float)>& set = nullptr) {
     push_card_look();
-    ImGui::BeginChild(id, {width, S(112)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, CARD_FLAGS);
+    float h = font_size(f_label) + font_size(f_tile) + S(20) + ImGui::GetStyle().ItemSpacing.y * 3 + D(23);
+    ImGui::BeginChild(id, {width, h}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, CARD_FLAGS);
     caps(name);
     ImGui::Dummy({0, S(2)});
     ImGui::PushFont(f_tile);
@@ -400,14 +401,16 @@ inline bool is_test_item(const char* id) {
     return false;
 }
 
+inline float item_row_height() { return std::max(S(50), ImGui::GetFontSize() + font_size(f_small) + S(18)); }
+
 inline void item_label(const char* name, const char* id) {
     Cat c = category(id);
     ImVec2 p = ImGui::GetCursorScreenPos();
-    float row = S(44);
+    float second = S(8) + ImGui::GetFontSize(), row = second + font_size(f_small) + S(4);
     ImGui::GetWindowDrawList()->AddRectFilled({p.x, p.y + S(6)}, {p.x + S(3), p.y + row - S(2)}, c.color, S(2));
     ImGui::SetCursorScreenPos({p.x + S(14), p.y + S(3)});
     ImGui::TextUnformatted(name);
-    ImGui::SetCursorScreenPos({p.x + S(14), p.y + S(26)});
+    ImGui::SetCursorScreenPos({p.x + S(14), p.y + second});
     ImGui::PushFont(f_small);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(c.color), "%s", c.label);
     ImGui::SameLine();
@@ -944,7 +947,7 @@ inline void inventory_page(game::Kind kind) {
             const char* id = it.info ? it.info->id : "";
             if (!f.empty() && lower(it.name + " " + id).find(f) == std::string::npos) continue;
             ImGui::PushID((int)(i * 10000 + j));
-            ImGui::TableNextRow(0, S(50));
+            ImGui::TableNextRow(0, item_row_height());
             ImGui::TableNextColumn();
             item_label(it.name.c_str(), id);
             ImGui::TableNextColumn();
@@ -1045,12 +1048,12 @@ inline void give_page() {
         ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Give", ImGuiTableColumnFlags_WidthFixed, S(90));
         ImGuiListClipper clip;
-        clip.Begin((int)list.size(), S(50) + ImGui::GetStyle().CellPadding.y * 2);
+        clip.Begin((int)list.size(), item_row_height() + ImGui::GetStyle().CellPadding.y * 2);
         while (clip.Step())
             for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
                 auto* info = list[i];
                 ImGui::PushID(i);
-                ImGui::TableNextRow(0, S(50));
+                ImGui::TableNextRow(0, item_row_height());
                 ImGui::TableNextColumn();
                 item_label(game::display_name(info).c_str(), info->id);
                 ImGui::TableNextColumn();
@@ -1234,7 +1237,10 @@ inline void tree_tile(const TreeView& t, float width) {
     ImGui::PushID(t.type);
     push_card_look();
     bool has_points = !std::isnan(t.points);
-    ImGui::BeginChild("tree", {width, S(has_points ? 262 : 214)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    float spacing = ImGui::GetStyle().ItemSpacing.y, frame = ImGui::GetFrameHeight();
+    float fit = font_size(f_label) + font_size(f_tile) + font_size(f_small) + frame + S(24) + spacing * 6 + D(32);
+    if (has_points) fit += frame + S(12) + spacing * 3;
+    ImGui::BeginChild("tree", {width, std::max(D(has_points ? 262 : 214), fit)}, ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     bool maxed = t.level >= t.max;
     std::string caption = t.name;
     for (auto& ch : caption) ch = (char)toupper((unsigned char)ch);
@@ -2068,11 +2074,12 @@ inline std::string steam_label() {
 
 inline bool choice_row(const char* id, const char* text, const char* hint, std::string& value, const std::vector<Choice>& options) {
     ImGui::PushID(id);
-    float w = ImGui::GetContentRegionAvail().x, combo_w = S(300), body = ImGui::GetFontSize(), small = font_size(f_small), h = S(60);
+    float w = ImGui::GetContentRegionAvail().x, combo_w = S(300), body = ImGui::GetFontSize(), small = font_size(f_small), pad = D(10);
+    float h = std::max(D(60), body + S(3) + small + pad * 2);
     ImVec2 p = ImGui::GetCursorScreenPos();
     auto* dl = ImGui::GetWindowDrawList();
-    dl->AddText(f_body, body, {p.x + S(4), p.y + S(10)}, C(T.text), text);
-    dl->AddText(f_small, small, {p.x + S(4), p.y + S(13) + body}, C(T.muted), fit_text(f_small, small, hint, w - combo_w - S(24)).c_str());
+    dl->AddText(f_body, body, {p.x + S(4), p.y + pad}, C(T.text), text);
+    dl->AddText(f_small, small, {p.x + S(4), p.y + pad + body + S(3)}, C(T.muted), fit_text(f_small, small, hint, w - combo_w - S(24)).c_str());
     const Choice* current = &options[0];
     for (auto& o : options)
         if (o.value == value) current = &o;
@@ -2869,7 +2876,7 @@ inline void settings_page() {
     begin_card("menu_style", "MENU STYLE");
     const char* densities[] = {"Comfortable", "Compact"};
     if (setting_choice("Density", "density", densities, 2, look.density)) changed = true;
-    const char* fonts[] = {"Default", "Condensed", "Mono"};
+    const char* fonts[] = {"Default", "Wide", "Mono"};
     if (setting_choice("Font", "font", fonts, config::MENU_FONTS, look.font)) changed = true;
     setting_label("Text size");
     ImGui::SetNextItemWidth(S(300));
@@ -3180,6 +3187,8 @@ inline void draw_cursor() {
     ImGui::RenderMouseCursor(m, config::cfg.scale, ImGui::GetMouseCursor(), C(T.text), IM_COL32(0, 0, 0, 255), IM_COL32(0, 0, 0, 70));
 }
 
+inline bool g_closed = true;
+
 inline float presence(bool open) {
     static float v = 0;
     static DWORD last = GetTickCount();
@@ -3188,15 +3197,15 @@ inline float presence(bool open) {
     last = t;
     float m = motion(), speed = m == 0 ? 1000.0f : m < 1 ? 1 / 0.12f : 1 / 0.24f;
     v = open ? std::min(1.0f, v + dt * speed) : std::max(0.0f, v - dt * speed * 1.4f);
+    if (v <= 0) g_closed = true;
     return v;
 }
 
 inline void draw(float shown_raw, bool open) {
     ImGuiIO& io = ImGui::GetIO();
     if (config::cfg.rainbow.count("accent")) apply_style();
-    static int drawn_frame = -10;
-    bool opening = ImGui::GetFrameCount() - drawn_frame > 1;
-    drawn_frame = ImGui::GetFrameCount();
+    bool opening = g_closed;
+    g_closed = false;
     if (opening) g_opened_at = now(), g_page_at = now();
     float shown = brand::ease_out(shown_raw);
     if (config::cfg.dim > 0) ImGui::GetBackgroundDrawList()->AddRectFilled({0, 0}, io.DisplaySize, IM_COL32(0, 0, 0, (int)(config::cfg.dim * 255 * shown)));
