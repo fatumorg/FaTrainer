@@ -1,6 +1,6 @@
 #pragma once
 
-inline void page_icon(ImDrawList* dl, const std::string& id, ImVec2 c, float s, ImU32 col) {
+inline void page_icon(ImDrawList* dl, const char* id, ImVec2 c, float s, ImU32 col) {
     const float PI = 3.14159265f;
     float u = s / 2, t = std::max(1.2f, s * 0.09f);
     auto P = [&](float x, float y) { return ImVec2{c.x + x * u, c.y + y * u}; };
@@ -16,72 +16,72 @@ inline void page_icon(ImDrawList* dl, const std::string& id, ImVec2 c, float s, 
         for (ImVec2 p : points) dl->PathLineTo(P(p.x, p.y));
         dl->PathStroke(col, closed ? ImDrawFlags_Closed : 0, t);
     };
-    if (id == "player") {
+    if (!strcmp(id, "player")) {
         ring(0, -0.42f, 0.36f);
         arc(0, 0.95f, 0.78f, PI, 2 * PI);
-    } else if (id == "combat") {
+    } else if (!strcmp(id, "combat")) {
         ring(0, 0, 0.6f), disc(0, 0, 0.13f);
         line(0, -0.95f, 0, -0.35f), line(0, 0.35f, 0, 0.95f), line(-0.95f, 0, -0.35f, 0), line(0.35f, 0, 0.95f, 0);
-    } else if (id == "skills") {
+    } else if (!strcmp(id, "skills")) {
         poly({{-0.7f, 0.05f}, {0, -0.6f}, {0.7f, 0.05f}}, false);
         poly({{-0.7f, 0.7f}, {0, 0.05f}, {0.7f, 0.7f}}, false);
-    } else if (id == "teleport") {
+    } else if (!strcmp(id, "teleport")) {
         dl->PathArcTo(P(0, -0.3f), 0.55f * u, 2.66f, 6.77f);
         dl->PathLineTo(P(0, 0.92f));
         dl->PathStroke(col, ImDrawFlags_Closed, t);
         disc(0, -0.3f, 0.16f);
-    } else if (id == "survivor") {
+    } else if (!strcmp(id, "survivor")) {
         poly({{-0.72f, -0.68f}, {0, -0.95f}, {0.72f, -0.68f}, {0.72f, 0.08f}, {0, 0.95f}, {-0.72f, 0.08f}}, true);
-    } else if (id == "zombie") {
+    } else if (!strcmp(id, "zombie")) {
         dl->AddBezierQuadratic(P(-0.8f, -0.45f), P(-0.55f, 0.3f), P(-0.15f, 0.85f), col, t * 1.3f);
         dl->AddBezierQuadratic(P(-0.3f, -0.9f), P(-0.02f, -0.05f), P(0.35f, 0.65f), col, t * 1.3f);
         dl->AddBezierQuadratic(P(0.25f, -0.85f), P(0.5f, -0.25f), P(0.8f, 0.25f), col, t * 1.3f);
-    } else if (id == "dlc") {
+    } else if (!strcmp(id, "dlc")) {
         line(-0.6f, -0.92f, -0.6f, 0.95f);
         poly({{-0.6f, -0.85f}, {0.78f, -0.5f}, {-0.6f, -0.12f}}, true);
-    } else if (id == "visuals") {
+    } else if (!strcmp(id, "visuals")) {
         dl->AddBezierQuadratic(P(-0.98f, 0), P(0, -1.0f), P(0.98f, 0), col, t);
         dl->AddBezierQuadratic(P(-0.98f, 0), P(0, 1.0f), P(0.98f, 0), col, t);
         ring(0, 0, 0.3f), disc(0, 0, 0.12f);
-    } else if (id == "texts") {
+    } else if (!strcmp(id, "texts")) {
         box(-0.88f, -0.78f, 0.88f, 0.42f, 0.25f);
         poly({{-0.42f, 0.42f}, {-0.58f, 0.92f}, {0.05f, 0.42f}}, false);
         line(-0.5f, -0.35f, 0.5f, -0.35f), line(-0.5f, 0.02f, 0.18f, 0.02f);
-    } else if (id == "cash") {
+    } else if (!strcmp(id, "cash")) {
         box(-0.95f, -0.55f, 0.95f, 0.55f, 0.12f);
         ring(0, 0, 0.27f), disc(-0.62f, 0, 0.08f), disc(0.62f, 0, 0.08f);
-    } else if (id == "backpack") {
+    } else if (!strcmp(id, "backpack")) {
         box(-0.68f, -0.45f, 0.68f, 0.95f, 0.3f);
         arc(0, -0.45f, 0.34f, PI, 2 * PI);
         box(-0.38f, 0.28f, 0.38f, 0.68f, 0.08f);
-    } else if (id == "stash") {
+    } else if (!strcmp(id, "stash")) {
         box(-0.9f, -0.55f, 0.9f, 0.85f, 0.12f);
         line(-0.9f, -0.08f, 0.9f, -0.08f);
         dl->AddRectFilled(P(-0.15f, -0.25f), P(0.15f, 0.15f), col, 0.06f * u);
-    } else if (id == "materials") {
+    } else if (!strcmp(id, "materials")) {
         for (int k = 0; k < 6; k++) dl->PathLineTo(P(0.9f * cosf(PI / 6 + k * PI / 3), 0.9f * sinf(PI / 6 + k * PI / 3)));
         dl->PathStroke(col, ImDrawFlags_Closed, t);
         ring(0, 0, 0.34f);
-    } else if (id == "tools") {
+    } else if (!strcmp(id, "tools")) {
         dl->AddLine(P(-0.8f, 0.8f), P(0.16f, -0.16f), col, t * 1.6f);
         arc(0.45f, -0.45f, 0.4f, -PI / 4 + 0.85f, -PI / 4 + 2 * PI - 0.85f);
-    } else if (id == "give") {
+    } else if (!strcmp(id, "give")) {
         box(-0.85f, -0.85f, 0.85f, 0.85f, 0.3f);
         line(0, -0.45f, 0, 0.45f), line(-0.45f, 0, 0.45f, 0);
-    } else if (id == "configs") {
+    } else if (!strcmp(id, "configs")) {
         const float rows[][2] = {{-0.6f, -0.35f}, {0, 0.4f}, {0.6f, -0.1f}};
         for (auto& r : rows) line(-0.9f, r[0], 0.9f, r[0]), disc(r[1], r[0], 0.2f);
-    } else if (id == "keys") {
+    } else if (!strcmp(id, "keys")) {
         box(-0.95f, -0.6f, 0.95f, 0.6f, 0.22f);
         disc(-0.5f, -0.18f, 0.09f), disc(0, -0.18f, 0.09f), disc(0.5f, -0.18f, 0.09f);
         line(-0.45f, 0.25f, 0.45f, 0.25f);
-    } else if (id == "settings") {
+    } else if (!strcmp(id, "settings")) {
         for (int k = 0; k < 8; k++) dl->AddLine(P(0.5f * cosf(k * PI / 4), 0.5f * sinf(k * PI / 4)), P(0.92f * cosf(k * PI / 4), 0.92f * sinf(k * PI / 4)), col, t * 2.2f);
         ring(0, 0, 0.56f), ring(0, 0, 0.2f);
-    } else if (id == "all_off") {
+    } else if (!strcmp(id, "all_off")) {
         arc(0, 0.08f, 0.75f, -PI / 2 + 0.75f, 3 * PI / 2 - 0.75f);
         line(0, -0.95f, 0, -0.12f);
-    } else if (id == "refresh") {
+    } else if (!strcmp(id, "refresh")) {
         float a1 = 3 * PI / 2 - 0.35f, r = 0.68f;
         arc(0, 0, r, -PI / 2 + 0.6f, a1);
         ImVec2 e = P(r * cosf(a1), r * sinf(a1)), dir{-sinf(a1), cosf(a1)}, n{cosf(a1), sinf(a1)};
@@ -185,7 +185,7 @@ inline bool tab_item(const char* text, bool on, bool marked, bool category, bool
     float fs = category ? font_size(f_small) : ImGui::GetFontSize(), tw = font->CalcTextSizeA(fs, FLT_MAX, 0, text).x;
     ImVec2 pad{category ? S(14) : S(12), category ? D(7) : D(6)};
     ImVec2 size{tw + pad.x * 2 + (marked ? S(12) : 0), fs + pad.y * 2};
-    if (!first && ImGui::GetItemRectMax().x + S(6) + size.x <= ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine(0, S(6));
+    if (!first) same_line_if_room(size.x, S(6));
     ImGui::PushID(text);
     ImVec2 at = ImGui::GetCursorScreenPos(), end{at.x + size.x, at.y + size.y};
     bool clicked = ImGui::InvisibleButton("tab", size);

@@ -135,6 +135,10 @@ inline void same_line_if_room(float w, float gap) {
     if (ImGui::GetItemRectMax().x + gap + w <= ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine(0, gap);
 }
 
+inline void beside_label(float column, float need) {
+    if (ImGui::GetContentRegionAvail().x >= column + need) ImGui::SameLine(column);
+}
+
 inline bool flowing_chip(const char* text, bool active, bool first) {
     if (!first) same_line_if_room(ImGui::CalcTextSize(text).x + ImGui::GetStyle().FramePadding.x * 2, S(6));
     return chip(text, active);
@@ -236,7 +240,10 @@ inline void end_card() {
     if (!g_card_offsets.empty()) g_card_offsets.pop_back();
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - open.offset);
     if (open.side == CARD_LEFT) g_flow.left_end = ImGui::GetCursorPosY();
-    if (open.side == CARD_RIGHT) ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), g_flow.left_end)), g_flow.window = nullptr;
+    if (open.side == CARD_RIGHT) {
+        ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), g_flow.left_end));
+        g_flow.window = nullptr;
+    }
     ImGui::PopStyleVar();
     ImGui::Dummy({0, D(4)});
     if (open.side == CARD_LEFT) g_flow.after = ImGui::GetCursorPosY();
@@ -962,9 +969,10 @@ inline void inventory_page(game::Kind kind) {
         if (inv.capacity > 0) title += "   /   " + std::to_string(inv.capacity) + " SLOTS";
         ImGui::Dummy({0, S(2)});
         caps(title.c_str());
-        if (!ImGui::BeginTable(("t" + std::to_string(i)).c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) continue;
+        bool stacked = ImGui::GetContentRegionAvail().x < S(322 + 240);
+        if (!ImGui::BeginTable(("t" + std::to_string(i)).c_str(), stacked ? 1 : 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) continue;
         ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Amount", ImGuiTableColumnFlags_WidthFixed, S(322));
+        if (!stacked) ImGui::TableSetupColumn("Amount", ImGuiTableColumnFlags_WidthFixed, S(322));
         for (size_t j = 0; j < inv.items.size(); j++) {
             auto& it = inv.items[j];
             const char* id = it.info ? it.info->id : "";
@@ -973,7 +981,7 @@ inline void inventory_page(game::Kind kind) {
             ImGui::TableNextRow(0, item_row_height());
             ImGui::TableNextColumn();
             item_label(it.name.c_str(), id);
-            ImGui::TableNextColumn();
+            if (!stacked) ImGui::TableNextColumn();
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + S(6));
             int v = game::count(it);
             float bw = ImGui::GetFrameHeight();
@@ -991,7 +999,7 @@ inline void inventory_page(game::Kind kind) {
             }
             ImGui::SameLine(0, S(4));
             if (ImGui::Button("+", {bw, 0})) game::set_count(it, v + 1);
-            ImGui::SameLine(0, S(8));
+            same_line_if_room(S(64), S(8));
             static bool auto_edit = getenv("DLT_EDIT") != nullptr;
             if (auto_edit && editable(it) && strstr(id, "Machete")) {
                 open_editor(it, id);
@@ -1002,7 +1010,7 @@ inline void inventory_page(game::Kind kind) {
             } else if (ImGui::Button("Set 99", {S(64), 0})) {
                 game::set_count(it, 99);
             }
-            ImGui::SameLine(0, S(4));
+            same_line_if_room(S(64), S(4));
             static uintptr_t confirm_delete_item = 0;
             bool sure = confirm_delete_item == it.addr;
             if (ImGui::Button(sure ? "Sure?" : "Delete", {S(64), 0})) {
@@ -1040,20 +1048,17 @@ inline void give_page() {
     note("Auto puts each item where the game keeps it: backpack, materials, ammo...");
     ImGui::Dummy({0, S(2)});
     search_box("##gf", "Search every item in the game...", filter, sizeof filter);
-    for (int c = 0; c < C_COUNT; c++) {
-        if (chip(CAT_NAMES[c], cat == c)) cat = c;
-        ImGui::SameLine(0, S(6));
-    }
-    ImGui::NewLine();
+    for (int c = 0; c < C_COUNT; c++)
+        if (flowing_chip(CAT_NAMES[c], cat == c, c == 0)) cat = c;
     ImGui::SetNextItemWidth(S(130));
     ImGui::InputInt("Amount", &amount, 1, 10);
     amount = std::clamp(amount, 1, 9999);
-    ImGui::SameLine(0, S(24));
+    same_line_if_room(S(150) + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize("Put in").x, S(24));
     const char* targets[] = {"Auto", "Backpack", "Stash", "Materials"};
     int ti = target < 0 ? 0 : target == game::K_BACKPACK ? 1 : target == game::K_STASH ? 2 : 3;
     ImGui::SetNextItemWidth(S(150));
     if (ImGui::Combo("Put in", &ti, targets, 4)) target = ti == 0 ? -1 : ti == 1 ? game::K_BACKPACK : ti == 2 ? game::K_STASH : game::K_MATERIALS;
-    ImGui::SameLine(0, S(24));
+    same_line_if_room(ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize("Show unused items").x, S(24));
     ImGui::Checkbox("Show unused items", &show_test);
     std::string f = lower(filter);
     std::vector<const ItemInfo*> list;
@@ -1105,19 +1110,32 @@ inline void cash_page() {
     static int custom = 100000;
     int now = cash();
     begin_card("wallet", "CASH");
-    ImGui::PushFont(f_big);
-    ImGui::TextUnformatted(("$" + thousands(now)).c_str());
-    ImGui::PopFont();
-    ImGui::Dummy({0, S(2)});
-    for (int a : {1000, 10000, 100000}) {
-        if (ImGui::Button(("+" + thousands(a)).c_str())) set_cash(now + a);
-        ImGui::SameLine();
+    std::string money = "$" + thousands(now);
+    float size = font_size(f_big), money_w = f_big->CalcTextSizeA(size, FLT_MAX, 0, money.c_str()).x, room = ImGui::GetContentRegionAvail().x;
+    if (money_w <= room) {
+        ImGui::PushFont(f_big);
+        ImGui::TextUnformatted(money.c_str());
+        ImGui::PopFont();
+    } else {
+        size *= room / money_w;
+        ImGui::GetWindowDrawList()->AddText(f_big, size, ImGui::GetCursorScreenPos(), C(T.text), money.c_str());
+        ImGui::Dummy({room, size});
     }
+    ImGui::Dummy({0, S(2)});
+    float spacing = ImGui::GetStyle().ItemSpacing.x, pad = ImGui::GetStyle().FramePadding.x * 2;
+    bool first = true;
+    for (int a : {1000, 10000, 100000}) {
+        std::string text = "+" + thousands(a);
+        if (!first) same_line_if_room(ImGui::CalcTextSize(text.c_str()).x + pad, spacing);
+        first = false;
+        if (ImGui::Button(text.c_str())) set_cash(now + a);
+    }
+    same_line_if_room(ImGui::CalcTextSize("Max").x + pad, spacing);
     if (ImGui::Button("Max")) set_cash(9999999);
-    ImGui::SameLine(0, S(24));
+    same_line_if_room(S(150), S(24));
     ImGui::SetNextItemWidth(S(150));
     ImGui::InputInt("##custom", &custom, 0, 0);
-    ImGui::SameLine();
+    same_line_if_room(f_strong->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, "Set").x + ImGui::GetStyle().FramePadding.x * 2.6f, spacing);
     if (accent_button("Set")) set_cash(custom);
     end_card();
 }
@@ -1552,11 +1570,12 @@ inline void skills_page() {
     note("+1 point gives you exactly the XP for the next level. "
          "Drag an XP bar to set the XP within a level. Free skill points - and + add points without changing the level; they last until you close the game.");
     end_card();
-    float tile = (ImGui::GetContentRegionAvail().x - S(12)) / 2;
+    size_t cols = ImGui::GetContentRegionAvail().x >= S(520) ? 2 : 1;
+    float tile = (ImGui::GetContentRegionAvail().x - S(12) * (cols - 1)) / cols;
     for (size_t i = 0; i < trees.size(); i++) {
-        if (i % 2) ImGui::SameLine(0, S(12));
+        if (i % cols) ImGui::SameLine(0, S(12));
         tree_tile(trees[i], tile);
-        if (i % 2 || i + 1 == trees.size()) ImGui::Dummy({0, S(4)});
+        if ((i + 1) % cols == 0 || i + 1 == trees.size()) ImGui::Dummy({0, S(4)});
     }
     skill_tree_card();
 }
@@ -1747,11 +1766,11 @@ inline bool tint_card(const char* id, const char* title, const char* label, cons
     ImGui::BeginDisabled(!u.on);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Color");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     changed |= color_field(id, u.color);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Glow");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     ImGui::SetNextItemWidth(-1);
     if (ImGui::SliderFloat("##glow", &u.glow, 0.2f, 4.0f, "x%.1f")) changed = true;
     ImGui::EndDisabled();
@@ -1798,7 +1817,7 @@ inline bool part_row(const char* label, const std::string& key, std::map<std::st
         h.on = on, changed = true;
         it = colors.find(key);
     }
-    ImGui::SameLine(S(250));
+    beside_label(S(250), S(262));
     ImGui::BeginDisabled(!on);
     float shown[3] = {1, 1, 1};
     if (it != colors.end()) memcpy(shown, it->second.color, sizeof shown);
@@ -1824,7 +1843,7 @@ inline bool hud_colors_card() {
     ImGui::BeginDisabled(!c.hud_tint.on);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Tint");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     changed |= color_field("hud_tint", c.hud_tint.color);
     ImGui::EndDisabled();
     const char* cluster = nullptr;
@@ -1905,26 +1924,26 @@ inline bool crosshair_card() {
     static const char* STYLES[config::CROSSHAIR_STYLES] = {"Cross", "Dot", "Circle", "Cross and dot"};
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Style");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     changed |= segmented("style", STYLES, config::CROSSHAIR_STYLES, x.style, ImGui::GetContentRegionAvail().x);
     struct Slider { const char* label; float* value; float lo, hi; const char* format; };
     Slider sliders[] = {{"Size", &x.size, 2, 40, "%.0f px"}, {"Thickness", &x.thickness, 1, 8, "%.0f px"}, {"Gap", &x.gap, 0, 20, "%.0f px"}};
     for (auto& sl : sliders) {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(sl.label);
-        ImGui::SameLine(S(150));
+        beside_label(S(150), S(262));
         ImGui::SetNextItemWidth(-1);
         changed |= ImGui::SliderFloat((std::string("##") + sl.label).c_str(), sl.value, sl.lo, sl.hi, sl.format);
     }
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Opacity");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     ImGui::SetNextItemWidth(-1);
     float percent = x.opacity * 100;
     if (ImGui::SliderFloat("##opacity", &percent, 10, 100, "%.0f%%")) x.opacity = percent / 100, changed = true;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Color");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     changed |= color_field("crosshair", x.color);
     ImGui::Dummy({0, S(2)});
     changed |= ImGui::Checkbox("Dark outline", &x.outline);
@@ -1947,7 +1966,7 @@ inline bool fov_card() {
     float percent = c.fov * 100;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Field of view");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - S(96));
     if (ImGui::SliderFloat("##fov", &percent, config::FOV_MIN * 100, config::FOV_MAX * 100, percent == 100 ? "Game's own" : "%.0f%%")) {
         c.fov = std::round(percent) / 100, changed = true;
@@ -2206,7 +2225,7 @@ inline bool callouts_card() {
     if (flowing_chip("+ New set", naming, false)) naming = !naming, snprintf(name_buf, sizeof name_buf, "%s copy", selected.c_str());
     if (naming) {
         ImGui::Dummy({0, S(2)});
-        ImGui::SetNextItemWidth(S(260));
+        ImGui::SetNextItemWidth(std::min(S(260), ImGui::GetContentRegionAvail().x));
         bool enter = ImGui::InputText("##new_set", name_buf, sizeof name_buf, ImGuiInputTextFlags_EnterReturnsTrue);
         std::string clean = config::profile_name(name_buf);
         bool taken = std::find(names.begin(), names.end(), clean) != names.end();
@@ -2351,9 +2370,9 @@ inline bool text_editor(const visuals::TextRow& r, char* draft, size_t size, boo
     if (ImGui::Button("Cancel", {0, ImGui::GetFrameHeight()})) close = true;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Color");
-    ImGui::SameLine(S(72));
+    beside_label(S(72), S(262));
     color_field("text_tone", tone);
-    ImGui::SameLine(0, S(8));
+    same_line_if_room(ImGui::CalcTextSize("Color all").x + ImGui::GetStyle().FramePadding.x * 2, S(8));
     if (ImGui::Button("Color all", {0, ImGui::GetFrameHeight()})) {
         std::string plain = visuals::without_colors(draft);
         snprintf(draft, size, "%s", visuals::colored(plain, color::to_hex(tone).c_str()).c_str());
@@ -2467,7 +2486,7 @@ inline void visuals_page() {
     Option options[] = {{"Box", &e.box}, {"Role", &e.role}, {"Health bar", &e.health_bar}, {"Health number", &e.health_text},
                         {"Distance", &e.distance}, {"PvP rank", &e.rank}, {"Hunter rage", &e.rage}, {"Line from screen bottom", &e.snaplines},
                         {"Show allies", &e.allies}};
-    if (ImGui::BeginTable("esp_options", 3)) {
+    if (ImGui::BeginTable("esp_options", std::clamp((int)(ImGui::GetContentRegionAvail().x / S(210)), 1, 3))) {
         for (auto& o : options) {
             ImGui::TableNextColumn();
             changed |= ImGui::Checkbox(o.name, o.value);
@@ -2477,11 +2496,11 @@ inline void visuals_page() {
     ImGui::Dummy({0, S(4)});
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Night Hunter");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     changed |= color_field("esp_hunter", e.hunter);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Survivors");
-    ImGui::SameLine(S(150));
+    beside_label(S(150), S(262));
     changed |= color_field("esp_survivor", e.survivor);
     note("Allies and enemies come from the game's teams. The ESP keeps drawing when the menu is closed.");
     end_card();
@@ -2635,8 +2654,7 @@ inline void setting_label(const char* text) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(text);
     g_label_column_next = std::max(g_label_column_next, ImGui::CalcTextSize(text).x + S(24));
-    float column = std::max(S(190), g_label_column);
-    if (ImGui::GetContentRegionAvail().x >= column + S(220)) ImGui::SameLine(column);
+    beside_label(std::max(S(190), g_label_column), S(220));
 }
 
 inline void setting_width() { ImGui::SetNextItemWidth(std::min(S(300), ImGui::GetContentRegionAvail().x)); }
@@ -2645,7 +2663,10 @@ inline bool setting_choice(const char* text, const char* id, const char* const* 
     setting_label(text);
     float widest = 0, fs = ImGui::GetFontSize();
     for (int i = 0; i < count; i++) widest = std::max(widest, f_strong->CalcTextSizeA(fs, FLT_MAX, 0, options[i]).x);
-    return segmented(id, options, count, value, std::min(ImGui::GetContentRegionAvail().x, std::max(S(300), count * (widest + D(28)))));
+    float room = ImGui::GetContentRegionAvail().x, need = count * (widest + D(28));
+    if (need <= room) return segmented(id, options, count, value, std::min(room, std::max(S(300), need)));
+    setting_width();
+    return ImGui::Combo((std::string("##") + id).c_str(), &value, options, count);
 }
 
 inline const char* edition_story() {
@@ -2665,10 +2686,11 @@ inline void about_card() {
     float big = font_size(f_tile);
     std::string title = std::string("FaTrainer ") + VERSION;
     dl->AddText(f_tile, big, p, C(T.text), title.c_str());
-    float tw = f_tile->CalcTextSizeA(big, FLT_MAX, 0, title.c_str()).x;
+    float tw = f_tile->CalcTextSizeA(big, FLT_MAX, 0, title.c_str()).x, small = font_size(f_small);
     float pulse = motion() > 0 ? fmodf(now(), 2.2f) / 2.2f : -1;
-    pill(dl, {p.x + tw + S(16), p.y + (big - font_size(f_small) - S(10)) / 2}, FATRAINER_EDITION, T.accent, pulse);
-    ImGui::Dummy({0, big + S(2)});
+    bool beside = tw + S(16) + f_small->CalcTextSizeA(small, FLT_MAX, 0, FATRAINER_EDITION).x + S(30) <= ImGui::GetContentRegionAvail().x;
+    pill(dl, beside ? ImVec2{p.x + tw + S(16), p.y + (big - small - S(10)) / 2} : ImVec2{p.x, p.y + big + S(6)}, FATRAINER_EDITION, T.accent, pulse);
+    ImGui::Dummy({0, big + S(2) + (beside ? 0 : small + S(16))});
     ImGui::TextColored(V(T.accent), "%s", FATRAINER_NAME);
     label("FaTrainer | Dying Light");
     ImGui::Dummy({0, S(2)});
@@ -2716,7 +2738,7 @@ inline void menu_key_combo(bool& changed) {
             }
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
+    same_line_if_room(f_small->CalcTextSizeA(font_size(f_small), FLT_MAX, 0, "F8 always works too.").x, ImGui::GetStyle().ItemSpacing.x);
     label("F8 always works too.");
 }
 
@@ -2732,7 +2754,7 @@ inline void config_key_row(const std::string& id, bool& changed, bool missing = 
     ImGui::PushID(id.c_str());
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(config_label(id).c_str());
-    ImGui::SameLine(S(300));
+    beside_label(S(300), S(248));
     changed |= key_binding(config::cfg.config_keys, id);
     if (missing) ImGui::SameLine(0, S(12)), label("Config not found");
     ImGui::PopID();
@@ -2772,7 +2794,7 @@ inline void config_keys_card(bool& changed) {
 inline bool level_slider(const char* id, const cheats::Tweak& t, float& v) {
     std::string text = cheats::tweak_text(t, v);
     if (text.back() == '%') text += '%';
-    ImGui::SetNextItemWidth(S(200));
+    ImGui::SetNextItemWidth(std::min(S(200), ImGui::GetContentRegionAvail().x));
     ImGui::SliderFloat(id, &v, 1.0f, t.max, text.c_str(), ImGuiSliderFlags_NoInput);
     return ImGui::IsItemDeactivatedAfterEdit();
 }
@@ -2781,20 +2803,21 @@ inline void slider_key_mode(cheats::Tweak& t, bool& changed) {
     auto& levels = config::cfg.key_levels;
     int mode = levels.count(t.key) ? 1 : 0;
     const char* modes[] = {"To Max", "My levels"};
-    ImGui::SameLine(0, S(16));
-    if (segmented("mode", modes, 2, mode, S(220))) {
+    same_line_if_room(S(220), S(16));
+    if (segmented("mode", modes, 2, mode, std::min(S(220), ImGui::GetContentRegionAvail().x))) {
         if (mode) levels[t.key] = {t.max, 1.0f};
         else levels.erase(t.key);
         changed = true;
     }
     if (!mode) return;
     auto& lv = levels[t.key];
-    ImGui::SetCursorPosX(S(300));
+    if (ImGui::GetContentRegionAvail().x >= S(300 + 470)) ImGui::SetCursorPosX(S(300));
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("On");
     ImGui::SameLine(0, S(8));
     changed |= level_slider("##on", t, lv.first);
-    ImGui::SameLine(0, S(16));
+    same_line_if_room(ImGui::CalcTextSize("Off").x + S(208), S(16));
+    ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Off");
     ImGui::SameLine(0, S(8));
     changed |= level_slider("##off", t, lv.second);
@@ -2816,7 +2839,7 @@ inline void keybinds_page() {
         ImGui::PushID(action.key);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(action.label);
-        ImGui::SameLine(S(300));
+        beside_label(S(300), S(248));
         changed |= key_binding(config::cfg.cheat_keys, action.key);
         ImGui::PopID();
     }
@@ -2839,7 +2862,7 @@ inline void keybinds_page() {
             ImGui::PushStyleColor(ImGuiCol_Text, lit ? V(T.accent) : V(T.text));
             ImGui::TextUnformatted(cheat ? cheat->label : tweak->label);
             ImGui::PopStyleColor();
-            ImGui::SameLine(S(300));
+            beside_label(S(300), S(248));
             changed |= key_binding(config::cfg.cheat_keys, key);
             if (tweak) slider_key_mode(*tweak, changed);
             ImGui::PopID();
@@ -2866,7 +2889,8 @@ inline void settings_page() {
     accent_swatches(changed);
     setting_label("Interface size");
     static float pending_scale = c.scale;
-    ImGui::SetNextItemWidth(S(220));
+    float apply = f_strong->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, "Apply").x + ImGui::GetStyle().FramePadding.x * 2.6f + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SetNextItemWidth(std::min(S(220), ImGui::GetContentRegionAvail().x - apply));
     ImGui::SliderFloat("##scale", &pending_scale, 0.75f, 1.5f, "%.2fx", ImGuiSliderFlags_NoInput);
     ImGui::SameLine();
     ImGui::BeginDisabled(pending_scale == c.scale);
@@ -3318,7 +3342,8 @@ inline void draw(float shown_raw, bool open) {
             brand::soft_glow(dl, {cp.x + cs.x - S(90) + sinf(t * 0.21f) * S(60), cp.y - S(150) + sinf(t * 0.33f) * S(20)}, S(480), T.accent, 0.075f, 24);
         float since = motion() >= 1 ? now() - g_page_at : 10;
         ImVec2 hp = ImGui::GetCursorScreenPos();
-        float hs = font_size(f_head);
+        float hs = font_size(f_head), title_w = f_head->CalcTextSizeA(hs, FLT_MAX, 0, page->title).x, title_room = ImGui::GetContentRegionAvail().x;
+        if (title_w > title_room) hs *= title_room / title_w;
         brand::draw_letters(dl, f_head, hs, hp, page->title, since, C(T.text));
         ImGui::Dummy({0, hs * 1.02f});
         ImGui::PushFont(f_small);

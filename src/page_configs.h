@@ -203,6 +203,7 @@ inline void new_config_tile(float w, float h) {
         if (ImGui::InvisibleButton("start", {w, h})) naming = true, name[0] = 0;
         if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         float tw = f_tile->CalcTextSizeA(big, FLT_MAX, 0, "+ New config").x;
+        if (tw > w - pad * 2) big *= (w - pad * 2) / tw, tw = w - pad * 2;
         dl->AddText(f_tile, big, {(a.x + b.x - tw) / 2, (a.y + b.y) / 2 - big}, C(T.accent), "+ New config");
         const char* hint = "Saves the cheats and sliders that are on.";
         float hw = f_small->CalcTextSizeA(small, FLT_MAX, 0, hint).x;
@@ -240,10 +241,11 @@ inline void configs_card() {
     note("Legit stays believable to the other players, Rage holds nothing back. Loading a config turns everything else off; "
          "the built-in ones also set the player ESP. Your configs are saved in fatrainer_configs next to the game.");
     ImGui::Dummy({0, S(4)});
-    float gap = S(12), w = (ImGui::GetContentRegionAvail().x - gap) / 2, h = S(206);
-    int i = 0;
+    float gap = S(12), room = ImGui::GetContentRegionAvail().x, h = S(206);
+    int cols = room >= S(520) ? 2 : 1, i = 0;
+    float w = (room - gap * (cols - 1)) / cols;
     auto place = [&] {
-        if (i % 2) ImGui::SameLine(0, gap);
+        if (i % cols) ImGui::SameLine(0, gap);
         else if (i) ImGui::Dummy({0, S(2)});
         i++;
     };
@@ -404,6 +406,7 @@ inline void new_visual_config_tile(float w, float h) {
         if (ImGui::InvisibleButton("start", {w, h})) naming = true, name[0] = 0;
         if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         float tw = f_tile->CalcTextSizeA(big, FLT_MAX, 0, "+ New visual config").x;
+        if (tw > w - pad * 2) big *= (w - pad * 2) / tw, tw = w - pad * 2;
         dl->AddText(f_tile, big, {(a.x + b.x - tw) / 2, (a.y + b.y) / 2 - big}, C(T.accent), "+ New visual config");
         const char* hint = "Saves the visual settings as they are.";
         float hw = f_small->CalcTextSizeA(small, FLT_MAX, 0, hint).x;
@@ -445,10 +448,11 @@ inline void visual_configs_card() {
          "Your visual configs are saved in fatrainer_visual_configs next to the game.");
 #endif
     ImGui::Dummy({0, S(4)});
-    float gap = S(12), w = (ImGui::GetContentRegionAvail().x - gap) / 2, h = S(190);
-    int i = 0;
+    float gap = S(12), room = ImGui::GetContentRegionAvail().x, h = S(190);
+    int cols = room >= S(520) ? 2 : 1, i = 0;
+    float w = (room - gap * (cols - 1)) / cols;
     auto place = [&] {
-        if (i % 2) ImGui::SameLine(0, gap);
+        if (i % cols) ImGui::SameLine(0, gap);
         else if (i) ImGui::Dummy({0, S(2)});
         i++;
     };
