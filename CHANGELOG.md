@@ -5,7 +5,7 @@
 Lobby Update
 
 - 3.0 b1 comes after 2.5.1 b1, and everything from 2.5.1 b1 is part of 3.0: upgrade slots that take blueprints and any other item, and Be The Zombie colors.
-- New: the sidebar groups the pages into Cheats, Be The Zombie, Modes, Look, Items and Menu. The PvP page is split into Survivor and Night Hunter under Be The Zombie: each has its side's cheats, reach sliders and rank, and the spit keys are on the Night Hunter page. Your sidebar order carries over.
+- New: the sidebar groups the pages into Cheats, Be The Zombie, Modes, Look, Items and Menu. The PvP page is now the Survivor page under Be The Zombie, with Dodge spit, One hit kill, the survivor reach sliders and the survivor rank. The Night Hunter page has the Night Hunter reach sliders, the spit keys and the hunter rank. Your sidebar order carries over.
 - New: Teleport page. Go to waypoint takes you to the marker you placed on the map, and Go to objective to the quest you track; under each button you see how far away it is and in which direction. Save here keeps where you stand under a name, and every map has its own list of saved positions to go back to, rename or delete. The Keybinds page has keys for Go to waypoint, Go to objective, Save position and Go to last saved position.
 - Changed: the Go to saved position key is Go to last saved position. It takes you to the newest position saved on the map you are on, and your key carries over.
 - New: DLC Modes page with Pause prison timers and Kill all enemies nearby for Harran Prison. It shows when you are in Harran Prison.
@@ -17,7 +17,7 @@ Lobby Update
 - Visual configs and their keys are in the Visuals Version too, with the Configs page and a Keybinds page for the menu key and visual config keys.
 - Changed: the menu texts are shorter and only say what each control does.
 - New: Show beta builds on the Changelog tab of the FaTrainer launcher 3.0. Unticked, the changelog lists only the final versions, and each final from 2.2 to 2.5 lists everything new and every fix from its beta builds.
-- This is a beta build. Teleport, the DLC Modes page and the config keys have not been tried in the game yet: if one of them goes wrong, send the log (fatrainer.log).
+- This is a beta build. Teleport, the DLC Modes page, visual configs, My levels and the config keys have not been tried in the game yet: if one of them goes wrong, send the log (fatrainer.log).
 
 ## 2.5.1 b1
 
