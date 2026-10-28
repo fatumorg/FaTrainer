@@ -147,6 +147,8 @@ inline std::vector<std::string> ini_names(const std::string& dir) {
     return out;
 }
 
+inline bool path_exists(const std::string& path) { return GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
+
 inline std::vector<std::string> list_profiles() { return ini_names(profile_dir()); }
 
 inline bool save_profile(const std::string& name, const Profile& p) {
@@ -395,7 +397,12 @@ inline std::string visual_config_path(const std::string& name) {
     return clean.empty() ? "" : visual_config_dir() + "\\" + clean + ".ini";
 }
 
-inline std::vector<std::string> list_visual_configs() { return ini_names(visual_config_dir()); }
+inline std::vector<std::string> list_visual_configs() {
+    std::vector<std::string> out;
+    for (auto& n : ini_names(visual_config_dir()))
+        if (profile_name(n) == n) out.push_back(n);
+    return out;
+}
 
 inline bool save_visual_config(const std::string& name) {
     std::string path = visual_config_path(name), tmp = path + ".tmp", text = visual_lines();

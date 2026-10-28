@@ -216,7 +216,7 @@ inline void new_config_tile(float w, float h) {
         if (!ImGui::IsAnyItemActive()) ImGui::SetKeyboardFocusHere();
         bool enter = ImGui::InputTextWithHint("##name", "Name, e.g. Hunter sweaty", name, sizeof name, ImGuiInputTextFlags_EnterReturnsTrue);
         std::string clean = config::profile_name(name);
-        bool taken = own_configs().data.count(clean) > 0;
+        bool taken = config::path_exists(config::profile_path(clean));
         std::string what = taken ? "A config with this name already exists." : profile_summary(cheats::current_profile());
         dl->AddText(f_small, small, {a.x + pad, a.y + pad + fs + bh + S(16)}, C(taken ? T.bad : T.soft), what.c_str(), nullptr, w - pad * 2);
         ImGui::SetCursorScreenPos({a.x + pad, b.y - pad - bh});
@@ -417,7 +417,7 @@ inline void new_visual_config_tile(float w, float h) {
         if (!ImGui::IsAnyItemActive()) ImGui::SetKeyboardFocusHere();
         bool enter = ImGui::InputTextWithHint("##name", "Name, e.g. Clean HUD", name, sizeof name, ImGuiInputTextFlags_EnterReturnsTrue);
         std::string clean = config::profile_name(name);
-        bool taken = visual_name_taken(clean);
+        bool taken = config::path_exists(config::visual_config_path(clean));
         dl->AddText(f_small, small, {a.x + pad, a.y + pad + fs + bh + S(16)}, C(taken ? T.bad : T.soft),
                     taken ? "A visual config with this name already exists." : "Letters, numbers, spaces, - and _.", nullptr, w - pad * 2);
         ImGui::SetCursorScreenPos({a.x + pad, b.y - pad - bh});

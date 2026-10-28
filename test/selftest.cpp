@@ -2269,6 +2269,25 @@ int main(int argc, char** argv) {
     {
         auto kept = config::cfg;
         config::cfg = config::Config();
+        auto& c = config::cfg;
+        c.fov = 1.4f, c.crosshair.on = true, c.uv.on = true, c.uv.glow = 2.0f;
+        c.hud_parts["health"] = {true, {1, 0.2f, 0.2f}, false};
+        c.survivor_glow["selftest"] = {true, {0.1f, 0.5f, 1}, false};
+        std::string before = config::visual_lines();
+        config::Profile mine{{"god", "uv"}, {{"h_dfa", 5.0f}}}, loaded;
+        CHECK(config::save_profile("selftest kept", mine) && config::load_profile("selftest kept", loaded));
+        cheats::apply_profile(loaded);
+        CHECK(cheats::is_on("god") && config::visual_lines() == before);
+        CHECK(c.fov == 1.4f && c.crosshair.on && c.uv.on && c.uv.glow == 2.0f && c.hud_parts["health"].on && c.survivor_glow["selftest"].on);
+        cheats::all_off();
+        CHECK(config::delete_profile("selftest kept") && !config::load_profile("selftest kept", loaded));
+        RemoveDirectoryA(config::profile_dir().c_str());
+        config::cfg = kept;
+    }
+
+    {
+        auto kept = config::cfg;
+        config::cfg = config::Config();
         config::cfg.fov = 1.3f, config::cfg.crosshair.on = true, config::cfg.cheats_on = {"god"};
         config::cfg.rainbow["accent"] = 5, config::cfg.rainbow["uv_light"] = 4;
         CHECK(config::save_visual_config("selftest visuals"));
@@ -2298,6 +2317,11 @@ int main(int argc, char** argv) {
         config::load(ini);
         CHECK(config::cfg.rainbow["accent"] == 7 && config::cfg.rainbow["uv_light"] == 3);
         DeleteFileA(ini.c_str());
+        CHECK(config::path_exists(config::visual_config_path("selftest SECOND")) && config::path_exists(config::visual_config_path("selftest second")));
+        CHECK(!config::path_exists(config::visual_config_path("selftest absent")) && !config::path_exists(config::visual_config_path(" ?? ")));
+        std::ofstream(config::visual_config_dir() + "\\selftest a.b.ini") << "fov=1.5\n";
+        CHECK(!listed_visual("selftest a.b") && !listed_visual("selftest ab"));
+        DeleteFileA((config::visual_config_dir() + "\\selftest a.b.ini").c_str());
         CHECK(config::delete_visual_config("selftest renamed") && config::delete_visual_config("selftest second") && !config::delete_visual_config("selftest second"));
         CHECK(!listed_visual("selftest second") && !listed_visual("selftest visuals") && !listed_visual("selftest renamed"));
         RemoveDirectoryA(config::visual_config_dir().c_str());
