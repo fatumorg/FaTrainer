@@ -308,6 +308,133 @@ inline void read_hud_part(const std::string& key, const HudColor& h, int fields)
     cfg.hud_parts[key] = h;
 }
 
+inline bool read_visual_line(const std::string& k, const std::string& v) {
+    if (k == "esp") {
+        int f[10] = {};
+        auto& e = cfg.esp;
+        if (sscanf(v.c_str(), "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f", &f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9],
+                   &e.max_distance) == 11) {
+            bool* flags[10] = {&e.on, &e.box, &e.role, &e.health_bar, &e.health_text, &e.distance, &e.rank, &e.rage, &e.snaplines, &e.allies};
+            for (int i = 0; i < 10; i++) *flags[i] = f[i] != 0;
+        }
+    }
+    else if (k == "esp_hunter") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.hunter[0], &cfg.esp.hunter[1], &cfg.esp.hunter[2]);
+    else if (k == "esp_survivor") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.survivor[0], &cfg.esp.survivor[1], &cfg.esp.survivor[2]);
+    else if (k == "uv_light" || k == "hunter_glow") {
+        int on = 0;
+        auto& u = k == "uv_light" ? cfg.uv : cfg.hunter_glow;
+        if (sscanf(v.c_str(), "%d,%f,%f,%f,%f", &on, &u.color[0], &u.color[1], &u.color[2], &u.glow) == 5) u.on = on != 0;
+    }
+    else if (k == "all_resolutions") cfg.all_resolutions = v == "1";
+    else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
+    else if (k == "fov") cfg.fov = std::clamp((float)atof(v.c_str()), FOV_MIN, FOV_MAX);
+    else if (k == "crosshair") {
+        auto& x = cfg.crosshair;
+        int on = 0, outline = 1;
+        if (sscanf(v.c_str(), "%d,%d,%f,%f,%f,%f,%d,%f,%f,%f", &on, &x.style, &x.size, &x.thickness, &x.gap, &x.opacity, &outline, &x.color[0],
+                   &x.color[1], &x.color[2]) == 10)
+            x.on = on != 0, x.outline = outline != 0, x.style = std::clamp(x.style, 0, CROSSHAIR_STYLES - 1);
+    }
+    else if (k == "hud" || k == "survivor_glow" || k == "btz_color" || k == "rainbow") {
+        size_t c = v.find(',');
+        if (c == std::string::npos || !c) return true;
+        std::string key = v.substr(0, c);
+        HudColor h;
+        if (k == "rainbow") cfg.rainbow[key] = std::clamp((float)atof(v.c_str() + c + 1), RAINBOW_FASTEST, RAINBOW_SLOWEST);
+        else if (int fields = read_hud_color(v.c_str() + c + 1, h); fields && k == "hud") read_hud_part(key, h, fields);
+        else if (fields) (k == "btz_color" ? cfg.btz_colors : cfg.survivor_glow)[key] = h;
+    }
+    else return false;
+    return true;
+}
+
+inline std::string visual_lines() {
+    std::string out;
+    auto add = [&](const char* format, auto... args) {
+        int n = snprintf(nullptr, 0, format, args...);
+        std::string line(n + 1, '\0');
+        snprintf(line.data(), n + 1, format, args...);
+        line.pop_back();
+        out += line;
+    };
+    auto& e = cfg.esp;
+    add("esp=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.0f\n", e.on, e.box, e.role, e.health_bar, e.health_text, e.distance, e.rank, e.rage, e.snaplines,
+        e.allies, e.max_distance);
+    add("esp_hunter=%.3f,%.3f,%.3f\nesp_survivor=%.3f,%.3f,%.3f\n", e.hunter[0], e.hunter[1], e.hunter[2], e.survivor[0], e.survivor[1], e.survivor[2]);
+    for (auto [key, u] : {std::pair{"uv_light", &cfg.uv}, std::pair{"hunter_glow", &cfg.hunter_glow}})
+        add("%s=%d,%.3f,%.3f,%.3f,%.2f\n", key, u->on, u->color[0], u->color[1], u->color[2], u->glow);
+    add("hud_tint=%d,%.3f,%.3f,%.3f\n", cfg.hud_tint.on, cfg.hud_tint.color[0], cfg.hud_tint.color[1], cfg.hud_tint.color[2]);
+    for (auto& [part, h] : cfg.hud_parts) add("hud=%s,%d,%.3f,%.3f,%.3f,%d\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2], h.hidden);
+    for (auto& [variant, h] : cfg.survivor_glow) add("survivor_glow=%s,%d,%.3f,%.3f,%.3f\n", variant.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
+    for (auto& [part, h] : cfg.btz_colors) add("btz_color=%s,%d,%.3f,%.3f,%.3f\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
+    for (auto& [key, seconds] : cfg.rainbow)
+        if (key != "accent") add("rainbow=%s,%.1f\n", key.c_str(), seconds);
+    const auto& x = cfg.crosshair;
+    add("crosshair=%d,%d,%.1f,%.1f,%.1f,%.2f,%d,%.3f,%.3f,%.3f\n", x.on, x.style, x.size, x.thickness, x.gap, x.opacity, x.outline, x.color[0], x.color[1],
+        x.color[2]);
+    if (cfg.fov != 1.0f) add("fov=%.2f\n", cfg.fov);
+    add("all_resolutions=%d\n", (int)cfg.all_resolutions);
+    return out;
+}
+
+inline void reset_visuals() {
+    Config fresh;
+    cfg.esp = fresh.esp, cfg.uv = fresh.uv, cfg.hunter_glow = fresh.hunter_glow, cfg.hud_tint = fresh.hud_tint, cfg.crosshair = fresh.crosshair;
+    cfg.fov = fresh.fov, cfg.all_resolutions = fresh.all_resolutions;
+    cfg.hud_parts.clear(), cfg.survivor_glow.clear(), cfg.btz_colors.clear();
+    for (auto it = cfg.rainbow.begin(); it != cfg.rainbow.end();) it = it->first == "accent" ? std::next(it) : cfg.rainbow.erase(it);
+}
+
+inline std::string visual_config_dir() {
+    std::string ini = default_path();
+    return ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer_visual_configs";
+}
+
+inline std::string visual_config_path(const std::string& name) {
+    std::string clean = profile_name(name);
+    return clean.empty() ? "" : visual_config_dir() + "\\" + clean + ".ini";
+}
+
+inline std::vector<std::string> list_visual_configs() { return ini_names(visual_config_dir()); }
+
+inline bool save_visual_config(const std::string& name) {
+    std::string path = visual_config_path(name), tmp = path + ".tmp", text = visual_lines();
+    if (path.empty()) return false;
+    CreateDirectoryA(visual_config_dir().c_str(), nullptr);
+    FILE* f = fopen(tmp.c_str(), "w");
+    if (!f) return false;
+    bool written = fputs(text.c_str(), f) >= 0;
+    if (fclose(f) != 0 || !written || !MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) return DeleteFileA(tmp.c_str()), false;
+    return true;
+}
+
+inline bool load_visual_config(const std::string& name) {
+    std::string path = visual_config_path(name);
+    FILE* f = path.empty() ? nullptr : fopen(path.c_str(), "r");
+    if (!f) return false;
+    reset_visuals();
+    char line[4096];
+    while (fgets(line, sizeof line, f)) {
+        std::string s = line;
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+        size_t eq = s.find('=');
+        if (eq == std::string::npos || s.compare(0, 15, "rainbow=accent,") == 0) continue;
+        read_visual_line(s.substr(0, eq), s.substr(eq + 1));
+    }
+    fclose(f);
+    return true;
+}
+
+inline bool rename_visual_config(const std::string& from, const std::string& to) {
+    std::string a = visual_config_path(from), b = visual_config_path(to);
+    return !a.empty() && !b.empty() && MoveFileA(a.c_str(), b.c_str());
+}
+
+inline bool delete_visual_config(const std::string& name) {
+    std::string path = visual_config_path(name);
+    return !path.empty() && DeleteFileA(path.c_str());
+}
+
 inline float* color_of(const std::string& key) {
     if (key == "accent") return cfg.accent;
     if (key == "esp_hunter") return cfg.esp.hunter;
@@ -351,6 +478,7 @@ inline void load(const std::string& path) {
         size_t eq = s.find('=');
         if (eq == std::string::npos) continue;
         std::string k = s.substr(0, eq), v = s.substr(eq + 1);
+        if (read_visual_line(k, v)) continue;
         if (k == "accent") sscanf(v.c_str(), "%f,%f,%f", &cfg.accent[0], &cfg.accent[1], &cfg.accent[2]);
         else if (k == "dim") cfg.dim = (float)atof(v.c_str());
         else if (k == "scale") cfg.scale = (float)atof(v.c_str());
@@ -367,34 +495,10 @@ inline void load(const std::string& path) {
             if (key == "go_saved_position") key = "go_last_position";
             if (vk > 0 && vk < 256) cfg.cheat_keys[key] = vk;
         }
-        else if (k == "esp") {
-            int f[10] = {};
-            auto& e = cfg.esp;
-            if (sscanf(v.c_str(), "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f", &f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6], &f[7], &f[8], &f[9],
-                       &e.max_distance) == 11) {
-                bool* flags[10] = {&e.on, &e.box, &e.role, &e.health_bar, &e.health_text, &e.distance, &e.rank, &e.rage, &e.snaplines, &e.allies};
-                for (int i = 0; i < 10; i++) *flags[i] = f[i] != 0;
-            }
-        }
-        else if (k == "esp_hunter") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.hunter[0], &cfg.esp.hunter[1], &cfg.esp.hunter[2]);
-        else if (k == "esp_survivor") sscanf(v.c_str(), "%f,%f,%f", &cfg.esp.survivor[0], &cfg.esp.survivor[1], &cfg.esp.survivor[2]);
-        else if (k == "uv_light" || k == "hunter_glow") {
-            int on = 0;
-            auto& u = k == "uv_light" ? cfg.uv : cfg.hunter_glow;
-            if (sscanf(v.c_str(), "%d,%f,%f,%f,%f", &on, &u.color[0], &u.color[1], &u.color[2], &u.glow) == 5) u.on = on != 0;
-        }
-        else if (k == "look") {
-            int motion = MOTION_FULL, skyline = 1, glow = 1;
-            auto& l = cfg.look;
-            if (sscanf(v.c_str(), "%f,%f,%d,%d,%d", &l.opacity, &l.roundness, &motion, &skyline, &glow) == 5)
-                l.motion = motion, l.skyline = skyline != 0, l.glow = glow != 0;
-        }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "allow_older") cfg.allow_older = v == "1";
         else if (k == "beta") cfg.beta = v == "1";
-        else if (k == "all_resolutions") cfg.all_resolutions = v == "1";
         else if (k == "cheat_engine") cfg.cheat_engine = v == "1";
-        else if (k == "hud_tint") read_hud_color(v.c_str(), cfg.hud_tint);
         else if (k == "text_language") {
             size_t c = v.find(',');
             if (c == std::string::npos) old_language = v;
@@ -404,27 +508,13 @@ inline void load(const std::string& path) {
         else if (k == "game_language") cfg.game_language = v;
         else if (k == "voice_language") cfg.voice_language = v;
         else if (k == "subtitle_language") cfg.subtitle_language = v;
-        else if (k == "fov") cfg.fov = std::clamp((float)atof(v.c_str()), FOV_MIN, FOV_MAX);
         else if (k == "weapon_edit") {
             size_t a = v.find(','), b = a == std::string::npos ? a : v.find(',', a + 1);
             if (b != std::string::npos) cfg.weapon_edits[v.substr(0, a)][v.substr(a + 1, b - a - 1)] = (float)atof(v.c_str() + b + 1);
         }
-        else if (k == "crosshair") {
-            auto& x = cfg.crosshair;
-            int on = 0, outline = 1;
-            if (sscanf(v.c_str(), "%d,%d,%f,%f,%f,%f,%d,%f,%f,%f", &on, &x.style, &x.size, &x.thickness, &x.gap, &x.opacity, &outline, &x.color[0],
-                       &x.color[1], &x.color[2]) == 10)
-                x.on = on != 0, x.outline = outline != 0, x.style = std::clamp(x.style, 0, CROSSHAIR_STYLES - 1);
-        }
-        else if (k == "hud" || k == "text" || k == "survivor_glow" || k == "btz_color" || k == "rainbow") {
+        else if (k == "text") {
             size_t c = v.find(',');
-            if (c == std::string::npos || !c) continue;
-            std::string key = v.substr(0, c);
-            HudColor h;
-            if (k == "text") cfg.texts[key] = game_colors(unescape_text(v.substr(c + 1)));
-            else if (k == "rainbow") cfg.rainbow[key] = std::clamp((float)atof(v.c_str() + c + 1), RAINBOW_FASTEST, RAINBOW_SLOWEST);
-            else if (int fields = read_hud_color(v.c_str() + c + 1, h); fields && k == "hud") read_hud_part(key, h, fields);
-            else if (fields) (k == "btz_color" ? cfg.btz_colors : cfg.survivor_glow)[key] = h;
+            if (c != std::string::npos && c) cfg.texts[v.substr(0, c)] = game_colors(unescape_text(v.substr(c + 1)));
         }
         else if (k == "hidden_config") {
             if (std::find(cfg.hidden_configs.begin(), cfg.hidden_configs.end(), v) == cfg.hidden_configs.end()) cfg.hidden_configs.push_back(v);
@@ -465,7 +555,7 @@ inline bool save(const std::string& path) {
     fprintf(f, "accent=%.3f,%.3f,%.3f\n", cfg.accent[0], cfg.accent[1], cfg.accent[2]);
     fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\nallow_older=%d\nbeta=%d\n", cfg.dim, cfg.scale, cfg.menu_key,
             (int)cfg.remember_cheats, (int)cfg.allow_older, (int)cfg.beta);
-    fprintf(f, "all_resolutions=%d\ncheat_engine=%d\n", (int)cfg.all_resolutions, (int)cfg.cheat_engine);
+    fprintf(f, "cheat_engine=%d\n", (int)cfg.cheat_engine);
     if (cfg.window[0] > 0 && cfg.window[1] > 0) fprintf(f, "window=%.0f,%.0f\n", cfg.window[0], cfg.window[1]);
     for (auto& h : cfg.hidden_configs) fprintf(f, "hidden_config=%s\n", h.c_str());
     for (auto& p : cfg.pages) fprintf(f, "page=%s,%d\n", p.id.c_str(), (int)p.visible);
@@ -475,27 +565,13 @@ inline bool save(const std::string& path) {
     for (int i = 0; i < SPIT_KEYS; i++)
         if (cfg.spit_keys[i]) fprintf(f, "spit_key=%d,%d\n", i, cfg.spit_keys[i]);
     for (auto& [cheat, vk] : cfg.cheat_keys) fprintf(f, "cheat_key=%s,%d\n", cheat.c_str(), vk);
-    auto& e = cfg.esp;
-    fprintf(f, "esp=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.0f\n", e.on, e.box, e.role, e.health_bar, e.health_text, e.distance, e.rank, e.rage,
-            e.snaplines, e.allies, e.max_distance);
-    fprintf(f, "esp_hunter=%.3f,%.3f,%.3f\nesp_survivor=%.3f,%.3f,%.3f\n", e.hunter[0], e.hunter[1], e.hunter[2], e.survivor[0],
-            e.survivor[1], e.survivor[2]);
-    for (auto [key, u] : {std::pair{"uv_light", &cfg.uv}, std::pair{"hunter_glow", &cfg.hunter_glow}})
-        fprintf(f, "%s=%d,%.3f,%.3f,%.3f,%.2f\n", key, u->on, u->color[0], u->color[1], u->color[2], u->glow);
-    fprintf(f, "hud_tint=%d,%.3f,%.3f,%.3f\n", cfg.hud_tint.on, cfg.hud_tint.color[0], cfg.hud_tint.color[1], cfg.hud_tint.color[2]);
-    for (auto& [part, h] : cfg.hud_parts) fprintf(f, "hud=%s,%d,%.3f,%.3f,%.3f,%d\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2], h.hidden);
-    for (auto& [variant, h] : cfg.survivor_glow) fprintf(f, "survivor_glow=%s,%d,%.3f,%.3f,%.3f\n", variant.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
-    for (auto& [part, h] : cfg.btz_colors) fprintf(f, "btz_color=%s,%d,%.3f,%.3f,%.3f\n", part.c_str(), h.on, h.color[0], h.color[1], h.color[2]);
-    for (auto& [key, seconds] : cfg.rainbow) fprintf(f, "rainbow=%s,%.1f\n", key.c_str(), seconds);
-    const auto& x = cfg.crosshair;
-    fprintf(f, "crosshair=%d,%d,%.1f,%.1f,%.1f,%.2f,%d,%.3f,%.3f,%.3f\n", x.on, x.style, x.size, x.thickness, x.gap, x.opacity, x.outline, x.color[0], x.color[1],
-            x.color[2]);
+    fputs(visual_lines().c_str(), f);
+    if (auto accent = cfg.rainbow.find("accent"); accent != cfg.rainbow.end()) fprintf(f, "rainbow=accent,%.1f\n", accent->second);
     for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
     if (!cfg.game_language.empty()) fprintf(f, "game_language=%s\n", cfg.game_language.c_str());
     if (!cfg.voice_language.empty()) fprintf(f, "voice_language=%s\n", cfg.voice_language.c_str());
     if (!cfg.subtitle_language.empty()) fprintf(f, "subtitle_language=%s\n", cfg.subtitle_language.c_str());
     for (auto& [kind, code] : cfg.kind_languages) fprintf(f, "text_language=%s,%s\n", kind.c_str(), code.c_str());
-    if (cfg.fov != 1.0f) fprintf(f, "fov=%.2f\n", cfg.fov);
     for (auto& [id, stats] : cfg.weapon_edits)
         for (auto& [stat, value] : stats) fprintf(f, "weapon_edit=%s,%s,%g\n", id.c_str(), stat.c_str(), value);
     fprintf(f, "look=%.2f,%.2f,%d,%d,%d\n", cfg.look.opacity, cfg.look.roundness, cfg.look.motion, cfg.look.skyline, cfg.look.glow);

@@ -2267,6 +2267,44 @@ int main(int argc, char** argv) {
     RemoveDirectoryA(config::profile_dir().c_str());
 
     {
+        auto kept = config::cfg;
+        config::cfg = config::Config();
+        config::cfg.fov = 1.3f, config::cfg.crosshair.on = true, config::cfg.cheats_on = {"god"};
+        config::cfg.rainbow["accent"] = 5, config::cfg.rainbow["uv_light"] = 4;
+        CHECK(config::save_visual_config("selftest visuals"));
+        config::cfg.fov = 1.0f, config::cfg.crosshair.on = false, config::cfg.rainbow.erase("uv_light");
+        CHECK(config::load_visual_config("selftest visuals"));
+        CHECK(config::cfg.fov == 1.3f && config::cfg.crosshair.on && config::cfg.rainbow.count("uv_light") && config::cfg.rainbow["accent"] == 5);
+        CHECK(config::cfg.cheats_on == std::vector<std::string>{"god"});
+        CHECK(!config::load_visual_config("selftest missing") && config::cfg.fov == 1.3f);
+        CHECK(config::visual_lines().find("accent") == std::string::npos && config::visual_lines().find("cheat") == std::string::npos);
+        config::cfg.rainbow.erase("uv_light"), config::cfg.fov = 1.0f, config::cfg.cheats_on = {"uv"};
+        CHECK(config::save_visual_config("selftest second") && config::load_visual_config("selftest visuals") && config::cfg.cheats_on == std::vector<std::string>{"uv"});
+        CHECK(!config::rename_visual_config("selftest visuals", "selftest second") && !config::rename_visual_config("selftest absent", "selftest other"));
+        CHECK(!config::rename_visual_config("selftest visuals", "  /\\ ") && !config::save_visual_config(" ?? ") && !config::delete_visual_config(" ?? "));
+        auto listed_visual = [](const char* name) {
+            auto all = config::list_visual_configs();
+            return std::find(all.begin(), all.end(), name) != all.end();
+        };
+        CHECK(listed_visual("selftest second") && listed_visual("selftest visuals") && !listed_visual("selftest second.ini"));
+        CHECK(config::rename_visual_config("selftest visuals", "selftest renamed") && !config::load_visual_config("selftest visuals"));
+        std::ofstream(config::visual_config_path("selftest hand")) << "rainbow=accent,9\nfov=99\nbroken\nhud=,1,1,1,1\ncrosshair=1\n";
+        CHECK(config::load_visual_config("selftest hand") && config::cfg.rainbow["accent"] == 5 && config::cfg.fov == config::FOV_MAX && !config::cfg.crosshair.on);
+        CHECK(config::delete_visual_config("selftest hand"));
+        std::string ini = config::visual_config_dir() + "_test.ini";
+        config::cfg.rainbow["accent"] = 7, config::cfg.rainbow["uv_light"] = 3;
+        CHECK(config::save(ini));
+        config::cfg.rainbow.clear();
+        config::load(ini);
+        CHECK(config::cfg.rainbow["accent"] == 7 && config::cfg.rainbow["uv_light"] == 3);
+        DeleteFileA(ini.c_str());
+        CHECK(config::delete_visual_config("selftest renamed") && config::delete_visual_config("selftest second") && !config::delete_visual_config("selftest second"));
+        CHECK(!listed_visual("selftest second") && !listed_visual("selftest visuals") && !listed_visual("selftest renamed"));
+        RemoveDirectoryA(config::visual_config_dir().c_str());
+        config::cfg = kept;
+    }
+
+    {
         auto stock = visuals::callout_set("Colored callouts");
         CHECK(!stock.empty() && stock == visuals::stock_callouts(1) && stock.begin()->second.find("%COLOR(") != std::string::npos);
         auto names = visuals::callout_set_names();
