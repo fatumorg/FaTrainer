@@ -308,6 +308,9 @@ inline void read_param_names() {
 }
 
 inline uintptr_t vt_melee_desc = 0, vt_melee_controller = 0, vt_throw_controller = 0;
+inline uintptr_t locations_root = 0, vt_quest_goals = 0, vt_quest = 0;
+const char LOCATIONS_CODE[] = "8B D7 48 8B CE E8 ? ? ? ? E8 ? ? ? ? 48 8B D8 8B 48 08 8B 40 0C FF C1 3B C8";
+const int LOCATIONS_GETTER_CALL = 10;
 
 inline void locate(uintptr_t base) {
     vt_melee_desc = game::find_vtable(base, "ItemDescMelee");
@@ -371,6 +374,16 @@ inline void locate(uintptr_t base) {
         var_root = game::rip_target(hits[0], 3, 7);
     if (auto hits = game::find_code(base, "F3 0F 10 05 ? ? ? ? F3 44 0F 10 15 ? ? ? ? 41 0F 57 C2 0F 2F 40 04"); !hits.empty())
         dfa_fall_speed = game::rip_target(hits[0], 4, 8);
+    if (auto hits = game::find_code(base, LOCATIONS_CODE, 2); hits.size() == 1) {
+        uintptr_t getter = game::rip_target(hits[0] + LOCATIONS_GETTER_CALL, 1, 5);
+        for (uintptr_t p = getter; p < getter + 0x60; p++)
+            if (!memcmp((const void*)p, "\x48\x8D\x05", 3) && !memcmp((const void*)(p + 7), "\x48\x83\xC4\x28\xC3", 5)) {
+                locations_root = game::rip_target(p, 3, 7);
+                break;
+            }
+    }
+    vt_quest_goals = game::find_vtable(base, "QuestGoals@Goals");
+    vt_quest = game::find_vtable(base, "Quest@Quests");
     vt_nest_logic = game::find_vtable(base, "HiveBroodLogicModule");
     for (int i = 0; i < 2; i++) {
         vt_throwable[i] = game::find_vtable(base, THROWABLE_CLASSES[i]);
@@ -1700,6 +1713,15 @@ inline SetPositionFn set_position = nullptr;
 inline FieldIntFn field_int = nullptr, field_enum = nullptr;
 inline FieldBoolFn field_bool = nullptr;
 inline uintptr_t float_field_editor = 0;
+using FieldVec3Fn = uintptr_t (*)(uintptr_t, const char*, Vec3*);
+using RaytraceFn = uint8_t (*)(uintptr_t, uint8_t, void*, const Vec3*, Vec3*, uint16_t, uintptr_t, uint32_t, uint32_t, int32_t);
+using TerrainHeightFn = float (*)(uintptr_t, float, float);
+inline FieldVec3Fn field_vec3 = nullptr;
+inline RaytraceFn raytrace = nullptr;
+inline TerrainHeightFn terrain_height = nullptr;
+const char FIELD_VEC3_EXPORT[] = "?GetFieldVec3@CRTTIObject@@QEBAPEBVCRTTIFieldVec3@@PEBDAEAVvec3@@@Z";
+const char RAYTRACE_EXPORT[] = "?Raytrace@IGSObject@@QEAAEEPEAUSCollision@@AEBVvec3@@AEAV3@GPEAVIControlObject@@IIH@Z";
+const char TERRAIN_HEIGHT_EXPORT[] = "?TerrainHeight@ILevel@@QEAAMMM@Z";
 
 using EngineGetterFn = uintptr_t (*)(uintptr_t);
 inline EngineGetterFn active_level = nullptr, view_camera = nullptr, object_level = nullptr;
@@ -1730,6 +1752,9 @@ inline void locate_engine(HMODULE engine) {
     field_bool = (FieldBoolFn)GetProcAddress(engine, "?GetFieldBool@CRTTIObject@@QEBAPEBVCRTTIFieldBool@@PEBDAEA_N@Z");
     request_ownership = (RequestOwnershipFn)GetProcAddress(engine, "?RequestOwnership@IGSObject@@QEAAXXZ");
     float_field_editor = (uintptr_t)GetProcAddress(engine, "?GetFieldFloatEditor@CRTTIObject@@UEBAPEBVCRTTIFieldFloat@@PEBDAEAM@Z");
+    field_vec3 = (FieldVec3Fn)GetProcAddress(engine, FIELD_VEC3_EXPORT);
+    raytrace = (RaytraceFn)GetProcAddress(engine, RAYTRACE_EXPORT);
+    terrain_height = (TerrainHeightFn)GetProcAddress(engine, TERRAIN_HEIGHT_EXPORT);
 }
 
 const int CONTROL_ENTITY = 0x8, ENTITY_NODE = 0xe8, NODE_FLAGS = 0x28;
@@ -1814,6 +1839,27 @@ inline void teleport(Vec3 to, bool quiet = false) {
     Vec3 now = player_position();
     if (!quiet) logf_hook("teleport: from %.1f %.1f %.1f to %.1f %.1f %.1f, now %.1f %.1f %.1f, body %s", from.x, from.y, from.z, to.x, to.y, to.z, now.x, now.y,
               now.z, body ? "moved" : "missing");
+}
+
+const uint8_t RAY_SOLID = 0x37;
+const float RAY_SLACK = 0.5f;
+
+inline bool ground_below(Vec3 from, float depth, float* y) {
+    uintptr_t world = alive(player) ? rdv<uintptr_t>(player + GS_LEVEL) : 0;
+    if (!raytrace || !world || !std::isfinite(from.x) || !std::isfinite(from.y) || !std::isfinite(from.z)) return false;
+    Vec3 to{from.x, from.y - depth, from.z};
+    if (!raytrace(player, RAY_SOLID, nullptr, &from, &to, 0, g.player_control >= 0 ? player + g.player_control : 0, 0, 0, 0)) return false;
+    if (!(to.y <= from.y && to.y > from.y - depth + 0.01f) || std::fabs(to.x - from.x) > RAY_SLACK || std::fabs(to.z - from.z) > RAY_SLACK) return false;
+    *y = to.y;
+    return true;
+}
+
+inline bool terrain_below(Vec3 at, float* y) {
+    uintptr_t level = terrain_height && std::isfinite(at.x) && std::isfinite(at.z) ? current_level() : 0;
+    float h = level ? terrain_height(level, at.x, at.z) : 0;
+    if (!std::isfinite(h) || h == 0) return false;
+    *y = h;
+    return true;
 }
 
 struct RoutePoint { Vec3 pos; bool stop; };

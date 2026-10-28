@@ -95,6 +95,101 @@ inline std::string next_name(const std::vector<Spot>& list) {
     }
 }
 
+const cheats::Vec3 NORTH{0, 0, 1}, EAST{-1, 0, 0};
+
+inline std::string compass(cheats::Vec3 from, cheats::Vec3 to) {
+    static const char* const WORDS[] = {"north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"};
+    const float TURN = 6.2831853f;
+    float dx = to.x - from.x, dz = to.z - from.z;
+    float north = dx * NORTH.x + dz * NORTH.z, east = dx * EAST.x + dz * EAST.z;
+    int part = (int)std::lround(std::atan2(east, north) / TURN * 8);
+    return WORDS[(part % 8 + 8) % 8];
+}
+
+inline bool sane(cheats::Vec3 p) {
+    for (float v : {p.x, p.y, p.z})
+        if (!std::isfinite(v) || std::fabs(v) > FARTHEST) return false;
+    return true;
+}
+
+inline bool waypoint(cheats::Vec3& out) {
+    uintptr_t lp = cheats::alive(cheats::player) ? cheats::own_logical_player(cheats::player) : 0;
+    bool shown = false;
+    if (!lp || !cheats::field_bool || !cheats::field_vec3 || !cheats::reflected(lp)) return false;
+    return cheats::field_bool(lp, "m_WaypointVisible", &shown) && shown && cheats::field_vec3(lp, "m_WaypointPos", &out) && sane(out);
+}
+
+const size_t GOAL_MANAGER = 0x8e0, TRACKED_GOAL = 0x48, GOAL_QUEST = 0x10, QUEST_NAME = 0x18, LONGEST_QUEST_NAME = 96;
+
+inline std::string tracked_quest_title() {
+    uintptr_t game_di = cheats::profile_root ? game::rdv<uintptr_t>(cheats::profile_root) : 0;
+    uintptr_t goals = game_di ? game::rdv<uintptr_t>(game_di + GOAL_MANAGER) : 0, goal = goals ? game::rdv<uintptr_t>(goals + TRACKED_GOAL) : 0;
+    uintptr_t quest = goal && cheats::vt_quest_goals && game::rdv<uintptr_t>(goal) == cheats::vt_quest_goals ? game::rdv<uintptr_t>(goal + GOAL_QUEST) : 0;
+    if (!quest || !cheats::vt_quest || game::rdv<uintptr_t>(quest) != cheats::vt_quest || !visuals::texts_api.find) return "";
+    auto name = game::rdv<visuals::TtlString<char>>(quest + QUEST_NAME);
+    char id[LONGEST_QUEST_NAME + 1] = {};
+    if (!name.text || !name.size || name.size > LONGEST_QUEST_NAME || !game::rd((uintptr_t)name.text, id, name.size)) return "";
+    for (char ch : std::string(id))
+        if (!isalnum((unsigned char)ch) && ch != '_') return "";
+    const wchar_t* text = visuals::shown_text(std::string(id) + "_Name");
+    int bytes = text ? WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr) : 0;
+    std::string out(bytes > 1 ? bytes - 1 : 0, '\0');
+    if (bytes > 1) WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), bytes, nullptr, nullptr);
+    for (char& ch : out)
+        if ((unsigned char)ch < 32) ch = ' ';
+    return out;
+}
+
+const size_t MOST_LOCATIONS = 50000;
+const int LOCATION_FLAGS = 0x60, LOCATION_TYPE = 0x70, LOCATION_STATE = 0x74, LOCATION_SPAN = 0x78, LOCATION_SHOWN = 1, STATE_TRACKED = 2;
+const int TYPE_WAYPOINT = 0x11, TYPE_COOP_WAYPOINT = 0x5a, LOCATION_TYPES = 0x98, SLOT_LOCATION_POSITION = 8;
+
+inline bool tracked_location(cheats::Vec3 me, cheats::Vec3& out) {
+    static const std::string FAMILY = "Location@Locations@@";
+    auto list = cheats::locations_root ? game::rdv<cheats::EngineVector>(cheats::locations_root) : cheats::EngineVector{};
+    if (!std::isfinite(me.x) || !list.data || !list.size || list.size > MOST_LOCATIONS) return false;
+    std::vector<uintptr_t> all(list.size);
+    if (!game::rd((uintptr_t)list.data, all.data(), all.size() * sizeof(uintptr_t))) return false;
+    float best = INFINITY;
+    for (uintptr_t loc : all) {
+        uint8_t head[LOCATION_SPAN];
+        int type, state;
+        if (!game::rd(loc, head, sizeof head)) continue;
+        memcpy(&type, head + LOCATION_TYPE, sizeof type);
+        memcpy(&state, head + LOCATION_STATE, sizeof state);
+        if (!(head[LOCATION_FLAGS] & LOCATION_SHOWN) || state != STATE_TRACKED || type < 0 || type >= LOCATION_TYPES || type == TYPE_WAYPOINT || type == TYPE_COOP_WAYPOINT) continue;
+        std::string cls = game::class_name(loc);
+        uintptr_t get = cheats::slot(loc, SLOT_LOCATION_POSITION);
+        if (cls.size() <= FAMILY.size() || cls.compare(cls.size() - FAMILY.size(), FAMILY.size(), FAMILY) || !cheats::in_game_module(get)) continue;
+        cheats::Vec3 at{NAN, NAN, NAN};
+        ((cheats::Vec3 * (*)(uintptr_t, cheats::Vec3*)) get)(loc, &at);
+        float d = sane(at) ? cheats::distance(me, at) : INFINITY;
+        if (d < best) best = d, out = at;
+    }
+    return std::isfinite(best);
+}
+
+inline bool objective(cheats::Vec3& out, std::string& title) {
+    if (!tracked_location(cheats::player_position(), out)) return false;
+    title = tracked_quest_title();
+    return true;
+}
+
+const float LAND_ABOVE = 0.5f, SKY = 500, SKY_DEPTH = 2000, NEAR_ABOVE = 2, NEAR_DEPTH = 50;
+
+inline bool land(cheats::Vec3& at, bool height_known) {
+    float ground, terrain;
+    cheats::Vec3 from = at;
+    from.y = height_known ? at.y + NEAR_ABOVE : std::max(at.y, cheats::player_position().y) + SKY;
+    bool hit = cheats::ground_below(from, height_known ? NEAR_DEPTH : SKY_DEPTH, &ground), soil = cheats::terrain_below(at, &terrain);
+    if (hit) at.y = ground;
+    else if (height_known) at.y = soil ? std::max(at.y, terrain) : at.y;
+    else if (soil) at.y = terrain;
+    else return false;
+    at.y += LAND_ABOVE;
+    return true;
+}
+
 inline std::string distance_text(cheats::Vec3 from, cheats::Vec3 to) {
     float d = cheats::distance(from, to);
     char b[32];

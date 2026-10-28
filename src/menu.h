@@ -2748,6 +2748,8 @@ inline const KeyAction KEY_ACTIONS[] = {
     {"kill_nearby", "Kill all enemies nearby", kill_nearby},
     {"save_position", "Save position", save_position},
     {"go_last_position", "Go to last saved position", go_last_position},
+    {"go_waypoint", "Go to waypoint", go_waypoint},
+    {"go_objective", "Go to objective", go_objective},
     {"esp", "Player ESP on / off", toggle_esp},
 };
 
@@ -2905,7 +2907,7 @@ inline const Page PAGES[] = {
      {"god", "stamina", "damage_taken", "hook", "uv", "uv_slow", "lockpick", "no_fall", "speed", "jump"}},
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "last_wish", "supplies", "durability", "item_dupe", "melee_speed", "flare_speed"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
-    {"teleport", "Teleport", "Saved positions on each map", teleport_page, always, "CHEATS", {}},
+    {"teleport", "Teleport", "Map marker, objective and saved positions", teleport_page, always, "CHEATS", {}},
     {"survivor", "Survivor", "Your attacks, defenses and auto cheats as a survivor", survivor_page, always, "BE THE ZOMBIE",
      {"dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge"}},
     {"zombie", "Night Hunter", "Your abilities, attack reach and spit keys as the Night Hunter", zombie_page, always, "BE THE ZOMBIE",

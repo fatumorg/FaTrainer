@@ -25,6 +25,64 @@ inline void go_last_position() {
     });
 }
 
+inline void go_waypoint() {
+    on_game_thread([] {
+        std::lock_guard<std::mutex> l(game::mx);
+        cheats::Vec3 at;
+        if (!teleport::waypoint(at)) return toast("No marker on the map");
+        if (!teleport::land(at, false)) return toast("No ground found under the marker");
+        cheats::teleport(at);
+    });
+}
+
+inline void go_objective() {
+    on_game_thread([] {
+        std::lock_guard<std::mutex> l(game::mx);
+        cheats::Vec3 at;
+        std::string title;
+        if (!teleport::objective(at, title)) return toast("No tracked objective");
+        teleport::land(at, true);
+        cheats::teleport(at);
+    });
+}
+
+struct QuickTargets { bool marker = false, tracked = false; cheats::Vec3 marker_at{}, objective_at{}; std::string title; };
+
+inline const QuickTargets& quick_targets() {
+    const DWORD REFRESH_MS = 250;
+    static QuickTargets t;
+    static DWORD at = 0;
+    if (at && GetTickCount() - at < REFRESH_MS) return t;
+    at = GetTickCount();
+    t.marker = teleport::waypoint(t.marker_at);
+    t.tracked = teleport::objective(t.objective_at, t.title);
+    return t;
+}
+
+inline void quick_column(const char* button, bool ready, const std::string& line, void (*go)(), float width) {
+    ImGui::BeginGroup();
+    ImGui::BeginDisabled(!ready);
+    if (accent_button(button, {width, S(38)})) go();
+    ImGui::EndDisabled();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+    label(line.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndGroup();
+}
+
+inline void quick_card(cheats::Vec3 me, bool here) {
+    const QuickTargets& t = quick_targets();
+    auto where = [&](cheats::Vec3 to) { return here ? ", " + teleport::distance_text(me, to) + " " + teleport::compass(me, to) : std::string(); };
+    std::string marker = t.marker ? "Your map marker" + where({t.marker_at.x, me.y, t.marker_at.z}) : "No marker on the map";
+    std::string goal = t.tracked ? (t.title.empty() ? "Tracked objective" : t.title) + where(t.objective_at) : "No tracked objective";
+    begin_card("quick", "QUICK");
+    float gap = S(12), width = (ImGui::GetContentRegionAvail().x - gap) / 2;
+    quick_column("Go to waypoint", t.marker, marker, go_waypoint, width);
+    ImGui::SameLine(0, gap);
+    quick_column("Go to objective", t.tracked, goal, go_objective, width);
+    end_card();
+}
+
 inline void teleport_page() {
     static char typed[41] = "", rename_to[41] = "";
     static int renaming = -1;
@@ -33,6 +91,7 @@ inline void teleport_page() {
     if (level != last_level) last_level = level, renaming = -1;
     cheats::Vec3 me = cheats::player_position();
     bool here = std::isfinite(me.x);
+    quick_card(me, here);
     std::string title = "SAVED POSITIONS";
     if (!level.empty()) title += " - ";
     for (char ch : level) title += ch == '_' ? ' ' : (char)toupper((unsigned char)ch);

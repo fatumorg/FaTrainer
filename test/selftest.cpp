@@ -549,6 +549,42 @@ int main(int argc, char** argv) {
     CHECK(cheats::level_from_xp_fn && cheats::cache_get_fn);
     uintptr_t lockpick_code = cheats::lockpick_patch;
     CHECK(cheats::profile_root > (uintptr_t)m && cheats::profile_root < (uintptr_t)m + 0x4000000);
+    CHECK(cheats::locations_root == (uintptr_t)m + 0x1d0f900 && cheats::vt_quest_goals == (uintptr_t)m + 0x14c4818 && cheats::vt_quest == (uintptr_t)m + 0x1737680);
+    {
+        const uintptr_t POINT_LOCATION_VTABLE = 0x15771e8;
+        const int POINT_POSITION = 0x98;
+        static uint64_t places[6][0xa8 / 8];
+        auto place = [&](int i, uintptr_t vt, uint8_t flags, int type, int state, cheats::Vec3 at) {
+            uint8_t* p = (uint8_t*)places[i];
+            *(uintptr_t*)p = vt;
+            p[teleport::LOCATION_FLAGS] = flags;
+            memcpy(p + teleport::LOCATION_TYPE, &type, 4);
+            memcpy(p + teleport::LOCATION_STATE, &state, 4);
+            memcpy(p + POINT_POSITION, &at, sizeof at);
+            return (uintptr_t)p;
+        };
+        uintptr_t point = (uintptr_t)m + POINT_LOCATION_VTABLE;
+        CHECK(game::class_name((uintptr_t)&point) == ".?AVPointLocation@Locations@@");
+        static uintptr_t list[7];
+        list[0] = place(0, point, 1, teleport::TYPE_WAYPOINT, teleport::STATE_TRACKED, {1, 0, 1});
+        list[1] = place(1, point, 1, 0xf, 0, {2, 0, 2});
+        list[2] = place(2, point, 0, 0xf, teleport::STATE_TRACKED, {3, 0, 3});
+        list[3] = place(3, cheats::vt_quest, 1, 0xf, teleport::STATE_TRACKED, {4, 0, 4});
+        list[4] = place(4, point, 0x11, 0xf, teleport::STATE_TRACKED, {500, 7, 0});
+        list[5] = place(5, point, 1, 0x9, teleport::STATE_TRACKED, {-40, 9, 30});
+        list[6] = 0x10;
+        static cheats::EngineVector locations{list, 7, 7};
+        uintptr_t real_locations = cheats::locations_root;
+        cheats::locations_root = (uintptr_t)&locations;
+        cheats::Vec3 found{};
+        CHECK(teleport::tracked_location({0, 0, 0}, found) && found.x == -40 && found.y == 9 && found.z == 30);
+        CHECK(teleport::tracked_location({450, 0, 0}, found) && found.x == 500 && found.y == 7);
+        places[4][0] = places[5][0] = 0;
+        CHECK(!teleport::tracked_location({0, 0, 0}, found) && !teleport::tracked_location({NAN, 0, 0}, found));
+        locations.size = 0;
+        CHECK(!teleport::tracked_location({0, 0, 0}, found));
+        cheats::locations_root = real_locations;
+    }
     CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
     CHECK(cheats::pound_exposure_check == (uintptr_t)m + 0xd654e7);
     uintptr_t pound_code = cheats::pound_exposure_check;
@@ -2041,8 +2077,12 @@ int main(int argc, char** argv) {
         auto fbool = cheats::field_bool;
         auto owner = cheats::request_ownership;
         auto editor = cheats::float_field_editor;
+        auto vec3 = cheats::field_vec3;
+        auto ray = cheats::raytrace;
+        auto terrain = cheats::terrain_height;
         cheats::locate_engine(engine);
         CHECK(engine && cheats::active_level && cheats::view_camera && cheats::get_position);
+        CHECK(cheats::field_vec3 && cheats::raytrace && cheats::terrain_height);
         uintptr_t view_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, "?SetColor@IUIElementView@@QEAAXAEBVvec3@@@Z"), visuals::EXPORT_SPAN);
         uintptr_t text_internal = game::tail_jump((uintptr_t)GetProcAddress(engine, "?SetTextColor@IUIText@@QEAAXAEBVvec4@@@Z"), visuals::EXPORT_SPAN);
         CHECK(view_internal && !memcmp((const void*)view_internal, visuals::VIEW_COLOR_PROLOGUE, sizeof visuals::VIEW_COLOR_PROLOGUE));
@@ -2055,6 +2095,7 @@ int main(int argc, char** argv) {
         cheats::active_level = real_level, cheats::view_camera = real_camera, cheats::get_position = get, cheats::set_position = set;
         cheats::field_int = fint, cheats::field_enum = fenum, cheats::field_bool = fbool, cheats::request_ownership = owner;
         cheats::float_field_editor = editor;
+        cheats::field_vec3 = vec3, cheats::raytrace = ray, cheats::terrain_height = terrain;
     }
     {
         static uint8_t logical[0x800] = {};
@@ -2212,6 +2253,11 @@ int main(int argc, char** argv) {
         CHECK(!teleport::parse_spot("spot=Harran|x|1,2,1e30", level, back) && !teleport::parse_spot("garbage", level, back));
         CHECK(teleport::next_name({{"Position 1", {}}, {"Position 3", {}}}) == "Position 2" && teleport::next_name({}) == "Position 1");
         CHECK(teleport::distance_text({0, 0, 0}, {0, 0, 840}) == "840 m" && teleport::distance_text({0, 0, 0}, {1400, 0, 0}) == "1.4 km");
+        cheats::Vec3 N = teleport::NORTH, E = teleport::EAST;
+        CHECK(teleport::compass({0, 0, 0}, {N.x * 10, 0, N.z * 10}) == "north" && teleport::compass({0, 0, 0}, {-N.x * 10, 0, -N.z * 10}) == "south");
+        CHECK(teleport::compass({0, 0, 0}, {E.x * 10, 5, E.z * 10}) == "east" && teleport::compass({0, 0, 0}, {-E.x * 10, 0, -E.z * 10}) == "west");
+        CHECK(teleport::compass({5, 0, 5}, {5 + (N.x + E.x) * 7, 0, 5 + (N.z + E.z) * 7}) == "north-east" && teleport::compass({0, 0, 0}, {-(N.x + E.x), 0, -(N.z + E.z)}) == "south-west");
+        CHECK(teleport::compass({0, 0, 0}, {N.x * 10 - E.x * 3, 0, N.z * 10 - E.z * 3}) == "north" && teleport::compass({0, 0, 0}, {N.x - E.x * 10, 0, N.z - E.z * 10}) == "west");
         std::ofstream("selftest_positions.ini") << "spot=Harran|A|1,2,3\nbroken line\nspot=Harran|B|4,5,6\nspot=Following|C|7,8,9\n";
         CHECK(teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"].size() == 2 && teleport::spots["Following"].size() == 1);
         CHECK(teleport::save_spots("selftest_positions.ini") && teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"][1].name == "B");
