@@ -95,11 +95,6 @@ inline void request_refresh() {
 #if !FATRAINER_VISUALS
         cheats::player = cheats::find_player();
         logf("inventories:%s", game::inventory_report().c_str());
-        if (cheats::sections_wanted.exchange(false))
-            on_game_thread([] {
-                std::lock_guard<std::mutex> l(game::mx);
-                cheats::read_sections();
-            });
         logf("stats: %s", game::stat_report().c_str());
         logf("mods: %s", game::mods_report().c_str());
         logf("cheats: %s", cheats::describe().c_str());
@@ -107,11 +102,6 @@ inline void request_refresh() {
         logf("hud screens: %zu", game::g.huds.size());
 #endif
     }).detach();
-}
-
-inline std::string route_path() {
-    std::string ini = config::default_path();
-    return ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer_route.txt";
 }
 
 inline void save_config() {

@@ -1767,9 +1767,6 @@ inline bool position_of(uintptr_t control, Vec3* out) {
     return std::isfinite(out->x);
 }
 
-struct Section { uintptr_t sensor; int type; int stage; bool last; Vec3 pos; };
-enum { SENSOR_START = 1, SENSOR_STAGE = 2, SENSOR_REWARD = 3, SENSOR_EVAC = 4 };
-inline std::vector<Section> prison_sections;
 inline DWORD last_prison_tick = 0;
 
 inline uintptr_t follow_jump(uintptr_t fn) {
@@ -1779,41 +1776,6 @@ inline uintptr_t follow_jump(uintptr_t fn) {
 }
 
 inline bool reflected(uintptr_t object) { return float_field_editor && follow_jump(slot(object, SLOT_FLOAT_FIELD_EDITOR)) == float_field_editor; }
-
-inline std::atomic<bool> sections_wanted{false};
-inline int next_section = 0;
-
-inline std::pair<int, int> run_order(const Section& s) {
-    bool known = s.type >= SENSOR_START && s.type <= SENSOR_EVAC;
-    return {known ? s.type : SENSOR_EVAC + 1, s.stage};
-}
-
-inline void read_sections() {
-    if (!alive(player)) return;
-    std::vector<Section> out;
-    for (uintptr_t s : g.prison_sensors) {
-        if (!get_position || rdv<uintptr_t>(s) != g.vt_prison_sensor) continue;
-        Section sec{s, 0, -1, false, {NAN, NAN, NAN}};
-        if (g.sensor_control < 0) continue;
-        position_of(s + g.sensor_control, &sec.pos);
-        uintptr_t r = g.sensor_rtti < 0 ? 0 : s + g.sensor_rtti;
-        if (r && reflected(r) && field_int && field_bool && field_enum) {
-            int v = 0;
-            bool b = false;
-            if (field_int(r, "m_Stage", &v)) sec.stage = v;
-            if (field_bool(r, "m_IsLastStage", &b)) sec.last = b;
-            if (field_enum(r, "m_SensorType", &v)) sec.type = v;
-        }
-        auto same = [&](const Section& o) {
-            return o.type == sec.type && o.stage == sec.stage && std::fabs(o.pos.x - sec.pos.x) + std::fabs(o.pos.y - sec.pos.y) + std::fabs(o.pos.z - sec.pos.z) < 1;
-        };
-        if (std::isfinite(sec.pos.x) && std::none_of(out.begin(), out.end(), same)) out.push_back(sec);
-    }
-    std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return run_order(a) < run_order(b); });
-    prison_sections = out;
-    for (auto& sec : out)
-        logf_hook("section: type %d stage %d last %d at %.1f %.1f %.1f", sec.type, sec.stage, sec.last, sec.pos.x, sec.pos.y, sec.pos.z);
-}
 
 inline Vec3 player_position() {
     Vec3 p{NAN, NAN, NAN};
@@ -1862,36 +1824,7 @@ inline bool terrain_below(Vec3 at, float* y) {
     return true;
 }
 
-struct RoutePoint { Vec3 pos; bool stop; };
-enum RouteMode { ROUTE_IDLE, ROUTE_RECORDING, ROUTE_REPLAYING, ROUTE_PAUSED };
-const float ROUTE_STEP = 2.0f;
-const DWORD ROUTE_STOP_AFTER = 4000;
-inline std::vector<RoutePoint> route;
-inline std::atomic<int> route_mode{ROUTE_IDLE};
-inline size_t route_at = 0;
-inline DWORD route_still_since = 0;
-
 inline float distance(Vec3 a, Vec3 b) { return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); }
-
-inline void record_route(Vec3 here, DWORD now) {
-    if (!std::isfinite(here.x)) return;
-    if (route.empty() || distance(route.back().pos, here) >= ROUTE_STEP) {
-        route.push_back({here, false});
-        route_still_since = now;
-    } else if (now - route_still_since >= ROUTE_STOP_AFTER) {
-        route.back().stop = true;
-    }
-}
-
-inline void replay_route() {
-    if (route_at >= route.size()) {
-        route_mode = ROUTE_IDLE;
-        route_at = 0;
-        return;
-    }
-    teleport(route[route_at].pos, true);
-    if (route[route_at++].stop) route_mode = ROUTE_PAUSED;
-}
 
 const int RANK_TITLES = 11, RANK_WINS_PER_TITLE = 3;
 const float RANK_TITLE_GROWTH = 1.3f;
@@ -1945,35 +1878,6 @@ inline int kill_enemies(float radius) {
         killed++;
     }
     return killed;
-}
-
-inline void route_tick() {
-    if (!alive(player)) return;
-    if (route_mode == ROUTE_RECORDING) record_route(player_position(), GetTickCount());
-    else if (route_mode == ROUTE_REPLAYING) replay_route();
-}
-
-inline bool save_route(const std::string& path) {
-    FILE* f = fopen(path.c_str(), "w");
-    if (!f) return false;
-    for (auto& p : route) fprintf(f, "%.2f %.2f %.2f %d\n", p.pos.x, p.pos.y, p.pos.z, (int)p.stop);
-    fclose(f);
-    return true;
-}
-
-inline bool load_route(const std::string& path) {
-    FILE* f = fopen(path.c_str(), "r");
-    if (!f) return false;
-    std::vector<RoutePoint> out;
-    RoutePoint p;
-    int stop;
-    while (fscanf(f, "%f %f %f %d", &p.pos.x, &p.pos.y, &p.pos.z, &stop) == 4) {
-        p.stop = stop != 0;
-        out.push_back(p);
-    }
-    fclose(f);
-    route = out;
-    return true;
 }
 
 inline int pause_prison() {
@@ -2710,7 +2614,6 @@ inline void tick() {
     patch_pound(is_on("z_pound_hits"));
     block_forced_damage(is_on("god"));
     apply_spit_radius(playing_hunter() ? std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max) : 1.0f);
-    route_tick();
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
     apply_weapon_edits();
     game::reapply_stats();

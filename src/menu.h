@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #if !FATRAINER_VISUALS
+#include "dlc.h"
 #include "teleport.h"
 #endif
 
@@ -2701,24 +2702,6 @@ inline void visuals_page() {
 }
 
 #if !FATRAINER_VISUALS
-inline std::string section_name(size_t index) {
-    auto& sec = cheats::prison_sections[index];
-    char b[64];
-    switch (sec.type) {
-        case cheats::SENSOR_START: return "Start";
-        case cheats::SENSOR_REWARD: return "Reward room";
-        case cheats::SENSOR_EVAC: return "Evacuation";
-        case cheats::SENSOR_STAGE: {
-            int split = 1;
-            for (size_t i = 0; i < index; i++) split += cheats::prison_sections[i].type == cheats::SENSOR_STAGE;
-            snprintf(b, sizeof b, "Split %d%s", split, sec.last ? " (last)" : "");
-            return b;
-        }
-    }
-    snprintf(b, sizeof b, "Section %zu", index + 1);
-    return b;
-}
-
 inline void go_to(cheats::Vec3 to) {
     on_game_thread([=] {
         std::lock_guard<std::mutex> l(game::mx);
@@ -2727,6 +2710,7 @@ inline void go_to(cheats::Vec3 to) {
 }
 
 #include "page_teleport.h"
+#include "page_dlc.h"
 
 inline void refill_now() {
     on_game_thread([] {
@@ -2757,118 +2741,6 @@ inline const KeyAction* find_action(const std::string& key) {
     for (auto& a : KEY_ACTIONS)
         if (key == a.key) return &a;
     return nullptr;
-}
-
-inline void route_action(std::function<void()> f) {
-    on_game_thread([f] {
-        std::lock_guard<std::mutex> l(game::mx);
-        f();
-    });
-}
-
-inline void route_card() {
-    static bool loaded = false;
-    if (!loaded) {
-        loaded = true;
-        route_action([] { cheats::load_route(route_path()); });
-    }
-    begin_card("route", "ROUTE");
-    note("Record your route once: press Record, play the prison normally, press Stop at the end. Replay then teleports you along it in small "
-         "steps, so every quest trigger fires in order. It pauses where you stood still while recording (fights, doors): clear the wave (Kill all enemies nearby), "
-         "then press Continue.");
-    ImGui::Dummy({0, S(2)});
-    int mode = cheats::route_mode;
-    size_t stops = 0;
-    for (auto& p : cheats::route) stops += p.stop;
-    char status[160];
-    if (mode == cheats::ROUTE_RECORDING) snprintf(status, sizeof status, "Recording: %zu points, %zu stops", cheats::route.size(), stops);
-    else if (mode == cheats::ROUTE_REPLAYING) snprintf(status, sizeof status, "Replaying: point %zu of %zu", cheats::route_at, cheats::route.size());
-    else if (mode == cheats::ROUTE_PAUSED) snprintf(status, sizeof status, "Paused at a stop (point %zu of %zu). Clear the fight, then Continue.", cheats::route_at, cheats::route.size());
-    else if (cheats::route.empty()) snprintf(status, sizeof status, "No route recorded yet.");
-    else snprintf(status, sizeof status, "Saved route: %zu points, %zu stops.", cheats::route.size(), stops);
-    label(status);
-    ImGui::Dummy({0, S(2)});
-    if (mode == cheats::ROUTE_RECORDING) {
-        if (accent_button("Stop recording")) route_action([] {
-            cheats::route_mode = cheats::ROUTE_IDLE;
-            toast(cheats::save_route(route_path()) ? "Route saved" : "Route could not be saved");
-        });
-    } else if (mode == cheats::ROUTE_IDLE) {
-        if (ImGui::Button("Record")) route_action([] {
-            cheats::route.clear();
-            cheats::route_at = 0;
-            cheats::route_mode = cheats::ROUTE_RECORDING;
-        });
-        ImGui::SameLine();
-        ImGui::BeginDisabled(cheats::route.empty());
-        if (accent_button("Replay")) route_action([] {
-            cheats::route_at = 0;
-            cheats::route_mode = cheats::ROUTE_REPLAYING;
-        });
-        ImGui::EndDisabled();
-    } else {
-        if (mode == cheats::ROUTE_PAUSED && accent_button("Continue")) route_action([] { cheats::route_mode = cheats::ROUTE_REPLAYING; });
-        if (mode == cheats::ROUTE_PAUSED) ImGui::SameLine();
-        if (ImGui::Button("Stop replay")) route_action([] {
-            cheats::route_mode = cheats::ROUTE_IDLE;
-            cheats::route_at = 0;
-        });
-    }
-    end_card();
-}
-
-inline void prison_page() {
-    begin_card("about");
-    note("For the Harran Prison mode. Load into the prison first. Timers and teleports are decided by the host, so use them in your own game.");
-    end_card();
-    begin_card("timers", "TIMERS");
-    cheat_switch("prison_pause");
-    end_card();
-    begin_card("fights", "FIGHTS");
-    note("Objectives like killing the bandits or a final wave need those enemies dead before the quest moves on.");
-    ImGui::Dummy({0, S(2)});
-    kill_all_button();
-    end_card();
-    begin_card("sections", "TELEPORT TO A SECTION");
-    auto& sections = cheats::prison_sections;
-    if (sections.empty()) note("No prison sections found yet. Load into Harran Prison, then press Find sections.");
-    else {
-        note("In run order: the start, every split checkpoint, the reward room and the evacuation. The prison is scripted: when an objective asks you to kill infected or a final wave, finish it where you are (Kill all enemies nearby above) and wait for the objective to change before you press Next section. Skipping a fight leaves the objective stuck.");
-        cheats::next_section = std::clamp(cheats::next_section, 0, (int)sections.size() - 1);
-        std::string next = "Next section: " + section_name(cheats::next_section);
-        if (accent_button(next.c_str(), {ImGui::GetContentRegionAvail().x, S(38)})) {
-            go_to(sections[cheats::next_section].pos);
-            cheats::next_section = (cheats::next_section + 1) % (int)sections.size();
-        }
-        ImGui::Dummy({0, S(4)});
-    }
-    for (size_t i = 0; i < sections.size(); i++) {
-        ImGui::PushID((int)i);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(section_name(i).c_str());
-        ImGui::SameLine(S(220));
-        if (accent_button("Teleport", {S(110), 0})) {
-            go_to(sections[i].pos);
-            cheats::next_section = (int)(i + 1) % (int)sections.size();
-        }
-        ImGui::PopID();
-    }
-    ImGui::Dummy({0, S(2)});
-    ImGui::BeginDisabled(game::g.scanning);
-    if (ImGui::Button("Find sections")) {
-        cheats::sections_wanted = true;
-        request_refresh();
-    }
-    ImGui::EndDisabled();
-    end_card();
-    route_card();
-    begin_card("position", "YOUR POSITION");
-    note("Save where you stand and jump back to it later.");
-    ImGui::Dummy({0, S(2)});
-    if (ImGui::Button("Save position")) save_position();
-    ImGui::SameLine();
-    if (accent_button("Go to last saved position")) go_last_position();
-    end_card();
 }
 
 #endif
@@ -2912,7 +2784,7 @@ inline const Page PAGES[] = {
      {"dodge_spit", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge"}},
     {"zombie", "Night Hunter", "Your abilities, attack reach and spit keys as the Night Hunter", zombie_page, always, "BE THE ZOMBIE",
      {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo", "z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit"}},
-    {"dlc", "DLC Modes", "Harran Prison timers and teleports", prison_page, always, "MODES", {"prison_pause"}},
+    {"dlc", "DLC Modes", "Harran Prison and The Bozak Horde", dlc_page, always, "MODES", {"prison_pause"}},
     {"visuals", "Visuals", "Player ESP, colors, HUD, field of view and glow", visuals_page, always, "LOOK", {}},
     {"texts", "Texts", "Game language and your own texts", texts_page, always, "LOOK", {}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
@@ -3437,10 +3309,6 @@ inline void draw(float shown_raw, bool open) {
     if (first) {
         first = false;
         if (const char* p = getenv("DLT_PAGE")) g_page = p;
-#if !FATRAINER_VISUALS
-        if (getenv("DLT_SECTIONS"))
-            for (int type : {1, 2, 2, 2, 2, 2, 3, 4}) cheats::prison_sections.push_back({0, type, (int)cheats::prison_sections.size(), false, {1, 2, 3}});
-#endif
     }
     static ImVec2 rest{-1, -1};
     if (rest.x < 0) ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_FirstUseEver, {0.5f, 0.5f});

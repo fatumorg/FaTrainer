@@ -12,6 +12,7 @@
 #include "../installer/logic.h"
 #include "cheat_engine.h"
 #include "teleport.h"
+#include "dlc.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -1378,12 +1379,14 @@ int main(int argc, char** argv) {
         game::g.equipment = {equipment};
         game::g.prison_data = {prison};
         CHECK(game::g.vt_equipment && game::g.vt_prison_data && game::g.vt_prison_sensor);
+        CHECK(dlc::mode() == dlc::MODE_PRISON);
         {
-            std::vector<cheats::Section> run = {{0, cheats::SENSOR_EVAC, 0}, {0, cheats::SENSOR_STAGE, 3}, {0, 0, -1}, {0, cheats::SENSOR_START, 0},
-                                                {0, cheats::SENSOR_REWARD, 0}, {0, cheats::SENSOR_STAGE, 1}};
-            std::sort(run.begin(), run.end(), [](auto& a, auto& b) { return cheats::run_order(a) < cheats::run_order(b); });
-            CHECK(run[0].type == cheats::SENSOR_START && run[1].stage == 1 && run[2].stage == 3 && run[3].type == cheats::SENSOR_REWARD);
-            CHECK(run[4].type == cheats::SENSOR_EVAC && run[5].type == 0);
+            auto live = game::g.prison_data;
+            game::g.prison_data = {equipment};
+            CHECK(dlc::mode() == dlc::MODE_NONE);
+            game::g.prison_data.clear();
+            CHECK(dlc::mode() == dlc::MODE_NONE);
+            game::g.prison_data = live;
         }
         {
             static uint8_t stub[14] = {0xFF, 0x25, 0, 0, 0, 0};
@@ -1434,32 +1437,6 @@ int main(int argc, char** argv) {
         cheats::find("z_pound_hits")->on = false;
         cheats::tick();
         CHECK(!memcmp(fake_pound, cheats::POUND_EXPOSURE_TEST, 4) && !cheats::pound_always_hits());
-    }
-
-    {
-        cheats::route.clear();
-        cheats::record_route({0, 0, 0}, 1000);
-        cheats::record_route({1, 0, 0}, 1100);
-        cheats::record_route({3, 0, 0}, 1200);
-        cheats::record_route({3.5f, 0, 0}, 3000);
-        CHECK(cheats::route.size() == 2 && !cheats::route[1].stop);
-        cheats::record_route({3.5f, 0, 0}, 5300);
-        cheats::record_route({10, 0, 0}, 5400);
-        CHECK(cheats::route.size() == 3 && cheats::route[1].stop && !cheats::route[2].stop);
-        std::string file = "selftest_route.txt";
-        CHECK(cheats::save_route(file));
-        cheats::route.clear();
-        CHECK(cheats::load_route(file) && cheats::route.size() == 3 && cheats::route[1].stop && cheats::route[2].pos.x == 10);
-        DeleteFileA(file.c_str());
-        cheats::route_at = 0;
-        cheats::route_mode = cheats::ROUTE_REPLAYING;
-        cheats::replay_route();
-        cheats::replay_route();
-        CHECK(cheats::route_mode == cheats::ROUTE_PAUSED && cheats::route_at == 2);
-        cheats::route_mode = cheats::ROUTE_REPLAYING;
-        cheats::replay_route();
-        cheats::replay_route();
-        CHECK(cheats::route_mode == cheats::ROUTE_IDLE && cheats::route_at == 0);
     }
 
     {
