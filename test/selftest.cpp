@@ -2329,6 +2329,60 @@ int main(int argc, char** argv) {
     }
 
     {
+        auto kept = config::cfg;
+        CHECK(cheats::next_level(1.0f, 2.2f, 1.0f) == 2.2f && cheats::next_level(2.2f, 2.2f, 1.0f) == 1.0f && cheats::next_level(1.7f, 2.2f, 1.0f) == 2.2f);
+        config::cfg = config::Config();
+        config::cfg.key_levels["speed"] = {2.2f, 1.0f};
+        config::cfg.config_keys["visual:Clean HUD"] = 0x76;
+        std::string ini = config::profile_dir() + "_keys.ini";
+        CHECK(config::save(ini));
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(config::cfg.key_levels["speed"].first == 2.2f && config::cfg.config_keys["visual:Clean HUD"] == 0x76);
+        DeleteFileA(ini.c_str());
+        config::cfg = kept;
+    }
+
+    {
+        auto kept = config::cfg;
+        cheats::all_off();
+        cheats::find("god")->on = true;
+        config::cfg.fov = 1.2f, config::cfg.crosshair.on = false;
+        std::string looks = config::visual_lines();
+        config::save_profile("selftest key", {{"stamina"}, {}});
+        config::cfg.config_keys["cheat:selftest key"] = 0x75;
+        CHECK(cheats::press_config_key("cheat:selftest key") && cheats::is_on("stamina") && !cheats::is_on("god"));
+        CHECK(config::visual_lines() == looks);
+        CHECK(cheats::press_config_key("cheat:selftest key") && cheats::is_on("god") && !cheats::is_on("stamina"));
+        config::delete_profile("selftest key");
+        CHECK(!cheats::press_config_key("cheat:selftest key") && cheats::is_on("god"));
+        config::save_profile("selftest one", {{"stamina"}, {}});
+        config::save_profile("selftest two", {{"uv"}, {{"speed", 2.0f}}});
+        CHECK(cheats::press_config_key("cheat:selftest one") && cheats::press_config_key("cheat:selftest two"));
+        CHECK(cheats::is_on("uv") && !cheats::is_on("stamina") && cheats::find_tweak("speed")->factor == 2.0f);
+        config::delete_profile("selftest one");
+        CHECK(!cheats::press_config_key("cheat:selftest one") && cheats::is_on("uv") && !cheats::press_config_key("bogus") && !cheats::press_config_key("cheat:"));
+        CHECK(cheats::press_config_key("cheat:selftest two") && cheats::is_on("god") && !cheats::is_on("uv") && cheats::find_tweak("speed")->factor == 1.0f);
+        CHECK(config::delete_profile("selftest two"));
+        RemoveDirectoryA(config::profile_dir().c_str());
+        CHECK(cheats::press_config_key("cheat:survivor_rage") && cheats::is_on("one_hit") && cheats::find_tweak("speed")->factor == 2.0f);
+        CHECK(!config::cfg.esp.on && config::visual_lines() == looks);
+        CHECK(cheats::press_config_key("cheat:survivor_rage") && cheats::is_on("god") && !cheats::is_on("one_hit") && cheats::find_tweak("speed")->factor == 1.0f);
+        config::cfg.hidden_configs = {"survivor_rage"};
+        CHECK(!cheats::press_config_key("cheat:survivor_rage") && !cheats::is_on("one_hit"));
+        config::cfg.fov = 1.5f, config::cfg.crosshair.on = true;
+        CHECK(config::save_visual_config("selftest keyed"));
+        config::cfg.fov = 1.2f, config::cfg.crosshair.on = false;
+        CHECK(cheats::press_config_key("visual:selftest keyed") && config::cfg.fov == 1.5f && config::cfg.crosshair.on);
+        CHECK(cheats::is_on("god") && cheats::current_profile().cheats.size() == 1);
+        CHECK(cheats::press_config_key("visual:selftest keyed") && config::cfg.fov == 1.2f && !config::cfg.crosshair.on && config::visual_lines() == looks);
+        CHECK(config::delete_visual_config("selftest keyed") && !cheats::press_config_key("visual:selftest keyed") && config::cfg.fov == 1.2f);
+        RemoveDirectoryA(config::visual_config_dir().c_str());
+        cheats::all_off();
+        config::cfg = kept;
+    }
+
+    {
         auto stock = visuals::callout_set("Colored callouts");
         CHECK(!stock.empty() && stock == visuals::stock_callouts(1) && stock.begin()->second.find("%COLOR(") != std::string::npos);
         auto names = visuals::callout_set_names();

@@ -239,7 +239,10 @@ static void poll_cheat_keys() {
             continue;
         }
         if (auto* tweak = pressed ? cheats::find_tweak(key) : nullptr) {
-            float v = cheats::toggle_max(*tweak);
+            auto lv = config::cfg.key_levels.find(key);
+            auto level = [&](float f) { return std::clamp(f, 1.0f, tweak->max); };
+            float v = lv == config::cfg.key_levels.end() ? cheats::toggle_max(*tweak)
+                                                          : (tweak->factor = cheats::next_level(tweak->factor, level(lv->second.first), level(lv->second.second)));
             save_config();
             toast(std::string(tweak->label) + " " + cheats::tweak_text(*tweak, v));
             continue;
@@ -253,6 +256,29 @@ static void poll_cheat_keys() {
 }
 
 #endif
+
+static void poll_config_keys() {
+    static std::map<std::string, bool> held;
+    for (auto& [id, vk] : config::cfg.config_keys) {
+        bool down = GetAsyncKeyState(vk) & 0x8000;
+        bool pressed = !held[id] && down && !g_open;
+        held[id] = down;
+        bool visual = !id.compare(0, 7, "visual:");
+#if FATRAINER_VISUALS
+        if (!pressed || !visual) continue;
+        bool ok = config::press_visual_key(id), loaded = config::visual_key_id == id;
+#else
+        if (!pressed) continue;
+        bool ok = cheats::press_config_key(id), loaded = config::visual_key_id == id || cheats::cheat_key_id == id;
+#endif
+        if (!ok) {
+            toast("Config not found");
+            continue;
+        }
+        save_config();
+        toast(std::string(loaded ? "Loaded " : "Unloaded ") + (visual ? "visual config " : "config ") + menu::config_label(id));
+    }
+}
 
 static void begin_passive_frame(IDXGISwapChain* sc) {
     ImGuiIO& io = ImGui::GetIO();
@@ -374,6 +400,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     probe::watch_frame();
 #endif
 #endif
+    poll_config_keys();
     if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);
     bool previewing = g_ready && menu::previewing();

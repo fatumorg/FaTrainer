@@ -1182,64 +1182,8 @@ inline void combat_page() {
     end_card();
 }
 
-inline std::string key_name(int vk) {
-    LONG code = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC) << 16;
-    if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE) code |= 1 << 24;
-    char b[64] = "";
-    if (!GetKeyNameTextA(code, b, sizeof b)) snprintf(b, sizeof b, "Key %d", vk);
-    return b;
-}
-
-inline bool pressed_key(int& vk) {
-    for (int k = 8; k < 255; k++) {
-        if (k == VK_LBUTTON || k == VK_RBUTTON || k == VK_MBUTTON || k == VK_XBUTTON1 || k == VK_XBUTTON2) continue;
-        if (k == VK_SHIFT || k == VK_CONTROL || k == VK_MENU) continue;
-        if (GetAsyncKeyState(k) & 0x8000) {
-            vk = k;
-            return true;
-        }
-    }
-    return false;
-}
-
 inline const char* SPIT_NAMES[config::SPIT_KEYS] = {"Horde Summoner spit", "UV Suppressor spit", "Sense Suppressor spit", "Toxic spit"};
 inline const char* SPIT_GAME_KEY_NAMES[config::SPIT_KEYS] = {"1", "2", "3", "4"};
-
-inline ImGuiID g_capturing_key = 0;
-
-inline void take_key_from_others(int vk, const std::string& keeper) {
-    for (auto it = config::cfg.cheat_keys.begin(); it != config::cfg.cheat_keys.end();)
-        it = it->second == vk && it->first != keeper ? config::cfg.cheat_keys.erase(it) : std::next(it);
-    for (int& spit : config::cfg.spit_keys)
-        if (spit == vk && keeper.rfind("spit", 0) != 0) spit = 0;
-}
-
-inline bool key_button(const char* id, int& vk) {
-    static bool waiting_release = false;
-    ImGuiID me = ImGui::GetID(id);
-    bool changed = false;
-    if (g_capturing_key == me) {
-        int k = 0;
-        bool any = pressed_key(k);
-        if (waiting_release) waiting_release = any;
-        else if (any) {
-            bool reserved = k == VK_ESCAPE || k == config::cfg.menu_key || k == VK_F8;
-            if (!reserved) vk = k == VK_BACK || k == VK_DELETE ? 0 : k, changed = true;
-            g_capturing_key = 0;
-        }
-    }
-    std::string text = g_capturing_key == me ? "Press a key..." : vk ? key_name(vk) : "Not set";
-    if (ImGui::Button((text + "###" + id).c_str(), {S(170), 0})) g_capturing_key = me, waiting_release = true;
-    ImGui::SameLine(0, S(8));
-    ImGui::BeginDisabled(!vk);
-    if (ImGui::Button((std::string("Clear##") + id).c_str(), {S(70), 0})) vk = 0, changed = true;
-    ImGui::EndDisabled();
-    return changed;
-}
-
-inline void capture_note() {
-    if (g_capturing_key) note("Esc cancels, Backspace or Delete removes the key. The menu key and F8 cannot be used.");
-}
 
 struct TreeView { const char* name; int type, level, max; float progress, points; uint32_t xp, span; };
 
@@ -1636,6 +1580,72 @@ inline void draw_esp() {
 }
 
 #endif
+
+inline std::string key_name(int vk) {
+    LONG code = MapVirtualKeyA(vk, MAPVK_VK_TO_VSC) << 16;
+    if ((vk >= VK_PRIOR && vk <= VK_DOWN) || vk == VK_INSERT || vk == VK_DELETE) code |= 1 << 24;
+    char b[64] = "";
+    if (!GetKeyNameTextA(code, b, sizeof b)) snprintf(b, sizeof b, "Key %d", vk);
+    return b;
+}
+
+inline bool pressed_key(int& vk) {
+    for (int k = 8; k < 255; k++) {
+        if (k == VK_LBUTTON || k == VK_RBUTTON || k == VK_MBUTTON || k == VK_XBUTTON1 || k == VK_XBUTTON2) continue;
+        if (k == VK_SHIFT || k == VK_CONTROL || k == VK_MENU) continue;
+        if (GetAsyncKeyState(k) & 0x8000) {
+            vk = k;
+            return true;
+        }
+    }
+    return false;
+}
+
+inline ImGuiID g_capturing_key = 0;
+
+inline void take_key_from_others(int vk, const std::string& keeper) {
+    for (auto* keys : {&config::cfg.cheat_keys, &config::cfg.config_keys})
+        for (auto it = keys->begin(); it != keys->end();)
+            it = it->second == vk && it->first != keeper ? keys->erase(it) : std::next(it);
+    for (int& spit : config::cfg.spit_keys)
+        if (spit == vk && keeper.rfind("spit", 0) != 0) spit = 0;
+}
+
+inline bool key_button(const char* id, int& vk) {
+    static bool waiting_release = false;
+    ImGuiID me = ImGui::GetID(id);
+    bool changed = false;
+    if (g_capturing_key == me) {
+        int k = 0;
+        bool any = pressed_key(k);
+        if (waiting_release) waiting_release = any;
+        else if (any) {
+            bool reserved = k == VK_ESCAPE || k == config::cfg.menu_key || k == VK_F8;
+            if (!reserved) vk = k == VK_BACK || k == VK_DELETE ? 0 : k, changed = true;
+            g_capturing_key = 0;
+        }
+    }
+    std::string text = g_capturing_key == me ? "Press a key..." : vk ? key_name(vk) : "Not set";
+    if (ImGui::Button((text + "###" + id).c_str(), {S(170), 0})) g_capturing_key = me, waiting_release = true;
+    ImGui::SameLine(0, S(8));
+    ImGui::BeginDisabled(!vk);
+    if (ImGui::Button((std::string("Clear##") + id).c_str(), {S(70), 0})) vk = 0, changed = true;
+    ImGui::EndDisabled();
+    return changed;
+}
+
+inline void capture_note() {
+    if (g_capturing_key) note("Esc cancels, Backspace or Delete removes the key. The menu key and F8 cannot be used.");
+}
+
+inline bool key_binding(std::map<std::string, int>& keys, const std::string& id) {
+    auto found = keys.find(id);
+    int vk = found == keys.end() ? 0 : found->second;
+    if (!key_button("bind", vk)) return false;
+    if (vk) take_key_from_others(vk, id), keys[id] = vk;
+    else keys.erase(id);
+    return true;
+}
 
 const float CHANNELS_WIDTH = 314;
 
@@ -2540,10 +2550,11 @@ inline const Page PAGES[] = {
 #endif
 #if FATRAINER_VISUALS
     {"configs", "Configs", "Visual configs", configs_page, always, "MENU", {}},
+    {"keys", "Keybinds", "Menu key and visual config keys", keybinds_page, always, "MENU", {}},
     {"settings", "Settings", "Look, menu key and version", settings_page, always, "MENU", {}},
 #else
     {"configs", "Configs", "Cheat configs and visual configs", configs_page, always, "MENU", {}},
-    {"keys", "Keybinds", "Keys for cheats and sliders", keybinds_page, always, "MENU", {}},
+    {"keys", "Keybinds", "Keys for cheats, sliders and configs", keybinds_page, always, "MENU", {}},
     {"settings", "Settings", "Look, controls and version", settings_page, always, "MENU", {}},
 #endif
 };
@@ -2642,9 +2653,7 @@ inline void menu_key_combo(bool& changed) {
         for (auto& k : KEYS)
             if (ImGui::Selectable(k.name, k.vk == c.menu_key)) {
                 c.menu_key = k.vk, changed = true;
-#if !FATRAINER_VISUALS
                 take_key_from_others(k.vk, "");
-#endif
             }
         ImGui::EndCombo();
     }
@@ -2652,25 +2661,92 @@ inline void menu_key_combo(bool& changed) {
     label("F8 always works too.");
 }
 
+inline std::string config_label(const std::string& id) {
 #if !FATRAINER_VISUALS
+    for (auto& p : cheats::PRESETS)
+        if (id == std::string("cheat:") + p.key) return std::string(p.role) + " " + p.style;
+#endif
+    return id.substr(id.find(':') + 1);
+}
+
+inline void config_key_row(const std::string& id, bool& changed) {
+    ImGui::PushID(id.c_str());
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(config_label(id).c_str());
+    ImGui::SameLine(S(300));
+    changed |= key_binding(config::cfg.config_keys, id);
+    ImGui::PopID();
+}
+
+inline void config_keys_card(bool& changed) {
+#if FATRAINER_VISUALS
+    begin_card("keys_configs", "VISUAL CONFIGS");
+#else
+    begin_card("keys_configs", "CONFIGS");
+    label("Cheat configs");
+    auto& hidden = config::cfg.hidden_configs;
+    for (auto& p : cheats::PRESETS)
+        if (std::find(hidden.begin(), hidden.end(), p.key) == hidden.end()) config_key_row(std::string("cheat:") + p.key, changed);
+    for (auto& name : own_configs().names) config_key_row("cheat:" + name, changed);
+    ImGui::Dummy({0, S(4)});
+    label("Visual configs");
+#endif
+    auto& visual = visual_configs().items;
+    for (auto& item : visual) config_key_row("visual:" + item.first, changed);
+    if (visual.empty()) note("No visual configs saved.");
+    end_card();
+}
+
+#if !FATRAINER_VISUALS
+inline bool level_slider(const char* id, const cheats::Tweak& t, float& v) {
+    std::string text = cheats::tweak_text(t, v);
+    if (text.back() == '%') text += '%';
+    ImGui::SetNextItemWidth(S(200));
+    ImGui::SliderFloat(id, &v, 1.0f, t.max, text.c_str(), ImGuiSliderFlags_NoInput);
+    return ImGui::IsItemDeactivatedAfterEdit();
+}
+
+inline void slider_key_mode(cheats::Tweak& t, bool& changed) {
+    auto& levels = config::cfg.key_levels;
+    int mode = levels.count(t.key) ? 1 : 0;
+    const char* modes[] = {"To Max", "My levels"};
+    ImGui::SameLine(0, S(16));
+    if (segmented("mode", modes, 2, mode, S(220))) {
+        if (mode) levels[t.key] = {t.max, 1.0f};
+        else levels.erase(t.key);
+        changed = true;
+    }
+    if (!mode) return;
+    auto& lv = levels[t.key];
+    ImGui::SetCursorPosX(S(300));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("On");
+    ImGui::SameLine(0, S(8));
+    changed |= level_slider("##on", t, lv.first);
+    ImGui::SameLine(0, S(16));
+    ImGui::TextUnformatted("Off");
+    ImGui::SameLine(0, S(8));
+    changed |= level_slider("##off", t, lv.second);
+}
+#endif
+
 inline void keybinds_page() {
     bool changed = false;
     begin_card("menu_key", "MENU");
     menu_key_combo(changed);
     end_card();
+#if FATRAINER_VISUALS
+    config_keys_card(changed);
+    capture_note();
+    note("Press a config's key while the menu is closed to load it. The next press puts back what you had.");
+#else
     begin_card("keys_actions", "ACTIONS");
     for (auto& action : KEY_ACTIONS) {
         ImGui::PushID(action.key);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(action.label);
         ImGui::SameLine(S(300));
-        auto found = config::cfg.cheat_keys.find(action.key);
-        int vk = found == config::cfg.cheat_keys.end() ? 0 : found->second;
-        if (key_button("bind", vk)) {
-            if (vk) take_key_from_others(vk, action.key), config::cfg.cheat_keys[action.key] = vk;
-            else config::cfg.cheat_keys.erase(action.key);
-            changed = true;
-        }
+        changed |= key_binding(config::cfg.cheat_keys, action.key);
         ImGui::PopID();
     }
     end_card();
@@ -2690,25 +2766,22 @@ inline void keybinds_page() {
             ImGui::AlignTextToFramePadding();
             bool lit = cheat ? cheat->on.load() : tweak->factor != 1.0f;
             ImGui::PushStyleColor(ImGuiCol_Text, lit ? V(T.accent) : V(T.text));
-            ImGui::TextUnformatted(cheat ? cheat->label : (std::string(tweak->label) + " to Max").c_str());
+            ImGui::TextUnformatted(cheat ? cheat->label : tweak->label);
             ImGui::PopStyleColor();
             ImGui::SameLine(S(300));
-            auto found = config::cfg.cheat_keys.find(key);
-            int vk = found == config::cfg.cheat_keys.end() ? 0 : found->second;
-            if (key_button("bind", vk)) {
-                if (vk) take_key_from_others(vk, key), config::cfg.cheat_keys[key] = vk;
-                else config::cfg.cheat_keys.erase(key);
-                changed = true;
-            }
+            changed |= key_binding(config::cfg.cheat_keys, key);
+            if (tweak) slider_key_mode(*tweak, changed);
             ImGui::PopID();
         }
         end_card();
     }
-    note("Press a cheat's key while the menu is closed to turn it on or off, or an action's key to run it. A slider's key sets it to Max and the next press puts back what you had.");
+    config_keys_card(changed);
+    note("Press a cheat's key while the menu is closed to turn it on or off, or an action's key to run it. "
+         "A slider's key sets its On level and the next press its Off level. A config's key loads it and the next press puts back what you had.");
+#endif
+    ImGui::Dummy({0, S(4)});
     if (changed) save_config();
 }
-
-#endif
 
 inline void settings_page() {
     auto& c = config::cfg;

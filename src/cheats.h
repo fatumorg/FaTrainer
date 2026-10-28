@@ -194,6 +194,8 @@ inline float toggle_max(Tweak& t) {
     return t.factor;
 }
 
+inline float next_level(float now, float on, float off) { return fabsf(now - on) < 1e-3f ? off : on; }
+
 inline std::string tweak_text(const Tweak& t, float v) {
     char b[32];
     if (v == 1.0f) snprintf(b, sizeof b, "Normal");
@@ -1252,6 +1254,27 @@ inline bool preset_active(const Preset& p) {
         float want = it == p.tweaks.end() ? 1.0f : std::clamp(it->second, 1.0f, t.max);
         if (fabsf(t.factor - want) > 0.01f) return false;
     }
+    return true;
+}
+
+inline std::string cheat_key_id;
+inline config::Profile cheat_key_before;
+
+inline bool press_config_key(const std::string& id) {
+    if (!id.compare(0, 7, "visual:")) return config::press_visual_key(id);
+    if (id.compare(0, 6, "cheat:")) return false;
+    std::string name = id.substr(6);
+    auto& hidden = config::cfg.hidden_configs;
+    auto preset = std::find_if(std::begin(PRESETS), std::end(PRESETS), [&](const Preset& p) { return name == p.key; });
+    config::Profile p;
+    if (preset != std::end(PRESETS)) {
+        if (std::find(hidden.begin(), hidden.end(), name) != hidden.end()) return false;
+        p = preset_profile(*preset);
+    } else if (!config::load_profile(name, p)) return false;
+    if (cheat_key_id == id) return apply_profile(cheat_key_before), cheat_key_id.clear(), true;
+    if (cheat_key_id.empty()) cheat_key_before = current_profile();
+    apply_profile(p);
+    cheat_key_id = id;
     return true;
 }
 

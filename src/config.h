@@ -5,8 +5,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -88,6 +90,8 @@ struct Config {
     std::vector<std::pair<std::string, float>> tweaks;
     int spit_keys[SPIT_KEYS] = {};
     std::map<std::string, int> cheat_keys;
+    std::map<std::string, std::pair<float, float>> key_levels;
+    std::map<std::string, int> config_keys;
     Esp esp;
     UvLight uv, hunter_glow;
     HudColor hud_tint;
@@ -415,20 +419,36 @@ inline bool save_visual_config(const std::string& name) {
     return true;
 }
 
-inline bool load_visual_config(const std::string& name) {
-    std::string path = visual_config_path(name);
-    FILE* f = path.empty() ? nullptr : fopen(path.c_str(), "r");
-    if (!f) return false;
+inline void apply_visual_lines(const std::string& text) {
     reset_visuals();
-    char line[4096];
-    while (fgets(line, sizeof line, f)) {
-        std::string s = line;
-        while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    std::istringstream in(text);
+    for (std::string s; std::getline(in, s);) {
+        if (!s.empty() && s.back() == '\r') s.pop_back();
         size_t eq = s.find('=');
         if (eq == std::string::npos || s.compare(0, 15, "rainbow=accent,") == 0) continue;
         read_visual_line(s.substr(0, eq), s.substr(eq + 1));
     }
-    fclose(f);
+}
+
+inline bool load_visual_config(const std::string& name) {
+    std::string path = visual_config_path(name);
+    std::ifstream in(path);
+    if (!in) return false;
+    std::ostringstream text;
+    text << in.rdbuf();
+    apply_visual_lines(text.str());
+    return true;
+}
+
+inline std::string visual_key_id, visual_key_before;
+
+inline bool press_visual_key(const std::string& id) {
+    std::string name = id.compare(0, 7, "visual:") ? "" : id.substr(7);
+    if (!path_exists(visual_config_path(name))) return false;
+    if (visual_key_id == id) return apply_visual_lines(visual_key_before), visual_key_id.clear(), true;
+    std::string before = visual_key_id.empty() ? visual_lines() : visual_key_before;
+    if (!load_visual_config(name)) return false;
+    visual_key_before = before, visual_key_id = id;
     return true;
 }
 
@@ -469,6 +489,8 @@ inline void load(const std::string& path) {
     cfg.tweaks.clear();
     cfg.hidden_configs.clear();
     cfg.cheat_keys.clear();
+    cfg.key_levels.clear();
+    cfg.config_keys.clear();
     cfg.hud_parts.clear();
     cfg.survivor_glow.clear();
     cfg.btz_colors.clear();
@@ -501,6 +523,16 @@ inline void load(const std::string& path) {
             std::string key = v.substr(0, c);
             if (key == "go_saved_position") key = "go_last_position";
             if (vk > 0 && vk < 256) cfg.cheat_keys[key] = vk;
+        }
+        else if (k == "key_levels") {
+            size_t c = v.find(',');
+            float on = 0, off = 0;
+            if (c != std::string::npos && c && sscanf(v.c_str() + c + 1, "%f,%f", &on, &off) == 2) cfg.key_levels[v.substr(0, c)] = {on, off};
+        }
+        else if (k == "config_key") {
+            size_t c = v.rfind(',');
+            int vk = c == std::string::npos ? 0 : atoi(v.c_str() + c + 1);
+            if (vk > 0 && vk < 256 && c > 0) cfg.config_keys[v.substr(0, c)] = vk;
         }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "allow_older") cfg.allow_older = v == "1";
@@ -572,6 +604,8 @@ inline bool save(const std::string& path) {
     for (int i = 0; i < SPIT_KEYS; i++)
         if (cfg.spit_keys[i]) fprintf(f, "spit_key=%d,%d\n", i, cfg.spit_keys[i]);
     for (auto& [cheat, vk] : cfg.cheat_keys) fprintf(f, "cheat_key=%s,%d\n", cheat.c_str(), vk);
+    for (auto& [key, lv] : cfg.key_levels) fprintf(f, "key_levels=%s,%.2f,%.2f\n", key.c_str(), lv.first, lv.second);
+    for (auto& [id, vk] : cfg.config_keys) fprintf(f, "config_key=%s,%d\n", id.c_str(), vk);
     fputs(visual_lines().c_str(), f);
     if (auto accent = cfg.rainbow.find("accent"); accent != cfg.rainbow.end()) fprintf(f, "rainbow=accent,%.1f\n", accent->second);
     for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());
