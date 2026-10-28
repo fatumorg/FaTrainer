@@ -45,7 +45,8 @@
 
 - **Configs**: cheat configs (four built-in ones plus your own) and visual configs that keep your Player ESP, colors, glow, HUD, crosshair, field of view and screen settings; create, load, save over, rename and delete
 - **Keybinds**: the menu key and a key for every cheat, slider, action and config. A slider key sets Max or your own On and Off levels; a config key loads the config and puts back what you had on the next press
-- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Visuals Version
+- **Quick wheel**: hold a key, point and let go to switch one of up to 8 pinned cheats, sliders and configs
+- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility; window style (Classic, Compact rail, Top tabs, Side dock), density, font, text size, card style, switches or checkboxes, descriptions, where the menu opens and sidebar width; the Active list of what is on in a screen corner while the menu is closed; all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Visuals Version
 
 ### Install
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.0 b2
+
+Lobby Update
+
+- New: Menu style in Settings. Density (Comfortable or Compact), Font (Default, Wide or Mono), Text size from 80% to 130%, Card style (Filled, Outlined or Flat), Switches look like switches or checkboxes, Show descriptions for the grey line under each cheat and option, Opens at (Center, Where I left it, Left or Right) and Sidebar width from 190 to 320 px.
+- New: four window styles, picked with Style in Settings. Classic is the menu with its sidebar. Compact rail is a smaller window with a column of page icons. Top tabs puts the page groups and pages in tabs on top of a wider window, with the cards in two columns when there is room. Side dock is a panel the full height of the screen on the right edge, or on the left when Opens at is Left.
+- The Menu style options and the window styles are in the Visuals Version too.
+- New: Quick wheel, in the Fatum Version only. Hold its key while the menu is closed, point with the mouse and let go to switch the pin you point at; the camera stays still while you point. Pin up to 8 cheats, sliders and configs: right-click a cheat or slider, or press Pin next to a config on the Keybinds page, where the Quick wheel card has the key. A slider pin works like the slider's key and a config pin like the config's key. The wheel does not open while the game's chat is open.
+- New: Active list in Settings, in the Fatum Version only. While the menu is closed, the screen corner you pick lists the cheats that are on and the sliders you changed, with their level.
+- Fixed: Window opacity, Corner roundness, Animations, Harran skyline and Accent glow went back to their defaults every time the game started.
+- Fixed: a key for a config that was deleted or renamed could not be cleared or changed. The Keybinds page lists such keys with Config not found.
+- Fixed: a fatrainer_positions.ini edited by hand lost positions: a line with spaces at the end, the first line of a file saved with a BOM, and a position without a name. A position without a name gets the next free Position N.
+- Fixed: Delete on a saved position asks Sure? first.
+- Fixed: Go to last saved position said Back at the position's name also when it could not take you there.
+- This is a beta build. Quick wheel, Active list and the new window styles have not been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
+
 ## 3.0 b1
 
 Lobby Update
