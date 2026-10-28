@@ -315,6 +315,10 @@ int main(int argc, char** argv) {
         auto log = logic::parse_changelog("## 3.0 b2\n\nLobby Update\n\n- a\n\n## 3.0 b1\n\n- b\n\n## 2.5\n\nSurvivor Update\n\n- c\n\n## 1.0.0\n\n- d\n");
         auto finals = logic::finals_only(log);
         CHECK(finals.size() == 2 && finals[0].version == "2.5" && finals[1].version == "1.0.0" && logic::finals_only({}).empty());
+        CHECK(version_parts("2.5.1") == std::vector<long>({2, 5, 1, 0, FINAL_BUILD}) && version_parts("2.5.1 b2") == std::vector<long>({2, 5, 1, 0, 2}));
+        CHECK(version_parts("Next").empty() && version_parts("2.5 bx").empty() && version_parts("1.2.3.4.5").empty());
+        auto odd = logic::finals_only(logic::parse_changelog("## Next\n\n- a\n\n## 2.5.1\n\n- b\n\n## 2.5.1 b1\n\n- c\n\n## 2.5\n\n- d\n"));
+        CHECK(odd.size() == 3 && odd[0].version == "Next" && odd[1].version == "2.5.1" && odd[2].version == "2.5");
     }
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(m);
@@ -2394,6 +2398,16 @@ int main(int argc, char** argv) {
         CHECK(cheats::is_on("god") && cheats::current_profile().cheats.size() == 1);
         CHECK(cheats::press_config_key("visual:selftest keyed") && config::cfg.fov == 1.2f && !config::cfg.crosshair.on && config::visual_lines() == looks);
         CHECK(config::delete_visual_config("selftest keyed") && !cheats::press_config_key("visual:selftest keyed") && config::cfg.fov == 1.2f);
+        config::cfg.fov = 1.5f;
+        CHECK(config::save_visual_config("selftest first"));
+        config::cfg.fov = 1.8f, config::cfg.crosshair.on = true;
+        CHECK(config::save_visual_config("selftest second"));
+        config::cfg.fov = 1.2f, config::cfg.crosshair.on = false;
+        CHECK(config::press_visual_key("visual:selftest first") && config::cfg.fov == 1.5f && !config::cfg.crosshair.on);
+        CHECK(config::press_visual_key("visual:selftest second") && config::cfg.fov == 1.8f && config::cfg.crosshair.on);
+        CHECK(config::delete_visual_config("selftest first") && !config::press_visual_key("visual:selftest first") && config::cfg.fov == 1.8f);
+        CHECK(config::press_visual_key("visual:selftest second") && config::cfg.fov == 1.2f && !config::cfg.crosshair.on && config::visual_lines() == looks);
+        CHECK(config::visual_key_id.empty() && config::delete_visual_config("selftest second"));
         RemoveDirectoryA(config::visual_config_dir().c_str());
         cheats::all_off();
         config::cfg = kept;
