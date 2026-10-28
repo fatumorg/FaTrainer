@@ -311,6 +311,11 @@ int main(int argc, char** argv) {
     }
     auto log = logic::parse_changelog("# Changelog\n\n## 2.0\n\nInstaller Update\n\n- One\n  more\n- Two\n\n## 1.9\n\n- Three\n");
     CHECK(log.size() == 2 && log[0].version == "2.0" && log[0].name == "Installer Update" && log[1].name.empty() && log[0].lines.size() == 2 && log[0].lines[0] == "One more" && log[1].lines[0] == "Three");
+    {
+        auto log = logic::parse_changelog("## 3.0 b2\n\nLobby Update\n\n- a\n\n## 3.0 b1\n\n- b\n\n## 2.5\n\nSurvivor Update\n\n- c\n\n## 1.0.0\n\n- d\n");
+        auto finals = logic::finals_only(log);
+        CHECK(finals.size() == 2 && finals[0].version == "2.5" && finals[1].version == "1.0.0" && logic::finals_only({}).empty());
+    }
     HMODULE m = LoadLibraryExA(argv[1], nullptr, DONT_RESOLVE_DLL_REFERENCES);
     CHECK(m);
     if (!m) return 1;

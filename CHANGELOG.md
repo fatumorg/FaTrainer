@@ -18,7 +18,42 @@ Survivor Update
 - New: effects of a mod. Shock, Impact, Burning, Poison, Bleeding, Freezing, Stun, Explosive and Acid, each off or any level the game has (up to 4, Shock and Impact also 101). Every weapon with that mod gets them, and they come back every time you start the game.
 - New: upgrade slots in the game's own upgrade screen, 0 to 4, for every weapon of a type.
 - New: crossbows, shields and every other weapon open the weapon editor too: stats, rarity, upgrades and mods, with No reload for crossbows.
-- Since 2.4: a Visuals Version with only the looks, HUD colors with Rainbow, Hide and Show for every HUD piece, your own crosshair, Survivor glow, your own texts and Be The Zombie callouts, a language for every text category, field of view, every resolution, melee speed and reach, dropkick angle and height, throwable recharge, Item Dupe, keys for sliders and more actions, a crash window with the log, Start Cheat Engine in the launcher and many fixes. Every 2.5 beta below lists its changes.
+- New: the weapon editor is redesigned: big editable values in a two column grid, the game's value next to every stat you changed, Undo per stat and for everything, rarity as colored buttons, and extras that fit the item (no reload for guns and crossbows, infinite ammo, unbreakable melee weapons, infinite UV for the UV flashlight, infinite grappling hook). Flashlights and the grappling hook can be edited too.
+- New: weapon edits are saved and come back every time you start the game.
+- New: the Visuals Version, a second trainer with only the looks: UV light and Night Hunter glow colors, HUD colors, texts and every other visual change of 2.5. No cheats, no ESP, no internet connection, and it runs whether you start the game with Play or from Steam. Tick Visuals only in the FaTrainer launcher 2.3 to install it.
+- New: HUD colors on the Visuals page. Tint the whole HUD in one color, or give each of its 35 pieces, in seven groups, its own color, so the radar, the quest list and the objective markers each have their own. Every color keeps the piece's own brightness. Hide next to every piece makes it invisible until you show it again. Only you see them.
+- New: Crosshair draws your own crosshair (cross, dot, circle or cross and dot) with size, thickness, gap, opacity, outline and color, whenever the game shows its own. It can hide the game's crosshair.
+- New: Survivor glow, for Be The Zombie: your own colors for how survivors glow in the Night Hunter's sense (normal, hit by UV Suppressor, marked by Horde Summoner, hit by Sense Suppressor).
+- New: Rainbow next to every color. The color cycles through the rainbow and keeps its brightness; pick how many seconds one cycle takes.
+- Every color in the menu (accent, ESP colors, UV light, Night Hunter glow) has a color picker, R, G and B number fields from 0 to 255 and a hex field like #E8973A.
+- New: Texts page. Search every text the game shows and write your own, for example "Pounce interrupted by UV light!" or the Be The Zombie killfeed lines like "You killed %s". Every result shows the text the way you see it in the game, the English text under it when they differ, its key and its group. Filter by group (spoken lines, weapons and items, skills, quests, tutorials, HUD, menus) or search. Reset brings back the game's text. Only you see your texts, and they win over the language you pick.
+- New: click a text to edit it right where it is. Color all of it or just its label, and preview it. Preview on a text and Show in the killfeed post the line into the game's real killfeed when you are in a game.
+- Texts refuses a replacement that uses a % the game's text does not have, since the killfeed lines are filled in with player names and a stray % could crash the game. Write a percent sign as %%.
+- New: Game language, Voices and Subtitles are three separate settings on the Texts page: English, Polish, German, French, Spanish, Italian, Portuguese (Brazil), Czech, Dutch or Turkish. The game language is the game's own language switch, so menus, the Night Hunter info and everything else change natively; voices and subtitles can stay in your language. The game language and voices change at the next start.
+- New: a language for every text category on the Texts page. Next to Subtitles, Weapons and items, Skills, Quests and objectives, Tutorials and hints, HUD and messages and Menus can each have their own language, changing right away.
+- New: Be The Zombie callouts: short killfeed lines in one click (Pounced:, Failed Pounce:, Tackled:, Failed Tackle:, Dropkicked, From Above, Headshot, Nest Down, Hunter Down, every way to kill like sliced, shot or burned, self destruct, bled out and more), with optional colored labels.
+- New: callout sets on the Texts page. Make your own sets of Be The Zombie callouts, rename and delete them, and edit every line. The two built-in sets can be edited too and restored with one click.
+- New: Field of view on the Visuals page, live. Sprinting and aiming still zoom like before.
+- New: Unlock every resolution (Visuals, Screen). The game's video settings list every common resolution, also sizes your monitor does not report, from the next start.
+- New: Melee speed on the Combat page: how fast you swing every melee weapon, two-handed ones too, up to x5. Heavy and charged attacks and the rest after every attack are shortened by the same speed; climbing, the grappling hook and picking up items keep their speed. Works in every mode.
+- Changed: the survivor Melee slider is Melee reach. It changes the reach the game uses for every swing (targets and hit lines), for every weapon, instead of widening how far the game looks for a melee target, which turned your swings toward targets far away. Only your own swings are changed.
+- New: Dropkick angle and Dropkick height sliders on the PvP page. At Max of the angle the hunter can be behind you; the height lets you kick a hunter below you, like when you jump at him after his tackle missed. Dropkick is now Dropkick range and only changes the range.
+- New: Throwable recharge on the PvP page: UV flares, injectors, grenades, molotovs, throwing stars and mines come back faster in Be The Zombie, at Max right away.
+- New: UV flare throw speed (Combat). Throws the UV flare up to x5 faster, both of the game's UV flare items; other throwables are not changed.
+- New: Always 1 bullet for Last Wish (Combat). The Last Wish revolver always has one round loaded, so every shot is its explosive last round.
+- New: Item Dupe on the Combat page: weapons and other single items you drop stay in your backpack too. It waits until the dropped item lies next to you, and the copy is exact, with rarity and upgrades; part of a stack you drop comes back too.
+- New: keys for sliders on the Keybinds page. One press sets the slider to Max, the next press puts back what you had, and a message says which.
+- New: keys for more actions on the Keybinds page: Kill all enemies nearby, Save position, Go to saved position and Player ESP on / off, next to Refill health & stamina.
+- New: if the game crashes, the trainer opens a window with its log and a Copy log button. If the game closed too fast for that, the window opens at the next start.
+- New: Start Cheat Engine in the FaTrainer launcher 2.5. The trainer installs Cheat Engine the first time the game starts and opens it with the game, in the game's own prefix, attached to Dying Light.
+- Fixed: no survivor or Night Hunter slider on the PvP page did anything, also Melee and every dropkick and death from above slider, because the trainer never found out which side you play. It now reads your role from the level, the way the game does. In story mode, where there are no sides, the sliders apply after 5 seconds again, and the dropkick and death from above sliders never reach zombies further than a normal kick would, so E keeps kicking.
+- Fixed: No reload never changed magazine sizes and still needed reloads. It changes the real magazine of every kind of item, crossbows included, and the weapon in your hands always stays fully loaded, so R switches bolts right away.
+- Fixed: Infinite ammo skipped crossbow bolts.
+- Fixed: a crash while loading into a game with No reload on. The trainer wrote settings while the game was still building them; it now waits until you are in the game and checks every object before it writes.
+- Fixed: settings the game keeps in its own cache (movement speed, jump height and others) only changed after a respawn or a level load when you moved their slider in game. They now change right away.
+- Fixed: levels you lowered on the Skills page (for example Survivor from 25 to 21) went back to the maximum with the next XP you earned or after loading the game again, and the extra XP landed in Legend. Setting a level also sets the XP to the start of that level, new Survivor XP goes to Survivor, and your level can climb again.
+- Fixed: Dodge spit and the player ESP could lose the game world. The game's active level is empty in some sessions; the trainer now takes the level your character is in.
+- Fixed: scrolling in the menu stopped as soon as the mouse was over a card or the page title. Cards took the wheel for themselves; now the whole page scrolls wherever the mouse is.
 
 ## 2.5 b26
 
@@ -254,6 +289,7 @@ Refill Update
 
 - 2.4 is the last build of 2.4: it comes after 2.4 b1, which updates to it by itself.
 - New: Delete next to every item on the Backpack, Stash, Materials and Tools pages removes it from the game. Lowering an amount to 0 removes the item too; before, it stayed as an empty item.
+- New: a key to refill health and stamina. Set it under Actions on the Keybinds page and press it while the menu is closed; a message at the bottom of the screen confirms it.
 - Fixed: `fatrainer.ini` kept every deleted built-in config several times when an older version had written it that way. The trainer now reads each one once.
 - The log line `cheats:` now says which side the trainer thinks you play and whether it found your player's settings, to find out why survivor sliders do nothing in some games.
 
@@ -269,7 +305,7 @@ Launcher Update
 
 - 2.3 is the last build of 2.3: it comes after 2.3 b1, b2 and b3, and those builds update to it by themselves.
 - The FaTrainer Installer is now the FaTrainer launcher. Press Play: it installs or updates the trainer and starts Dying Light with it. Starting Dying Light from Steam plays the normal game without the trainer, so you can play with or without it.
-- New: Keybinds page. Give any cheat its own key and press it while the menu is closed to turn the cheat on or off; a message at the bottom of the screen says which. You can change the menu key there too.
+- New: Keybinds page. Give any cheat its own key and press it while the menu is closed to turn the cheat on or off; a message at the bottom of the screen says which. You can change the menu key there too. A key can only belong to one thing, so picking a key takes it away from whatever had it before.
 - Every version now has a name after its most important change; the changelog and the launcher show it.
 - The menu is darker, in the same warm near-black as the FaTrainer website and launcher.
 - Fixed: after loading a save with a config or remembered sliders on, your weapons often hit nothing until you turned everything off and set it again. Night Hunter and survivor sliders now wait until the trainer knows which side you play.
@@ -302,9 +338,31 @@ Skill Tree Update
 
 - 2.2 is the last build of 2.2: it comes after 2.2 b1, b2 and b3, and those builds update to it by themselves.
 - New: a skill tree editor on the Skills page. Every tree (Survivor, Agility, Power, Driver, Legend, and Night Hunter while you play the hunter) is laid out like the game's own skill menu. Click a skill to learn it or remove it; learning a skill also learns the skills it needs, removing one also removes the skills that need it. Legend skills go up and down a level at a time. Learn all and Remove all do a whole tree. Changes are saved with your game like skills you buy.
-- Fixed: Free skill points - and + did nothing and their row never showed. The game keeps skill points in a different kind of value than the trainer looked for. The tiles now show the free points the game shows, and - and + change them.
+- Skills page: each skill tree is a tile with its level, an XP bar you can drag to set the XP, -10, -1, +1 point, +10 and Max, and the free skill points the game shows, with - and + that change them without changing the level.
+- XP gain now multiplies experience in every skill tree, Survivor and Night Hunter included, and the game's XP popup shows the boosted amount. Before it only changed Agility, Power and Driver.
+- Health and stamina bars on the Player page can be dragged to set them.
+- New: Take less damage, as a survivor and as the Night Hunter.
+- New: Less UV damage for the Night Hunter.
+- New: One hit kill on the Night Hunter, on the PvP page.
+- New: Sure-hit ground pound for the Night Hunter. The game only counts a survivor as hit when its blast trace reaches his body, so a step or uneven ground could make the ground pound miss even right next to him. Both Night Hunter presets turn it on.
+- The Ground pound slider also raises how far above or below you a survivor can still be hit (normally 2 m).
+- Presets are now Configs, on the PvP page and in Settings. Built-in configs can be deleted too, and Restore built-in configs brings them back: the four built-in ones plus your own. New config saves what is on now, and every config of yours can be loaded, saved over, renamed and deleted. Your old configs carry over.
+- The Night Hunter page moved to Cheats, and the sidebar no longer shows a section twice after you reorder pages.
 - The menu opens bigger, and it remembers the size you drag it to.
+- Versions now have build numbers, like 2.2 b1. A newer build of your version downloads itself and starts the next time you open the game; until then the build you have keeps working. A newer version still needs the FaTrainer Installer, and an older version stays off unless you tick Use older versions.
 - New: Beta builds in Settings and in the FaTrainer Installer. Off unless you turn it on. With it on, the trainer and the installer also use the beta build, the version being worked on right now, when it is newer than the latest release. Beta builds may have bugs.
+- The FaTrainer Installer now has its own version (Installer 1.0) and keeps itself up to date.
+- New: the FaTrainer Installer lets you pick which version to install, and its Use older versions checkbox lets an older version keep working in game after a newer one is out. The update notice still shows; without the checkbox an older version stays turned off, as before.
+- The installer lists each version once and always installs its newest build.
+- The trainer no longer touches your items, enemies or the Night Hunter until you are in a game, so nothing is written while the game loads from the main menu.
+- When the game crashes, `fatrainer.log` now also records heap corruption and fail-fast crashes, with the chain of game functions that led there. Please attach it if the game closes on its own.
+- Fixed: as the Night Hunter your melee, tackle and ground pound often did nothing, especially after starting the game with the Pounce slider already on. Pounce also widened the pounce aim to all around you. The game uses the attack for a pounce whenever a survivor counts as a pounce target, so a survivor beside or behind you took over your swipes, and the pounce then failed. Pounce now only lengthens the range, and you pounce the survivor you aim at.
+- Fixed: the Night Hunter presets made the tackle miss. They widen the pounce aim, which the game shares with the tackle, so the tackle locked onto survivors beside you while charging straight ahead. The tackle now always keeps its normal aim.
+- Fixed: the survivor sliders (Death from above, Dropkick, Melee and the other kicks) also changed the Night Hunter's attacks while you played the hunter, and the Night Hunter sliders changed a survivor's game. Each side's sliders now only work while you play that side.
+- Fixed: Spit hit radius made a Night Hunter's spits hit you from anywhere while you played a survivor. The game that hosts the match decides spit hits, so the slider now only works while you play the Night Hunter, and only when you host.
+- Fixed: Claws made your melee miss survivors next to you. It widened the range the game uses to pick a melee target, so the swipe turned toward survivors far away. Claws now only lengthens the reach.
+- Fixed: the Night Hunter rank showed a number like 44890 instead of its name. Ranks now show the title and change one title at a time. In a Be The Zombie match the side you are not playing is grayed out.
+- Fixed: Unbreakable weapons did not protect weapons you picked up after turning it on, until you pressed Refresh.
 - Fixed: a key or mouse button held while you opened the menu could press the switch under it.
 
 ## 2.2 b2

@@ -104,6 +104,7 @@ struct Model {
     ReleaseInfo latest, installer_update;
     bool restart = false;
     std::vector<logic::ChangelogEntry> changelog;
+    bool changelog_betas = false;
     fs::path game;
     std::string installed;
     Job job = Job::idle;
@@ -139,11 +140,15 @@ inline void fetch_announcement() {
     }).detach();
 }
 
-inline void dismiss_announcement(const std::string& id) {
+inline void save_choice(const char* key, const std::string& value) {
     std::error_code ec;
     fs::create_directories(platform::config_dir(), ec);
     std::string text = platform::read_file(installer_ini());
-    std::ofstream(installer_ini(), std::ios::binary | std::ios::trunc) << logic::with_ini_value(text, "announcement", id);
+    std::ofstream(installer_ini(), std::ios::binary | std::ios::trunc) << logic::with_ini_value(text, key, value);
+}
+
+inline void dismiss_announcement(const std::string& id) {
+    save_choice("announcement", id);
     std::lock_guard<std::mutex> l(M.mx);
     M.announcement = {};
 }
@@ -152,10 +157,7 @@ inline const char* VISUALS_DLL = "xinput1_3-visuals.dll";
 inline const char* VISUALS_INFO = "version-visuals.txt";
 
 inline void set_visuals(bool on) {
-    std::error_code ec;
-    fs::create_directories(platform::config_dir(), ec);
-    std::string text = platform::read_file(installer_ini());
-    std::ofstream(installer_ini(), std::ios::binary | std::ios::trunc) << logic::with_ini_value(text, "edition", on ? "visuals" : "fatum");
+    save_choice("edition", on ? "visuals" : "fatum");
     std::lock_guard<std::mutex> l(M.mx);
     M.visuals = on;
 }
@@ -570,7 +572,9 @@ inline void init(float dpi_scale) {
     platform::self_path();
     M.changelog = logic::parse_changelog(std::string((const char*)changelog_md, (size_t)(changelog_md_end - changelog_md)));
     M.game = platform::find_game();
-    M.visuals = logic::ini_value(platform::read_file(installer_ini()), "edition") == "visuals";
+    std::string choices = platform::read_file(installer_ini());
+    M.visuals = logic::ini_value(choices, "edition") == "visuals";
+    M.changelog_betas = logic::ini_value(choices, "changelog_betas") == "1";
     refresh_installed();
     fetch_release();
     fetch_announcement();
@@ -1065,7 +1069,7 @@ inline void changelog(float width) {
     std::vector<logic::ChangelogEntry> entries;
     {
         std::lock_guard<std::mutex> l(M.mx);
-        entries = M.changelog;
+        entries = M.changelog_betas ? M.changelog : logic::finals_only(M.changelog);
     }
     ImDrawList* dl = ImGui::GetWindowDrawList();
     for (size_t i = 0; i < entries.size(); i++) {
@@ -1207,9 +1211,20 @@ inline void frame() {
             detail(w);
             ImGui::EndChild();
         } else {
-            float w = std::min(size.x - 2 * MARGIN, S(860));
-            ImGui::SetCursorScreenPos({(size.x - w) / 2, top});
-            ImGui::BeginChild("changelog", {w + S(12), height}, 0, ImGuiWindowFlags_NoBackground);
+            float w = std::min(size.x - 2 * MARGIN, S(860)), x = (size.x - w) / 2;
+            bool betas;
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                betas = M.changelog_betas;
+            }
+            const char* BETAS = "Show beta builds";
+            if (check_box(dl, "changelog_betas", BETAS, {x + w - S(30) - text_w(F.strong, BETAS), top}, betas, true)) {
+                save_choice("changelog_betas", betas ? "0" : "1");
+                std::lock_guard<std::mutex> l(M.mx);
+                M.changelog_betas = !betas;
+            }
+            ImGui::SetCursorScreenPos({x, top + S(44)});
+            ImGui::BeginChild("changelog", {w + S(12), height - S(44)}, 0, ImGuiWindowFlags_NoBackground);
             changelog(w);
             ImGui::EndChild();
         }

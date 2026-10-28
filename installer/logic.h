@@ -122,6 +122,15 @@ inline std::vector<ChangelogEntry> parse_changelog(const std::string& md) {
     return out;
 }
 
+inline std::vector<ChangelogEntry> finals_only(const std::vector<ChangelogEntry>& entries) {
+    std::vector<ChangelogEntry> out;
+    for (const ChangelogEntry& e : entries) {
+        std::vector<long> parts = version_parts(e.version);
+        if (parts.empty() || parts.back() == FINAL_BUILD) out.push_back(e);
+    }
+    return out;
+}
+
 struct Release { std::string tag, version; };
 
 inline std::vector<Release> installable_releases(const std::string& json) {

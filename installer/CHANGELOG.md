@@ -1,5 +1,9 @@
 # FaTrainer launcher changelog
 
+## 3.0
+
+- New: Show beta builds on the Changelog tab. Unticked, the changelog lists only the final versions, and each final lists everything new and every fix from its beta builds. Tick it to see every beta build too. The launcher remembers your choice.
+
 ## 2.5
 
 - New: Start Cheat Engine. Tick it and Play also starts Cheat Engine 7.7 with the game, inside the game's own Proton prefix on Linux, and it attaches to Dying Light by itself, also after a restart. FaTrainer downloads the official installer in the background, checks it and installs it the first time the game starts. Cheat Engine closes when the game closes.
