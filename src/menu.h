@@ -2669,16 +2669,25 @@ inline std::string config_label(const std::string& id) {
     return id.substr(id.find(':') + 1);
 }
 
-inline void config_key_row(const std::string& id, bool& changed) {
+inline void config_key_row(const std::string& id, bool& changed, bool missing = false) {
     ImGui::PushID(id.c_str());
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(config_label(id).c_str());
     ImGui::SameLine(S(300));
     changed |= key_binding(config::cfg.config_keys, id);
+    if (missing) ImGui::SameLine(0, S(12)), label("Config not found");
     ImGui::PopID();
 }
 
+inline void missing_config_key_rows(const std::vector<std::string>& listed, bool visual, bool& changed) {
+    std::vector<std::string> missing;
+    for (auto& [id, vk] : config::cfg.config_keys)
+        if ((id.compare(0, 7, "visual:") == 0) == visual && std::find(listed.begin(), listed.end(), id) == listed.end()) missing.push_back(id);
+    for (auto& id : missing) config_key_row(id, changed, true);
+}
+
 inline void config_keys_card(bool& changed) {
+    std::vector<std::string> listed;
 #if FATRAINER_VISUALS
     begin_card("keys_configs", "VISUAL CONFIGS");
 #else
@@ -2686,14 +2695,17 @@ inline void config_keys_card(bool& changed) {
     label("Cheat configs");
     auto& hidden = config::cfg.hidden_configs;
     for (auto& p : cheats::PRESETS)
-        if (std::find(hidden.begin(), hidden.end(), p.key) == hidden.end()) config_key_row(std::string("cheat:") + p.key, changed);
-    for (auto& name : own_configs().names) config_key_row("cheat:" + name, changed);
+        if (std::find(hidden.begin(), hidden.end(), p.key) == hidden.end()) listed.push_back(std::string("cheat:") + p.key);
+    for (auto& name : own_configs().names) listed.push_back("cheat:" + name);
+    for (auto& id : listed) config_key_row(id, changed);
+    missing_config_key_rows(listed, false, changed);
     ImGui::Dummy({0, S(4)});
     label("Visual configs");
 #endif
     auto& visual = visual_configs().items;
-    for (auto& item : visual) config_key_row("visual:" + item.first, changed);
+    for (auto& item : visual) listed.push_back("visual:" + item.first), config_key_row(listed.back(), changed);
     if (visual.empty()) note("No visual configs saved.");
+    missing_config_key_rows(listed, true, changed);
     end_card();
 }
 
