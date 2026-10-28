@@ -1816,14 +1816,15 @@ inline bool move_body(Vec3 to) {
     return true;
 }
 
-inline void teleport(Vec3 to, bool quiet = false) {
-    if (!alive(player) || !set_position || g.player_control < 0 || !std::isfinite(to.x)) return;
+inline bool teleport(Vec3 to, bool quiet = false) {
+    if (!alive(player) || !set_position || g.player_control < 0 || !std::isfinite(to.x)) return false;
     Vec3 from = player_position();
     bool body = move_body(to);
     set_position(player + g.player_control, &to);
     Vec3 now = player_position();
     if (!quiet) logf_hook("teleport: from %.1f %.1f %.1f to %.1f %.1f %.1f, now %.1f %.1f %.1f, body %s", from.x, from.y, from.z, to.x, to.y, to.z, now.x, now.y,
               now.z, body ? "moved" : "missing");
+    return true;
 }
 
 const uint8_t RAY_SOLID = 0x37;

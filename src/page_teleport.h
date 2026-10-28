@@ -20,8 +20,7 @@ inline void go_last_position() {
         std::lock_guard<std::mutex> l(game::mx);
         auto found = teleport::spots.find(teleport::level_name());
         if (found == teleport::spots.end() || found->second.empty()) return toast("No saved position on this map");
-        cheats::teleport(found->second.back().pos);
-        toast("Back at " + found->second.back().name);
+        if (cheats::teleport(found->second.back().pos)) toast("Back at " + found->second.back().name);
     });
 }
 
@@ -85,10 +84,10 @@ inline void quick_card(cheats::Vec3 me, bool here) {
 
 inline void teleport_page() {
     static char typed[41] = "", rename_to[41] = "";
-    static int renaming = -1;
+    static int renaming = -1, confirm_delete = -1;
     static std::string last_level;
     std::string level = teleport::level_name();
-    if (level != last_level) last_level = level, renaming = -1;
+    if (level != last_level) last_level = level, renaming = -1, confirm_delete = -1;
     cheats::Vec3 me = cheats::player_position();
     bool here = std::isfinite(me.x);
     quick_card(me, here);
@@ -135,15 +134,19 @@ inline void teleport_page() {
         ImGui::SameLine();
         ImGui::SetCursorPos({x + avail - small * 3 - gap * 2, y + std::max(0.0f, (h - ImGui::GetFrameHeight()) / 2)});
         ImGui::BeginDisabled(!here);
-        if (accent_button("Go", {small, 0})) go_to(list[i].pos);
+        if (accent_button("Go", {small, 0})) go_to(list[i].pos), confirm_delete = -1;
         ImGui::EndDisabled();
         ImGui::SameLine(0, gap);
         if (ImGui::Button("Rename", {small, 0})) {
-            renaming = i;
+            renaming = i, confirm_delete = -1;
             snprintf(rename_to, sizeof rename_to, "%s", list[i].name.c_str());
         }
         ImGui::SameLine(0, gap);
-        bool gone = ImGui::Button("Delete", {small, 0});
+        bool sure = confirm_delete == i, gone = false;
+        if (ImGui::Button(sure ? "Sure?" : "Delete", {small, 0})) {
+            if (sure) gone = true, confirm_delete = -1;
+            else confirm_delete = i;
+        }
         ImGui::PopID();
         if (gone) {
             list.erase(list.begin() + i);

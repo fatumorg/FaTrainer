@@ -585,6 +585,8 @@ int main(int argc, char** argv) {
         cheats::Vec3 found{};
         CHECK(teleport::tracked_location({0, 0, 0}, found) && found.x == -40 && found.y == 9 && found.z == 30);
         CHECK(teleport::tracked_location({450, 0, 0}, found) && found.x == 500 && found.y == 7);
+        place(5, point, 1, 0x9, teleport::STATE_TRACKED, {0, 0, 0});
+        CHECK(teleport::tracked_location({0, 0, 0}, found) && found.x == 500 && found.y == 7);
         places[4][0] = places[5][0] = 0;
         CHECK(!teleport::tracked_location({0, 0, 0}, found) && !teleport::tracked_location({NAN, 0, 0}, found));
         locations.size = 0;
@@ -2229,7 +2231,9 @@ int main(int argc, char** argv) {
         std::string level;
         CHECK(teleport::format_spot("Harran", s) == "spot=Harran|Tower roof|1.50,-2.25,300.00");
         CHECK(teleport::parse_spot("spot=Harran|Tower roof|1.50,-2.25,300.00", level, back) && level == "Harran" && back.name == "Tower roof" && back.pos.z == 300.0f);
-        CHECK(!teleport::parse_spot("spot=Harran|x|1,2", level, back) && !teleport::parse_spot("spot=Harran||1,2,3", level, back));
+        CHECK(!teleport::parse_spot("spot=Harran|x|1,2", level, back) && teleport::parse_spot("spot=Harran||1,2,3", level, back) && back.name.empty());
+        CHECK(teleport::parse_spot("spot=Harran|Roof|1,2,3 \r", level, back) && back.name == "Roof" && back.pos.z == 3.0f);
+        CHECK(teleport::parse_spot("spot=Harran| ?? |1,2,3", level, back) && back.name.empty() && !teleport::parse_spot("spot=Harran|x|1,2,3 4", level, back));
         CHECK(teleport::parse_spot("spot=|x|1,2,3", level, back) && level.empty() && back.name == "x");
         CHECK(teleport::format_spot("Harran", {"a|b", {0, 0, 0}}) == "spot=Harran|ab|0.00,0.00,0.00");
         CHECK(!teleport::parse_spot("spot=Harran|x|1,2,1e30", level, back) && !teleport::parse_spot("garbage", level, back));
@@ -2243,6 +2247,9 @@ int main(int argc, char** argv) {
         std::ofstream("selftest_positions.ini") << "spot=Harran|A|1,2,3\nbroken line\nspot=Harran|B|4,5,6\nspot=Following|C|7,8,9\n";
         CHECK(teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"].size() == 2 && teleport::spots["Following"].size() == 1);
         CHECK(teleport::save_spots("selftest_positions.ini") && teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"][1].name == "B");
+        std::ofstream("selftest_positions.ini", std::ios::binary) << "\xEF\xBB\xBFspot=Harran|A|1,2,3\r\nspot=Harran|??|4,5,6\r\nspot=Harran|B |7,8,9\t\r\n";
+        CHECK(teleport::load_spots("selftest_positions.ini") && teleport::spots["Harran"].size() == 3 && teleport::spots["Harran"][0].name == "A");
+        CHECK(teleport::spots["Harran"][1].name == "Position 1" && teleport::spots["Harran"][1].pos.x == 4.0f && teleport::spots["Harran"][2].name == "B");
         remove("selftest_positions.ini");
         char tmp[MAX_PATH];
         GetTempPathA(MAX_PATH, tmp);

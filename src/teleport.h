@@ -26,21 +26,30 @@ inline std::string format_spot(const std::string& level, const Spot& s) {
 inline bool parse_spot(const std::string& line, std::string& level, Spot& out) {
     if (line.compare(0, 5, "spot=")) return false;
     size_t coords = line.rfind('|'), name = coords == std::string::npos || coords < 6 ? std::string::npos : line.rfind('|', coords - 1);
-    if (name == std::string::npos || name < 5 || coords - name < 2) return false;
+    if (name == std::string::npos || name < 5) return false;
     cheats::Vec3 p;
     int end = 0;
     const char* c = line.c_str() + coords + 1;
-    if (sscanf(c, "%f,%f,%f%n", &p.x, &p.y, &p.z, &end) != 3 || c[end]) return false;
+    if (sscanf(c, "%f,%f,%f %n", &p.x, &p.y, &p.z, &end) != 3 || c[end]) return false;
     for (float v : {p.x, p.y, p.z})
         if (!std::isfinite(v) || std::fabs(v) > FARTHEST) return false;
     level = line.substr(5, name - 5);
-    out = {line.substr(name + 1, coords - name - 1), p};
+    out = {config::profile_name(line.substr(name + 1, coords - name - 1)), p};
     return true;
 }
 
 inline std::string spots_path() {
     std::string ini = config::default_path();
     return ini.substr(0, ini.find_last_of("\\/") + 1) + "fatrainer_positions.ini";
+}
+
+inline std::string next_name(const std::vector<Spot>& list) {
+    for (int n = 1;; n++) {
+        std::string name = "Position " + std::to_string(n);
+        bool taken = false;
+        for (auto& s : list) taken |= s.name == name;
+        if (!taken) return name;
+    }
 }
 
 inline bool load_spots(const std::string& path) {
@@ -50,8 +59,10 @@ inline bool load_spots(const std::string& path) {
     std::string line, level;
     Spot s;
     while (std::getline(in, line)) {
-        while (!line.empty() && line.back() == '\r') line.pop_back();
-        if (parse_spot(line, level, s)) out[level].push_back(s);
+        if (!line.compare(0, 3, "\xEF\xBB\xBF")) line.erase(0, 3);
+        if (!parse_spot(line, level, s)) continue;
+        if (s.name.empty()) s.name = next_name(out[level]);
+        out[level].push_back(s);
     }
     spots = out;
     return true;
@@ -86,15 +97,6 @@ inline std::string level_name() {
     return s;
 }
 
-inline std::string next_name(const std::vector<Spot>& list) {
-    for (int n = 1;; n++) {
-        std::string name = "Position " + std::to_string(n);
-        bool taken = false;
-        for (auto& s : list) taken |= s.name == name;
-        if (!taken) return name;
-    }
-}
-
 const cheats::Vec3 NORTH{0, 0, 1}, EAST{-1, 0, 0};
 
 inline std::string compass(cheats::Vec3 from, cheats::Vec3 to) {
@@ -109,7 +111,7 @@ inline std::string compass(cheats::Vec3 from, cheats::Vec3 to) {
 inline bool sane(cheats::Vec3 p) {
     for (float v : {p.x, p.y, p.z})
         if (!std::isfinite(v) || std::fabs(v) > FARTHEST) return false;
-    return true;
+    return p.x != 0 || p.y != 0 || p.z != 0;
 }
 
 inline bool waypoint(cheats::Vec3& out) {
