@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -527,12 +528,19 @@ inline void load(const std::string& path) {
         else if (k == "key_levels") {
             size_t c = v.find(',');
             float on = 0, off = 0;
-            if (c != std::string::npos && c && sscanf(v.c_str() + c + 1, "%f,%f", &on, &off) == 2) cfg.key_levels[v.substr(0, c)] = {on, off};
+            if (c != std::string::npos && c && sscanf(v.c_str() + c + 1, "%f,%f", &on, &off) == 2 && std::isfinite(on) && std::isfinite(off))
+                cfg.key_levels[v.substr(0, c)] = {on, off};
         }
         else if (k == "config_key") {
             size_t c = v.rfind(',');
             int vk = c == std::string::npos ? 0 : atoi(v.c_str() + c + 1);
             if (vk > 0 && vk < 256 && c > 0) cfg.config_keys[v.substr(0, c)] = vk;
+        }
+        else if (k == "look") {
+            int motion = MOTION_FULL, skyline = 1, glow = 1;
+            auto& l = cfg.look;
+            if (sscanf(v.c_str(), "%f,%f,%d,%d,%d", &l.opacity, &l.roundness, &motion, &skyline, &glow) == 5)
+                l.motion = motion, l.skyline = skyline != 0, l.glow = glow != 0;
         }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
         else if (k == "allow_older") cfg.allow_older = v == "1";

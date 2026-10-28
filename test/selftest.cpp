@@ -2339,11 +2339,16 @@ int main(int argc, char** argv) {
         config::cfg = config::Config();
         config::cfg.key_levels["speed"] = {2.2f, 1.0f};
         config::cfg.config_keys["visual:Clean HUD"] = 0x76;
+        config::cfg.look.opacity = 0.8f, config::cfg.look.motion = config::MOTION_OFF, config::cfg.look.skyline = false;
         std::string ini = config::profile_dir() + "_keys.ini";
         CHECK(config::save(ini));
         config::cfg = config::Config();
         config::load(ini);
         CHECK(config::cfg.key_levels["speed"].first == 2.2f && config::cfg.config_keys["visual:Clean HUD"] == 0x76);
+        CHECK(config::cfg.look.opacity == 0.8f && config::cfg.look.motion == config::MOTION_OFF && !config::cfg.look.skyline && config::cfg.look.glow);
+        std::ofstream(ini) << "key_levels=speed,nan,1\nkey_levels=jump,2,inf\nkey_levels=hook,1.5,1\n";
+        config::load(ini);
+        CHECK(!config::cfg.key_levels.count("speed") && !config::cfg.key_levels.count("jump") && config::cfg.key_levels["hook"].first == 1.5f);
         DeleteFileA(ini.c_str());
         config::cfg = kept;
     }
