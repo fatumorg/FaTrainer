@@ -2,7 +2,7 @@
 
 inline void spit_keys_card() {
     begin_card("spit_keys", "SPIT KEYS");
-    note("Pick your own key for each spit type. The trainer presses the game's key for it (1 to 4) when you press yours while the menu is closed.");
+    note("Your own key for each spit type, while the menu is closed.");
     for (int i = 0; i < config::SPIT_KEYS; i++) {
         ImGui::PushID(i);
         ImGui::AlignTextToFramePadding();
@@ -20,7 +20,6 @@ inline void spit_keys_card() {
     capture_note();
     end_card();
 }
-
 
 inline const char* SURVIVOR_RANKS[] = {"Prey", "Casualty", "Endangered", "Underdog", "Runner", "Contender",
                                        "Challenger", "Fighter", "Dominant", "Ruthless", "Indomitable", "Ultimate Survivor"};

@@ -32,7 +32,6 @@ inline void tile_frame(ImVec2 a, ImVec2 b, bool on, bool dashed = false) {
     dl->AddRect(a, b, C(line), R(10), 0, 1.0f + lit);
 }
 
-
 #if !FATRAINER_VISUALS
 inline void apply_preset(const cheats::Preset& p) {
     cheats::apply_profile(cheats::preset_profile(p));
@@ -368,7 +367,7 @@ inline void visual_config_tile(const std::string& name, const std::string& summa
                 confirm_save = name;
             }
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace this config with the visual settings that are set");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace this config with your visual settings");
         ImGui::SameLine(0, gap);
         if (ImGui::Button("Rename", {bw, 0})) {
             renaming = name, snprintf(rename_to, sizeof rename_to, "%s", name.c_str());

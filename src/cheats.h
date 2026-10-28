@@ -66,7 +66,7 @@ inline const char* SPIT_REGEN[] = {"ZombieSpitControlTheHordeAmmoRegenTime", "Zo
 inline Cheat CHEATS[] = {
     {"god", "God mode", "You take no damage from anything.", {}, {}},
     {"stamina", "Infinite stamina", "Sprint, climb and fight without getting tired.", {}, {"InfiniteStamina"}},
-    {"hook", "Infinite grappling hook", "The hook recharges instantly, so you can grapple again right away, also in the air.",
+    {"hook", "Infinite grappling hook", "The hook recharges instantly, also in the air.",
      {{"RopeEnergyRegenTime", 0.01f}}, {"CanUseHook", "ThrowHookCanUseInAir"}},
     {"uv", "Infinite UV flashlight", "The UV light never drains.", {{"FlashlightDrainMul", 0}, {"FlashlightRechargeSpeed", 1000}}, {}},
     {"one_hit", "One hit kill", "Zombies and humans drop to 1 health. Works when you are the host.", {}, {}},

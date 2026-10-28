@@ -1791,7 +1791,7 @@ inline bool hud_colors_card() {
         }
         changed |= part_row(part.label, part.key, c.hud_parts, true);
     }
-    note(visuals::hud_found() ? "Only you see these colors. A piece's own color wins over the whole HUD tint. Hide makes that piece invisible until you show it again; the game's own animations still play on the pieces you color."
+    note(visuals::hud_found() ? "Only you see these colors. A piece's own color wins over the whole HUD tint. Hide makes that piece invisible until you show it again."
                               : "Load into the game to see the colors.");
     end_card();
     return changed;
