@@ -351,6 +351,10 @@ struct State {
     uintptr_t vt_upgrade_desc = 0, vt_blueprint_desc = 0, context_ctor = 0, elemental_root = 0;
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds;
+#if !FATRAINER_VISUALS
+    uintptr_t vt_chat_input = 0;
+    std::vector<uintptr_t> chat_inputs;
+#endif
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
     std::vector<Inventory> invs;
     std::map<std::string, uintptr_t> descs;
@@ -665,6 +669,9 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_logical_player = find_vtable(base, "LogicalPlayer");
     g.vt_logical_level = find_vtable(base, "LogicalLevel");
     g.vt_hud = find_vtable(base, "HUDScreenBase");
+#if !FATRAINER_VISUALS
+    g.vt_chat_input = find_vtable(base, "HudChatInput");
+#endif
     g.vt_upgrade_desc = find_vtable(base, "ItemDescCraftPart");
     g.vt_blueprint_desc = find_vtable(base, "ItemDescCraftPlan");
     if (auto hits = find_code(base, CONTEXT_CTOR_CODE, 2); hits.size() == 1) g.context_ctor = rip_target(hits[0], 1, 5);
@@ -693,6 +700,9 @@ inline void refresh() {
         vts.push_back(g.vt_rope);
         vts.push_back(g.vt_logical_player);
         vts.push_back(g.vt_hud);
+#if !FATRAINER_VISUALS
+        vts.push_back(g.vt_chat_input);
+#endif
     }
     DWORD t0 = GetTickCount();
     auto found = scan(vts);
@@ -773,6 +783,9 @@ inline void refresh() {
     g.ropes = found[6 + N_INV_CLASSES];
     g.logical_players = found[7 + N_INV_CLASSES];
     g.huds = found[8 + N_INV_CLASSES];
+#if !FATRAINER_VISUALS
+    g.chat_inputs = found[9 + N_INV_CLASSES];
+#endif
     g.wallets = wallets;
     g.invs = std::move(invs);
     g.descs = std::move(descs);
@@ -788,6 +801,17 @@ inline void refresh() {
     g.status = s;
     g.scanning = false;
 }
+
+#if !FATRAINER_VISUALS
+const int CHAT_INPUT_OPEN = 0x6c;
+
+inline bool chat_open() {
+    std::lock_guard<std::mutex> l(mx);
+    for (uintptr_t c : g.chat_inputs)
+        if (rdv<uintptr_t>(c) == g.vt_chat_input && rdv<uint8_t>(c + CHAT_INPUT_OPEN)) return true;
+    return false;
+}
+#endif
 
 inline std::string inventory_report() {
     std::string out;

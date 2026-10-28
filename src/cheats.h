@@ -1285,6 +1285,23 @@ inline int active_count() {
     return n;
 }
 
+inline std::vector<std::string> active_lines() {
+    std::vector<std::string> out;
+    for (auto& c : CHEATS)
+        if (c.on) out.push_back(c.label);
+    for (auto& t : TWEAKS)
+        if (t.factor != 1.0f) out.push_back(std::string(t.label) + " " + tweak_text(t, t.factor));
+    return out;
+}
+
+inline int wheel_pick(float dx, float dy, int count) {
+    const float DEAD_ZONE = 40, TURN = 6.28318531f;
+    if (count <= 0 || dx * dx + dy * dy < DEAD_ZONE * DEAD_ZONE) return -1;
+    float step = TURN / count, angle = atan2f(dx, -dy);
+    if (angle < 0) angle += TURN;
+    return (int)((angle + step / 2) / step) % count;
+}
+
 inline uintptr_t skill_container() {
     if (!alive(player)) return 0;
     uintptr_t own = rdv<uintptr_t>(player + PARAM_CONTAINER);

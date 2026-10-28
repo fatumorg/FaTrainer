@@ -290,14 +290,36 @@ inline bool switch_row(const char* text, const char* hint, bool& value) {
 }
 
 #if !FATRAINER_VISUALS
+inline bool pinned(const std::string& id) {
+    auto& pins = config::cfg.wheel_pins;
+    return std::find(pins.begin(), pins.end(), id) != pins.end();
+}
+
+inline void toggle_pin(const std::string& id) {
+    auto& pins = config::cfg.wheel_pins;
+    if (pinned(id)) pins.erase(std::find(pins.begin(), pins.end(), id));
+    else if (pins.size() >= config::WHEEL_PINS) return toast("The Quick wheel holds 8 pins");
+    else pins.push_back(id);
+    save_config();
+}
+
+inline void pin_menu(const std::string& id) {
+    if (!ImGui::BeginPopupContextItem("pin")) return;
+    if (ImGui::MenuItem(pinned(id) ? "Unpin" : "Pin to Quick wheel")) toggle_pin(id);
+    ImGui::EndPopup();
+}
+
 inline void cheat_switch(const char* key, const char* override_label = nullptr) {
     auto* c = cheats::find(key);
     if (!c) return;
     bool v = c->on;
+    ImGui::PushID(key);
     if (switch_row(override_label ? override_label : c->label, c->hint, v)) {
         c->on = v;
         save_config();
     }
+    pin_menu(key);
+    ImGui::PopID();
 }
 
 #endif
@@ -1157,6 +1179,7 @@ inline void tweak_slider(cheats::Tweak& t) {
     else snprintf(text, sizeof text, "x%.1f", v);
     if (ImGui::SliderFloat("##f", &v, 1.0f, t.max, text, ImGuiSliderFlags_NoInput)) t.factor = v;
     if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
+    pin_menu(t.key);
     ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
     float fill = animate(ImGui::GetID("fill"), (t.factor - 1.0f) / (t.max - 1.0f), 18);
     if (fill > 0.002f) ImGui::GetWindowDrawList()->AddRectFilled(a, {a.x + (b.x - a.x) * fill, b.y}, C(T.accent, 0.16f), R(8));
@@ -1672,6 +1695,9 @@ inline void take_key_from_others(int vk, const std::string& keeper) {
     for (auto* keys : {&config::cfg.cheat_keys, &config::cfg.config_keys})
         for (auto it = keys->begin(); it != keys->end();)
             it = it->second == vk && it->first != keeper ? keys->erase(it) : std::next(it);
+#if !FATRAINER_VISUALS
+    if (config::cfg.wheel_key == vk && keeper != "wheel") config::cfg.wheel_key = 0;
+#endif
     for (int& spit : config::cfg.spit_keys)
         if (spit == vk && keeper.rfind("spit", 0) != 0) spit = 0;
 }
@@ -2750,12 +2776,69 @@ inline std::string config_label(const std::string& id) {
     return id.substr(id.find(':') + 1);
 }
 
+#if !FATRAINER_VISUALS
+inline bool config_exists(const std::string& id) {
+    std::string name = id.substr(id.find(':') + 1);
+    if (!id.compare(0, 7, "visual:")) return config::path_exists(config::visual_config_path(name));
+    if (id.compare(0, 6, "cheat:")) return false;
+    auto& hidden = config::cfg.hidden_configs;
+    for (auto& p : cheats::PRESETS)
+        if (name == p.key) return std::find(hidden.begin(), hidden.end(), name) == hidden.end();
+    return config::path_exists(config::profile_path(name));
+}
+
+struct WheelSlot { std::string id, label; bool found, on; };
+
+inline WheelSlot wheel_slot(const std::string& id) {
+    if (auto* c = cheats::find(id)) return {id, c->label, true, c->on};
+    if (auto* t = cheats::find_tweak(id)) return {id, t->label, true, t->factor != 1.0f};
+    bool loaded = cheats::cheat_key_id == id || config::visual_key_id == id;
+    return {id, config_label(id), id.find(':') != std::string::npos && config_exists(id), loaded};
+}
+
+inline std::vector<WheelSlot> wheel_slots() {
+    std::vector<WheelSlot> out;
+    for (auto& id : config::cfg.wheel_pins)
+        if (WheelSlot slot = wheel_slot(id); slot.found) out.push_back(slot);
+    return out;
+}
+
+inline void wheel_card(bool& changed) {
+    begin_card("keys_wheel", "QUICK WHEEL");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Hold to open");
+    beside_label(S(300), S(248));
+    int vk = config::cfg.wheel_key;
+    if (key_button("wheel", vk)) {
+        if (vk) take_key_from_others(vk, "wheel");
+        config::cfg.wheel_key = vk, changed = true;
+    }
+    auto pins = config::cfg.wheel_pins;
+    for (auto& id : pins) {
+        WheelSlot slot = wheel_slot(id);
+        ImGui::PushID(id.c_str());
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(slot.label.c_str());
+        beside_label(S(300), S(248));
+        if (ImGui::Button("Unpin", {S(170), 0})) toggle_pin(id);
+        if (!slot.found) ImGui::SameLine(0, S(12)), label("Not found");
+        ImGui::PopID();
+    }
+    note(pins.empty() ? "Right-click a cheat or slider to pin it. Up to 8 pins." : "Hold the key, point at a pin and let go to switch it. Up to 8 pins.");
+    end_card();
+}
+#endif
+
 inline void config_key_row(const std::string& id, bool& changed, bool missing = false) {
     ImGui::PushID(id.c_str());
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(config_label(id).c_str());
     beside_label(S(300), S(248));
     changed |= key_binding(config::cfg.config_keys, id);
+#if !FATRAINER_VISUALS
+    same_line_if_room(S(70), S(8));
+    if (ImGui::Button(pinned(id) ? "Unpin" : "Pin", {S(70), 0})) toggle_pin(id);
+#endif
     if (missing) ImGui::SameLine(0, S(12)), label("Config not found");
     ImGui::PopID();
 }
@@ -2834,6 +2917,7 @@ inline void keybinds_page() {
     capture_note();
     note("Press a config's key while the menu is closed to load it. The next press puts back what you had.");
 #else
+    wheel_card(changed);
     begin_card("keys_actions", "ACTIONS");
     for (auto& action : KEY_ACTIONS) {
         ImGui::PushID(action.key);
@@ -2950,6 +3034,11 @@ inline void settings_page() {
     setting_width();
     ImGui::SliderFloat("##sidebar", &sidebar, config::SIDEBAR_MIN, config::SIDEBAR_MAX, "%.0f px", ImGuiSliderFlags_NoInput);
     if (ImGui::IsItemDeactivatedAfterEdit()) look.sidebar_width = roundf(sidebar), changed = true;
+#if !FATRAINER_VISUALS
+    if (switch_row("Active list", "While the menu is closed, a screen corner lists what is on.", c.active_list)) changed = true;
+    const char* corners[] = {"Top left", "Top right", "Bottom left", "Bottom right"};
+    if (c.active_list && setting_choice("List corner", "corner", corners, 4, c.active_corner)) changed = true;
+#endif
     end_card();
 
     begin_card("controls", "CONTROLS");
@@ -3448,6 +3537,18 @@ inline void startup() {
             if (!strcmp(style, styles[i])) config::cfg.look.style = i;
     }
     if (const char* scale = getenv("DLT_SCALE")) config::read_float(scale, config::cfg.scale), config::normalize(page_ids());
+#if !FATRAINER_VISUALS
+    if (getenv("DLT_WHEEL")) {
+        config::cfg.wheel_pins = {"god", "speed", "stamina", "cheat:survivor_rage", "no_fall", "jump", "visual:Clean HUD"};
+        cheats::find("god")->on = true;
+        g_wheel_at = {S(70), -S(120)};
+    }
+    if (getenv("DLT_ACTIVE")) {
+        config::cfg.active_list = true;
+        cheats::find("god")->on = cheats::find("stamina")->on = true;
+        cheats::find_tweak("speed")->factor = 2.2f;
+    }
+#endif
 }
 
 }

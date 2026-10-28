@@ -258,3 +258,67 @@ inline void dock_window(float shown) {
     ImGui::SetNextWindowSize({w, d.y});
     if (config::cfg.dim > 0) ImGui::GetBackgroundDrawList()->AddRectFilled({x, 0}, {x + w, d.y}, IM_COL32(0, 0, 0, (int)(config::cfg.dim * 255 * shown)));
 }
+
+#if !FATRAINER_VISUALS
+inline ImVec2 g_wheel_at;
+inline float g_wheel_shown = 0;
+
+inline void draw_wheel(bool held) {
+    float step_in = ImGui::GetIO().DeltaTime * (motion() > 0 ? 8.0f : 1000.0f);
+    g_wheel_shown = held ? std::min(1.0f, g_wheel_shown + step_in) : std::max(0.0f, g_wheel_shown - step_in * 1.4f);
+    float a = g_wheel_shown;
+    if (a <= 0) return;
+    const float TURN = 6.28318531f, UP = -TURN / 4;
+    std::vector<WheelSlot> slots = wheel_slots();
+    int n = (int)slots.size(), pick = cheats::wheel_pick(g_wheel_at.x / config::cfg.scale, g_wheel_at.y / config::cfg.scale, n);
+    ImVec2 d = ImGui::GetIO().DisplaySize, c{d.x / 2, d.y / 2};
+    float r = S(170) * (0.9f + 0.1f * brand::ease_out(a)), ring = S(64), step = n ? TURN / n : TURN;
+    auto* dl = ImGui::GetForegroundDrawList();
+    dl->AddCircle(c, r, C(T.ground, 0.88f * a), 96, ring);
+    if (pick >= 0) {
+        float mid = UP + pick * step;
+        dl->PathArcTo(c, r, mid - step / 2, mid + step / 2, 32);
+        dl->PathStroke(C(T.accent, 0.28f * a), 0, ring);
+    }
+    for (int i = 0; i < n; i++) {
+        ImVec2 at{c.x + cosf(UP + i * step) * r, c.y + sinf(UP + i * step) * r};
+        bool hot = i == pick;
+        ImFont* font = hot ? f_strong : f_body;
+        float fs = font_size(font), dot = slots[i].on ? S(14) : 0, pad = S(12);
+        std::string text = fit_text(font, fs, slots[i].label, S(200));
+        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, text.c_str());
+        ImVec2 p0{at.x - (ts.x + dot) / 2 - pad, at.y - ts.y / 2 - S(7)}, p1{at.x + (ts.x + dot) / 2 + pad, at.y + ts.y / 2 + S(7)};
+        dl->AddRectFilled(p0, p1, C(hot ? T.accent : T.raised, a), (p1.y - p0.y) / 2);
+        if (!hot) dl->AddRect(p0, p1, C(T.line, a), (p1.y - p0.y) / 2);
+        if (slots[i].on) dl->AddCircleFilled({p0.x + pad + S(4), at.y}, S(4), C(hot ? T.accent_ink : T.accent, a));
+        dl->AddText(font, fs, {p0.x + pad + dot, at.y - ts.y / 2}, C(hot ? T.accent_ink : T.text, a), text.c_str());
+    }
+    ImVec2 tip{c.x + g_wheel_at.x, c.y + g_wheel_at.y};
+    if (pick >= 0) dl->AddLine(c, tip, C(T.accent, 0.7f * a), S(2));
+    dl->AddCircleFilled(c, S(9), C(T.accent, a));
+    if (pick >= 0) dl->AddCircleFilled(tip, S(4), C(T.accent, a));
+    if (!n) {
+        float fs = font_size(f_small);
+        ImVec2 ts = f_small->CalcTextSizeA(fs, FLT_MAX, 0, "No pins");
+        dl->AddText(f_small, fs, {c.x - ts.x / 2, c.y + S(18)}, C(T.soft, a), "No pins");
+    }
+}
+
+inline void draw_active_list() {
+    std::vector<std::string> lines = cheats::active_lines();
+    if (lines.empty()) return;
+    ImVec2 d = ImGui::GetIO().DisplaySize;
+    float fs = font_size(f_small), pad = S(12), gap = S(5), bar = S(12), margin = S(24), w = 0;
+    for (auto& line : lines) w = std::max(w, f_small->CalcTextSizeA(fs, FLT_MAX, 0, line.c_str()).x);
+    ImVec2 size{w + bar + pad * 2, lines.size() * (fs + gap) - gap + pad * 2};
+    int corner = config::cfg.active_corner;
+    ImVec2 p0{corner & 1 ? d.x - margin - size.x : margin, corner & 2 ? d.y - margin - size.y : margin};
+    auto* dl = ImGui::GetBackgroundDrawList();
+    dl->AddRectFilled(p0, {p0.x + size.x, p0.y + size.y}, C(T.ground, 0.78f), R(8));
+    for (size_t i = 0; i < lines.size(); i++) {
+        float y = p0.y + pad + i * (fs + gap);
+        dl->AddRectFilled({p0.x + pad, y + fs * 0.2f}, {p0.x + pad + S(3), y + fs * 0.85f}, C(T.accent), S(1.5f));
+        dl->AddText(f_small, fs, {p0.x + pad + bar, y}, C(T.text), lines[i].c_str());
+    }
+}
+#endif

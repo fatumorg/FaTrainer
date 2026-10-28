@@ -15,6 +15,10 @@ using game::hook_import;
 
 inline std::atomic<bool> blocked{false};
 inline std::atomic<long> wheel{0};
+#if !FATRAINER_VISUALS
+inline std::atomic<bool> pointing{false};
+inline std::atomic<long> point_x{0}, point_y{0};
+#endif
 
 using GetStateFn = HRESULT(WINAPI*)(void*, DWORD, void*);
 using GetDataFn = HRESULT(WINAPI*)(void*, DWORD, DIDEVICEOBJECTDATA*, DWORD*, DWORD);
@@ -97,6 +101,12 @@ inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
     if (FAILED(r) || !data) return r;
     if (!blocked) {
         bool mouse = mouse_device(device);
+#if !FATRAINER_VISUALS
+        if (mouse && pointing && size >= sizeof(DIMOUSESTATE)) {
+            auto* s = (DIMOUSESTATE*)data;
+            point_x += s->lX, point_y += s->lY, s->lX = s->lY = 0;
+        }
+#endif
         if (mouse ? size >= sizeof(DIMOUSESTATE) : size == 256) add_injected_state((BYTE*)data, size, mouse);
         return r;
     }
@@ -111,6 +121,17 @@ inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA*
     if (FAILED(r) || !data || !count || (flags & DIGDD_PEEK)) return r;
     bool mouse = mouse_device(device);
     if (!blocked) {
+#if !FATRAINER_VISUALS
+        DWORD left = 0;
+        bool point = mouse && pointing;
+        for (DWORD i = 0; point && i < *count; i++) {
+            auto* e = (DIDEVICEOBJECTDATA*)((BYTE*)data + i * size);
+            if (e->dwOfs == DIMOFS_X) point_x += (LONG)e->dwData;
+            else if (e->dwOfs == DIMOFS_Y) point_y += (LONG)e->dwData;
+            else memmove((BYTE*)data + left++ * size, e, size);
+        }
+        if (point) *count = left;
+#endif
         add_injected_events((BYTE*)data, size, count, capacity, mouse);
         return r;
     }

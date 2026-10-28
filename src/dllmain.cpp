@@ -89,6 +89,12 @@ static LRESULT CALLBACK hkWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     g_wndproc_at = GetTickCount();
     drain_queue();
     if (m == WM_FATRAINER) return 0;
+#if !FATRAINER_VISUALS
+    if (input::pointing && m == WM_INPUT) {
+        on_raw_input(l);
+        return DefWindowProcW(h, m, w, l);
+    }
+#endif
     if (g_open) {
         switch (m) {
             case WM_INPUT: on_raw_input(l); return DefWindowProcW(h, m, w, l);
@@ -228,34 +234,47 @@ static void poll_spit_keys() {
     }
 }
 
+static void run_cheat_key(const std::string& key) {
+    if (auto* action = menu::find_action(key)) return action->run();
+    if (auto* tweak = cheats::find_tweak(key)) {
+        auto lv = config::cfg.key_levels.find(key);
+        auto level = [&](float f) { return std::clamp(f, 1.0f, tweak->max); };
+        float v = lv == config::cfg.key_levels.end() ? cheats::toggle_max(*tweak)
+                                                      : (tweak->factor = cheats::next_level(tweak->factor, level(lv->second.first), level(lv->second.second)));
+        save_config();
+        return toast(std::string(tweak->label) + " " + cheats::tweak_text(*tweak, v));
+    }
+    auto* cheat = cheats::find(key);
+    if (!cheat) return;
+    cheat->on = !cheat->on;
+    save_config();
+    toast(std::string(cheat->label) + (cheat->on ? " on" : " off"));
+}
+
 static void poll_cheat_keys() {
     static std::map<std::string, bool> held;
     for (auto& [key, vk] : config::cfg.cheat_keys) {
         bool down = GetAsyncKeyState(vk) & 0x8000;
         bool pressed = !held[key] && down && !g_open;
         held[key] = down;
-        if (auto* action = pressed ? menu::find_action(key) : nullptr) {
-            action->run();
-            continue;
-        }
-        if (auto* tweak = pressed ? cheats::find_tweak(key) : nullptr) {
-            auto lv = config::cfg.key_levels.find(key);
-            auto level = [&](float f) { return std::clamp(f, 1.0f, tweak->max); };
-            float v = lv == config::cfg.key_levels.end() ? cheats::toggle_max(*tweak)
-                                                          : (tweak->factor = cheats::next_level(tweak->factor, level(lv->second.first), level(lv->second.second)));
-            save_config();
-            toast(std::string(tweak->label) + " " + cheats::tweak_text(*tweak, v));
-            continue;
-        }
-        auto* cheat = pressed ? cheats::find(key) : nullptr;
-        if (!cheat) continue;
-        cheat->on = !cheat->on;
-        save_config();
-        toast(std::string(cheat->label) + (cheat->on ? " on" : " off"));
+        if (pressed) run_cheat_key(key);
     }
 }
 
 #endif
+
+static void run_config_key(const std::string& id) {
+    bool visual = !id.compare(0, 7, "visual:");
+#if FATRAINER_VISUALS
+    if (!visual) return;
+    bool ok = config::press_visual_key(id), loaded = config::visual_key_id == id;
+#else
+    bool ok = cheats::press_config_key(id), loaded = config::visual_key_id == id || cheats::cheat_key_id == id;
+#endif
+    if (!ok) return toast("Config not found");
+    save_config();
+    toast(std::string(loaded ? "Loaded " : "Unloaded ") + (visual ? "visual config " : "config ") + menu::config_label(id));
+}
 
 static void poll_config_keys() {
     static std::map<std::string, bool> held;
@@ -263,22 +282,43 @@ static void poll_config_keys() {
         bool down = GetAsyncKeyState(vk) & 0x8000;
         bool pressed = !held[id] && down && !g_open;
         held[id] = down;
-        bool visual = !id.compare(0, 7, "visual:");
-#if FATRAINER_VISUALS
-        if (!pressed || !visual) continue;
-        bool ok = config::press_visual_key(id), loaded = config::visual_key_id == id;
-#else
-        if (!pressed) continue;
-        bool ok = cheats::press_config_key(id), loaded = config::visual_key_id == id || cheats::cheat_key_id == id;
-#endif
-        if (!ok) {
-            toast("Config not found");
-            continue;
-        }
-        save_config();
-        toast(std::string(loaded ? "Loaded " : "Unloaded ") + (visual ? "visual config " : "config ") + menu::config_label(id));
+        if (pressed) run_config_key(id);
     }
 }
+
+#if !FATRAINER_VISUALS
+static bool g_wheel_held = false;
+
+static void poll_wheel() {
+    static bool before = false;
+    int vk = config::cfg.wheel_key;
+    bool down = vk && (GetAsyncKeyState(vk) & 0x8000), pressed = down && !before;
+    before = down;
+    if (pressed && g_ready && !g_open && !game::chat_open()) {
+        g_wheel_held = input::pointing = true, menu::g_wheel_at = {0, 0};
+        input::point_x = input::point_y = 0, g_dx = g_dy = 0;
+    }
+    if (!g_wheel_held) return;
+    if (g_open) {
+        g_wheel_held = input::pointing = false;
+        return;
+    }
+    long dx = input::point_x.exchange(0), dy = input::point_y.exchange(0), raw_x = g_dx.exchange(0), raw_y = g_dy.exchange(0);
+    if (!dx && !dy) dx = raw_x, dy = raw_y;
+    ImVec2& at = menu::g_wheel_at;
+    at.x += dx, at.y += dy;
+    float reach = menu::S(170), length = sqrtf(at.x * at.x + at.y * at.y);
+    if (length > reach) at.x *= reach / length, at.y *= reach / length;
+    if (down) return;
+    g_wheel_held = input::pointing = false;
+    auto slots = menu::wheel_slots();
+    int pick = cheats::wheel_pick(at.x / config::cfg.scale, at.y / config::cfg.scale, (int)slots.size());
+    if (pick < 0) return;
+    const std::string& id = slots[pick].id;
+    if (id.find(':') == std::string::npos) run_cheat_key(id);
+    else run_config_key(id);
+}
+#endif
 
 static void begin_passive_frame(IDXGISwapChain* sc) {
     ImGuiIO& io = ImGui::GetIO();
@@ -392,6 +432,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     }
     poll_spit_keys();
     poll_cheat_keys();
+    poll_wheel();
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
@@ -408,7 +449,14 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     float notice = g_outdated.empty() ? 0 : update_notice_alpha();
     bool toast_only = g_ready && shown <= 0 && toast_showing();
     bool crosshair = g_ready && config::cfg.crosshair.on && visuals::game_crosshair_shown();
-    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only || crosshair || previewing)) {
+#if FATRAINER_VISUALS
+    bool wheel = false, active_list = false;
+#else
+    static const bool wheel_sample = getenv("DLT_WHEEL") != nullptr;
+    bool wheel = g_ready && (g_wheel_held || wheel_sample || menu::g_wheel_shown > 0);
+    bool active_list = g_ready && shown <= 0 && config::cfg.active_list && cheats::active_count() > 0;
+#endif
+    if (g_ready && (shown > 0 || esp || notice > 0 || toast_only || crosshair || previewing || wheel || active_list)) {
         ImGuiIO& io = ImGui::GetIO();
         io.MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -424,6 +472,8 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         if (crosshair) menu::draw_crosshair_overlay();
 #if !FATRAINER_VISUALS
         if (esp) menu::draw_esp();
+        if (active_list) menu::draw_active_list();
+        if (wheel) menu::draw_wheel(g_wheel_held || wheel_sample);
 #endif
         if (shown > 0) menu::draw(shown, g_open && !previewing);
         if (previewing) menu::draw_preview();
@@ -741,7 +791,7 @@ static void main_thread() {
     logf("texts: %s, killfeed %s", visuals::texts_api.find && visuals::tools_global ? "ready" : "not found",
          visuals::messages_api.post && visuals::messages_api.game_global ? "ready" : "not found");
     logf("input blocking: %d directinput vtables", input::install(engine));
-    if (getenv("DLT_OPEN")) g_open = true;
+    if (getenv("DLT_OPEN") && !getenv("DLT_WHEEL") && !getenv("DLT_ACTIVE")) g_open = true;
     std::thread([] {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
         const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;

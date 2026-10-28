@@ -72,6 +72,8 @@ enum MenuFont { FONT_DEFAULT, FONT_WIDE, FONT_MONO, MENU_FONTS };
 enum CardStyle { CARD_FILLED, CARD_OUTLINED, CARD_FLAT };
 enum OpenAt { OPEN_CENTER, OPEN_REMEMBER, OPEN_LEFT, OPEN_RIGHT };
 enum MenuStyle { STYLE_CLASSIC, STYLE_RAIL, STYLE_TABS, STYLE_DOCK };
+enum Corner { CORNER_TOP_LEFT, CORNER_TOP_RIGHT, CORNER_BOTTOM_LEFT, CORNER_BOTTOM_RIGHT };
+const size_t WHEEL_PINS = 8;
 const float TEXT_SIZE_MIN = 0.8f, TEXT_SIZE_MAX = 1.3f, SIDEBAR_MIN = 190, SIDEBAR_MAX = 320;
 
 struct Look {
@@ -107,6 +109,12 @@ struct Config {
     std::map<std::string, int> cheat_keys;
     std::map<std::string, std::pair<float, float>> key_levels;
     std::map<std::string, int> config_keys;
+#if !FATRAINER_VISUALS
+    int wheel_key = 0;
+    std::vector<std::string> wheel_pins;
+    bool active_list = false;
+    int active_corner = CORNER_TOP_LEFT;
+#endif
     Esp esp;
     UvLight uv, hunter_glow;
     HudColor hud_tint;
@@ -516,6 +524,9 @@ inline void load(const std::string& path) {
     cfg.cheat_keys.clear();
     cfg.key_levels.clear();
     cfg.config_keys.clear();
+#if !FATRAINER_VISUALS
+    cfg.wheel_pins.clear();
+#endif
     cfg.hud_parts.clear();
     cfg.survivor_glow.clear();
     cfg.btz_colors.clear();
@@ -565,6 +576,18 @@ inline void load(const std::string& path) {
             int vk = c == std::string::npos ? 0 : atoi(v.c_str() + c + 1);
             if (vk > 0 && vk < 256 && c > 0) cfg.config_keys[v.substr(0, c)] = vk;
         }
+#if !FATRAINER_VISUALS
+        else if (k == "wheel_key") {
+            int vk = atoi(v.c_str());
+            if (vk > 0 && vk < 256) cfg.wheel_key = vk;
+        }
+        else if (k == "wheel_pin") {
+            auto& pins = cfg.wheel_pins;
+            if (!v.empty() && pins.size() < WHEEL_PINS && std::find(pins.begin(), pins.end(), v) == pins.end()) pins.push_back(v);
+        }
+        else if (k == "active_list") cfg.active_list = v == "1";
+        else if (k == "active_corner") cfg.active_corner = std::clamp(atoi(v.c_str()), (int)CORNER_TOP_LEFT, (int)CORNER_BOTTOM_RIGHT);
+#endif
         else if (k == "look") {
             float opacity, roundness;
             int motion, skyline, glow;
@@ -657,6 +680,11 @@ inline bool save(const std::string& path) {
     for (auto& [cheat, vk] : cfg.cheat_keys) fprintf(f, "cheat_key=%s,%d\n", cheat.c_str(), vk);
     for (auto& [key, lv] : cfg.key_levels) fprintf(f, "key_levels=%s,%.2f,%.2f\n", key.c_str(), lv.first, lv.second);
     for (auto& [id, vk] : cfg.config_keys) fprintf(f, "config_key=%s,%d\n", id.c_str(), vk);
+#if !FATRAINER_VISUALS
+    if (cfg.wheel_key) fprintf(f, "wheel_key=%d\n", cfg.wheel_key);
+    for (auto& id : cfg.wheel_pins) fprintf(f, "wheel_pin=%s\n", id.c_str());
+    fprintf(f, "active_list=%d\nactive_corner=%d\n", (int)cfg.active_list, cfg.active_corner);
+#endif
     fputs(visual_lines().c_str(), f);
     if (auto accent = cfg.rainbow.find("accent"); accent != cfg.rainbow.end()) fprintf(f, "rainbow=accent,%.1f\n", accent->second);
     for (auto& [key, text] : cfg.texts) fprintf(f, "text=%s,%s\n", key.c_str(), escape_text(text).c_str());

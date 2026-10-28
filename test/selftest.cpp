@@ -2365,6 +2365,36 @@ int main(int argc, char** argv) {
     }
 
     {
+        CHECK(cheats::wheel_pick(0, -100, 8) == 0 && cheats::wheel_pick(100, 0, 8) == 2 && cheats::wheel_pick(0, 100, 8) == 4 && cheats::wheel_pick(5, 5, 8) == -1 && cheats::wheel_pick(0, -100, 0) == -1);
+        CHECK(cheats::wheel_pick(-100, 0, 8) == 6 && cheats::wheel_pick(-10, -100, 8) == 0 && cheats::wheel_pick(100, 0, 3) == 1 && cheats::wheel_pick(0, 41, 2) == 1);
+        CHECK(game::g.vt_chat_input && game::g.vt_chat_input - game::g.base == 0x14dfba8);
+        cheats::all_off();
+        cheats::find("god")->on = true, cheats::find_tweak("speed")->factor = 2.2f;
+        CHECK((cheats::active_lines() == std::vector<std::string>{"God mode", "Movement speed x2.2"}));
+        cheats::all_off();
+        CHECK(cheats::active_lines().empty());
+
+        auto kept = config::cfg;
+        config::cfg = config::Config();
+        CHECK(!config::cfg.wheel_key && config::cfg.wheel_pins.empty() && !config::cfg.active_list && config::cfg.active_corner == config::CORNER_TOP_LEFT);
+        config::cfg.wheel_key = 0x47, config::cfg.active_list = true, config::cfg.active_corner = config::CORNER_BOTTOM_RIGHT;
+        config::cfg.wheel_pins = {"god", "speed", "cheat:survivor_rage", "visual:Clean HUD"};
+        std::string ini = config::profile_dir() + "_wheel.ini";
+        CHECK(config::save(ini));
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(config::cfg.wheel_key == 0x47 && config::cfg.active_list && config::cfg.active_corner == config::CORNER_BOTTOM_RIGHT);
+        CHECK((config::cfg.wheel_pins == std::vector<std::string>{"god", "speed", "cheat:survivor_rage", "visual:Clean HUD"}));
+        std::ofstream(ini) << "wheel_pin=a\nwheel_pin=a\nwheel_pin=\nwheel_pin=b\nwheel_pin=c\nwheel_pin=d\nwheel_pin=e\nwheel_pin=f\nwheel_pin=g\nwheel_pin=h\nwheel_pin=i\n"
+                              "active_corner=9\nwheel_key=999\n";
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK((config::cfg.wheel_pins == std::vector<std::string>{"a", "b", "c", "d", "e", "f", "g", "h"} && config::cfg.active_corner == config::CORNER_BOTTOM_RIGHT && !config::cfg.wheel_key));
+        DeleteFileA(ini.c_str());
+        config::cfg = kept;
+    }
+
+    {
         auto kept = config::cfg;
         const config::Config fresh;
         const auto& stock = fresh.look;
