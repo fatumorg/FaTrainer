@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0 b1
+
+Lobby Update
+
+- 3.0 b1 comes after 2.5.1 b1, and everything from 2.5.1 b1 is part of 3.0: upgrade slots that take blueprints and any other item, and Be The Zombie colors.
+- New: the sidebar groups the pages into Cheats, Be The Zombie, Modes, Look, Items and Menu. The PvP page is split into Survivor and Night Hunter under Be The Zombie: each has its side's cheats, reach sliders and rank, and the spit keys are on the Night Hunter page. Your sidebar order carries over.
+- New: Teleport page. Go to waypoint takes you to the marker you placed on the map, and Go to objective to the quest you track; under each button you see how far away it is and in which direction. Save here keeps where you stand under a name, and every map has its own list of saved positions to go back to, rename or delete. The Keybinds page has keys for Go to waypoint, Go to objective, Save position and Go to last saved position.
+- Changed: the Go to saved position key is Go to last saved position. It takes you to the newest position saved on the map you are on, and your key carries over.
+- New: DLC Modes page with Pause prison timers and Kill all enemies nearby for Harran Prison. It shows when you are in Harran Prison.
+- Removed: Find sections, the teleports to every prison section and the route recorder from the Prison page.
+- New: Configs page with two tabs, Cheat configs and Visual configs. A visual config keeps your Player ESP, colors, glow, HUD, crosshair, field of view and screen settings: create, load, save over, rename and delete them. Loading a visual config leaves your cheats alone, and loading one of your own cheat configs leaves your visuals alone.
+- Fixed: New config saved over a config whose name differed only in upper and lower case. That name is refused now, like any name that is taken.
+- New: My levels for slider keys on the Keybinds page. Pick To Max or My levels next to a slider's key; with My levels one press sets your On level and the next press your Off level.
+- New: keys for configs on the Keybinds page. One press loads a cheat config or visual config, the next press puts back what you had, and a message at the bottom of the screen says which. A key whose config was deleted or renamed only says Config not found.
+- Visual configs and their keys are in the Visuals Version too, with the Configs page and a Keybinds page for the menu key and visual config keys.
+- Changed: the menu texts are shorter and only say what each control does.
+- New: Show beta builds on the Changelog tab of the FaTrainer launcher 3.0. Unticked, the changelog lists only the final versions, and each final from 2.2 to 2.5 lists everything new and every fix from its beta builds.
+- This is a beta build. Teleport, the DLC Modes page and the config keys have not been tried in the game yet: if one of them goes wrong, send the log (fatrainer.log).
+
 ## 2.5.1 b1
 
 Night Colors Update
@@ -36,7 +55,7 @@ Survivor Update
 - New: Field of view on the Visuals page, live. Sprinting and aiming still zoom like before.
 - New: Unlock every resolution (Visuals, Screen). The game's video settings list every common resolution, also sizes your monitor does not report, from the next start.
 - New: Melee speed on the Combat page: how fast you swing every melee weapon, two-handed ones too, up to x5. Heavy and charged attacks and the rest after every attack are shortened by the same speed; climbing, the grappling hook and picking up items keep their speed. Works in every mode.
-- Changed: the survivor Melee slider is Melee reach. It changes the reach the game uses for every swing (targets and hit lines), for every weapon, instead of widening how far the game looks for a melee target, which turned your swings toward targets far away. Only your own swings are changed.
+- Changed: the survivor Melee slider is Melee reach. It changes the reach the game uses for every swing (targets and hit lines), for every weapon. Only your own swings are changed.
 - New: Dropkick angle and Dropkick height sliders on the PvP page. At Max of the angle the hunter can be behind you; the height lets you kick a hunter below you, like when you jump at him after his tackle missed. Dropkick is now Dropkick range and only changes the range.
 - New: Throwable recharge on the PvP page: UV flares, injectors, grenades, molotovs, throwing stars and mines come back faster in Be The Zombie, at Max right away.
 - New: UV flare throw speed (Combat). Throws the UV flare up to x5 faster, both of the game's UV flare items; other throwables are not changed.

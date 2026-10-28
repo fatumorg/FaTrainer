@@ -14,18 +14,38 @@
 
 ### Features
 
+#### Cheats
+
 - **Player**: god mode, infinite stamina, take less damage, draggable health and stamina bars, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier for every skill tree (the game shows the boosted XP), draggable XP bars, +1 point through real XP, -10, -1, +10 and Max for any skill tree, extra skill points without changing the level
-- **Prison**: pause the Harran Prison timers, teleport to every section, save and load your position
-- **Night Hunter**: hunter god mode, infinite energy, take less damage, less UV damage, sure-hit ground pound, no ability cooldowns, infinite spits, spit keys, long camouflage
-- **PvP**: configs (four built-in ones: Survivor Legit, Survivor Rage, Night Hunter Legit, Night Hunter Rage, plus your own) and one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius, death from above, dropkick, kicks, melee). At Max the pounce, dropkick and death from above also hit targets that are not in front of you. As a survivor, Dodge spit steps you aside from spit that would hit you, with a human reaction time, and One hit kill on the Night Hunter drops him to 1 health
-- **Visuals**: player ESP for Be The Zombie and co-op, custom UV light color and glow, custom Night Hunter glow color
+- **Teleport**: go to your map marker or the objective of the quest you track, with how far away it is and in which direction; saved positions for every map, with go, rename and delete
+
+#### Be The Zombie
+
+- **Survivor**: Dodge spit steps you aside from spit that would hit you, with a human reaction time; One hit kill on the Night Hunter drops him to 1 health in your game (not in a real match); one reach slider per attack (death from above range, pull and height, dropkick range, angle and height, other kicks and ground pound, melee), throwable recharge and your survivor rank. At Max the dropkick and death from above also hit targets that are not in front of you
+- **Night Hunter**: hunter god mode, infinite energy, take less damage, less UV damage, sure-hit ground pound, no ability cooldowns, infinite spits, long camouflage, one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius), spit keys and your hunter rank
+
+#### Modes
+
+- **DLC Modes**: pause the Harran Prison timers and kill all enemies nearby in Harran Prison
+
+#### Look
+
+- **Visuals**: player ESP for Be The Zombie and co-op, custom UV light color and glow, custom Night Hunter glow color, HUD colors, your own crosshair, survivor glow, Be The Zombie colors, field of view
+- **Texts**: replace any text the game shows, game language, voices and subtitles, Be The Zombie callouts
+
+#### Items
+
 - **Cash / Backpack / Stash / Materials**: set your money and any stack count
 - **Give items**: spawn any weapon, upgrade, consumable, material or blueprint; each item goes into the inventory the game accepts it in
 - **Weapon editor**: damage, durability, crits, knockback, stamina, reach, magazine, reload time, repairs, rarity, four upgrade slots with any upgrade, any mod on any weapon, mod effects with levels, upgrade slots per weapon type; crossbows, shields and every other weapon too
+
+#### Menu
+
 - **Configs**: cheat configs (four built-in ones plus your own) and visual configs that keep your Player ESP, colors, glow, HUD, crosshair, field of view and screen settings; create, load, save over, rename and delete
-- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Nexus Version
+- **Keybinds**: the menu key and a key for every cheat, slider, action and config. A slider key sets Max or your own On and Off levels; a config key loads the config and puts back what you had on the next press
+- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility, all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Visuals Version
 
 ### Install
 
