@@ -2,6 +2,7 @@
 
 ## 3.0
 
+- Fixed: on Linux, an app menu shortcut added by an older launcher kept the old orange icon. The launcher puts the current icon there when it starts.
 - New: Show beta builds on the Changelog tab. Unticked, the changelog lists only the final versions, and each final lists everything new and every fix from its beta builds. Tick it to see every beta build too. The launcher remembers your choice.
 
 ## 2.5
