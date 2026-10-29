@@ -58,8 +58,10 @@ static int __fastcall fake_remove_stack(uintptr_t inv, uintptr_t item, int, int)
     return count;
 }
 
+static const uintptr_t FAKE_UI_VTABLE[4] = {};
+const uintptr_t FAKE_VT = (uintptr_t)FAKE_UI_VTABLE;
 struct FakeElement {
-    uintptr_t vt = 1;
+    uintptr_t vt = FAKE_VT;
     const char* id;
     int kind;
     uintptr_t engine = 0;
@@ -74,7 +76,7 @@ static int __fastcall fake_children_count(uintptr_t e) { return (int)as_element(
 static uintptr_t __fastcall fake_child(uintptr_t e, int i) { return (uintptr_t)as_element(e)->children[i]; }
 static float* __fastcall fake_get_color(uintptr_t e, float* out) { memcpy(out, as_element(e)->color, 12); return out; }
 static void __fastcall fake_set_color(uintptr_t e, const float* rgb) {
-    if (as_element(e)->vt != 1) dead_writes++;
+    if (as_element(e)->vt != FAKE_VT) dead_writes++;
     memcpy(as_element(e)->color, rgb, 12);
 }
 static void __fastcall fake_set_text_color(uintptr_t e, const float* rgba) {
@@ -1766,14 +1768,14 @@ int main(int argc, char** argv) {
         CHECK(!visuals::track_element(visuals::part_named("HudZombieHiveCounter"), "I_Progress") && !visuals::track_element(visuals::part_named("HudStamina"), "I_Hive"));
     }
     {
-        FakeElement health_bar{1, "I_HealthBar", visuals::UI_VIEW}, stamina_bar{1, "I_StaminaBar", visuals::UI_VIEW}, label{1, "T_Level", visuals::UI_TEXT};
+        FakeElement health_bar{FAKE_VT, "I_HealthBar", visuals::UI_VIEW}, stamina_bar{FAKE_VT, "I_StaminaBar", visuals::UI_VIEW}, label{FAKE_VT, "T_Level", visuals::UI_TEXT};
         stamina_bar.color[0] = stamina_bar.original[0] = 0.75f;
-        FakeElement stamina_bg{1, "StaminaBarBg", visuals::UI_VIEW};
+        FakeElement stamina_bg{FAKE_VT, "StaminaBarBg", visuals::UI_VIEW};
         for (int c = 0; c < 3; c++) stamina_bg.color[c] = stamina_bg.original[c] = 0.15f;
         label.alpha = 0.3f;
-        FakeElement health{1, "health_wrap", visuals::UI_NONE}, stamina{1, "HudStamina", visuals::UI_NONE}, root{1, "HUD_DI", visuals::UI_NONE};
-        FakeElement radar{1, "HudRadar", visuals::UI_NONE}, radar_icon{1, "I_Icon", visuals::UI_VIEW};
-        FakeElement nests{1, "HudZombieHiveCounter", visuals::UI_NONE}, hive{1, "I_Hive", visuals::UI_VIEW}, fill{1, "I_Progress", visuals::UI_VIEW};
+        FakeElement health{FAKE_VT, "health_wrap", visuals::UI_NONE}, stamina{FAKE_VT, "HudStamina", visuals::UI_NONE}, root{FAKE_VT, "HUD_DI", visuals::UI_NONE};
+        FakeElement radar{FAKE_VT, "HudRadar", visuals::UI_NONE}, radar_icon{FAKE_VT, "I_Icon", visuals::UI_VIEW};
+        FakeElement nests{FAKE_VT, "HudZombieHiveCounter", visuals::UI_NONE}, hive{FAKE_VT, "I_Hive", visuals::UI_VIEW}, fill{FAKE_VT, "I_Progress", visuals::UI_VIEW};
         for (int c = 0; c < 3; c++) hive.color[c] = hive.original[c] = 0.84f;
         fill.color[0] = fill.original[0] = 0.84f, fill.color[1] = fill.original[1] = 0.17f, fill.color[2] = fill.original[2] = 0.26f;
         nests.children = {&hive, &fill};
@@ -1839,7 +1841,7 @@ int main(int argc, char** argv) {
         CHECK(health_bar.color[0] == 1.0f && stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
         visuals::apply_hud();
         CHECK(stamina_bar.color[0] == 0.9f && stamina_bar.color[1] == 0.2f);
-        FakeElement late_icon{1, "I_Late", visuals::UI_VIEW};
+        FakeElement late_icon{FAKE_VT, "I_Late", visuals::UI_VIEW};
         radar.children.push_back(&late_icon);
         visuals::walk_hud((uintptr_t)&root, -1, 0);
         CHECK(visuals::hud_elements() == 8);
@@ -1861,6 +1863,9 @@ int main(int argc, char** argv) {
         visuals::opacity_original = fake_engine_opacity;
         radar.engine = (uintptr_t)&radar;
         CHECK(offsetof(FakeElement, engine) == visuals::UI_ENGINE_OBJECT);
+        FakeElement freed_engine{0xfffffffffffffb6full, "freed", visuals::UI_NONE}, freed{FAKE_VT, "HudRadar", visuals::UI_NONE};
+        freed.engine = (uintptr_t)&freed_engine;
+        CHECK(visuals::ui_alive((uintptr_t)&radar) && !visuals::ui_alive((uintptr_t)&freed));
         config::cfg.hud_parts["radar"].hidden = true;
         visuals::apply_hud();
         CHECK(radar.opacity == 0 && radar_icon.opacity == 1);

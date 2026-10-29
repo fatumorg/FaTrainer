@@ -408,9 +408,15 @@ inline int part_named(const std::string& name) {
 
 inline bool node_alive(const HudNode& n) { return !n.dead && ui.vtable_of(n.element) == n.vtable && (!n.engine || rdv<uintptr_t>(n.engine) == n.engine_vtable); }
 
+inline bool in_image_memory(uintptr_t p) {
+    MEMORY_BASIC_INFORMATION m;
+    return p && VirtualQuery((const void*)p, &m, sizeof m) && m.Type == MEM_IMAGE;
+}
+
+// A freed element keeps a pointer to a freed engine object, whose vtable is garbage: GetChildrenCount would call through it.
 inline bool ui_alive(uintptr_t element) {
     uintptr_t engine = element ? rdv<uintptr_t>(element + UI_ENGINE_OBJECT) : 0;
-    return element && ui.vtable_of(element) && (!engine || rdv<uintptr_t>(engine));
+    return element && in_image_memory(ui.vtable_of(element)) && (!engine || in_image_memory(rdv<uintptr_t>(engine)));
 }
 
 inline bool track_element(int part, const std::string& id) { return part >= 0 && part == part_named("HudZombieHiveCounter") && id == "I_Hive"; }
