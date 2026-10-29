@@ -1543,7 +1543,9 @@ int main(int argc, char** argv) {
         CHECK(classes[ST_AmmoCount].size() == 2 && classes[ST_AmmoCount][(uintptr_t)firearm_vt].off == 0x160 && classes[ST_AmmoCount][(uintptr_t)throwable_vt].off == 0x200);
         auto saved_global = game::g.stats[ST_AmmoCount];
         auto saved_classes = game::g.class_stats[ST_AmmoCount];
+        auto saved_vts = game::g.desc_vts;
         game::g.stats[ST_AmmoCount] = global[ST_AmmoCount], game::g.class_stats[ST_AmmoCount] = classes[ST_AmmoCount];
+        game::g.desc_vts.insert({firearm_vt, throwable_vt});
         uintptr_t gun = 0;
         for (auto& [d, info] : mixed) gun = !gun && game::rdv<uintptr_t>(d) == (uintptr_t)firearm_vt ? d : gun;
         CHECK(game::has_stat(ST_AmmoCount) && game::write_stat(gun, ST_AmmoCount, 999) && game::rdv<int>(gun + 0x160) == 999 && game::get_stat(gun, ST_AmmoCount) == 999);
@@ -1551,7 +1553,19 @@ int main(int argc, char** argv) {
         w.put<uintptr_t>(freed, 0x3d4ccccd);
         CHECK(!game::desc_alive(freed) && !game::write_stat(freed, ST_AmmoCount, 999) && game::rdv<int>(freed + 0x160) == 0);
         CHECK(game::desc_alive(gun));
-        game::g.stats[ST_AmmoCount] = saved_global, game::g.class_stats[ST_AmmoCount] = saved_classes;
+        w.put<uintptr_t>(freed, game::g.vt_player);
+        w.put<uintptr_t>(freed + 0x18, (uintptr_t)ITEMS[0].id);
+        CHECK(game::in_image(game::g.vt_player) && !game::desc_alive(freed) && !game::write_stat(freed, ST_AmmoCount, 999));
+        auto saved_descs = game::g.descs;
+        auto saved_overrides = game::g.stat_overrides;
+        game::g.descs = {{"A", gun}, {"B", freed}};
+        game::g.stat_overrides = {{{gun, ST_AmmoCount}, 5.0f}, {{freed, ST_AmmoCount}, 6.0f}};
+        game::forget_moved_descs({{"A", gun}});
+        CHECK(game::g.stat_overrides.size() == 1 && game::g.stat_overrides.count({gun, ST_AmmoCount}));
+        game::forget_moved_descs({{"C", gun}});
+        CHECK(game::g.stat_overrides.empty());
+        game::g.descs = saved_descs, game::g.stat_overrides = saved_overrides;
+        game::g.stats[ST_AmmoCount] = saved_global, game::g.class_stats[ST_AmmoCount] = saved_classes, game::g.desc_vts = saved_vts;
     }
 
     {

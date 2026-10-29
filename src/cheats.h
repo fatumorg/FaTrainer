@@ -2656,10 +2656,10 @@ inline void tick() {
     block_forced_damage(is_on("god"));
     apply_spit_radius(playing_hunter() ? std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max) : 1.0f);
     objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
-    apply_weapon_edits();
-    game::reapply_stats();
     player = find_player();
     if (alive(player)) {
+        apply_weapon_edits();
+        game::reapply_stats();
         keep_stacks(is_on("ammo"), is_on("supplies"));
         keep_durability(is_on("durability"));
         if (is_on("no_reload") && rdv<uintptr_t>(player) == g.vt_player) fill_magazines(player);

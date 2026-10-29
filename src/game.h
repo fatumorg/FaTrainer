@@ -358,6 +358,7 @@ struct State {
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
     std::vector<Inventory> invs;
     std::map<std::string, uintptr_t> descs;
+    std::set<uintptr_t> desc_vts;
     StatField stats[ST_COUNT];
     std::map<uintptr_t, StatField> class_stats[ST_COUNT];
     int desc_name = 0x18;
@@ -384,8 +385,9 @@ inline bool in_image(uintptr_t p) {
     return p >= base && p < end;
 }
 
+// Only descriptor classes seen in the item manager: a freed descriptor reused by another object would take writes past its end.
 inline bool desc_alive(uintptr_t desc) {
-    return desc && in_image(rdv<uintptr_t>(desc)) && str_at(rdv<uintptr_t>(desc + g.desc_name));
+    return desc && g.desc_vts.count(rdv<uintptr_t>(desc)) && str_at(rdv<uintptr_t>(desc + g.desc_name));
 }
 
 inline bool firearm_desc(uintptr_t desc) { return desc && g.vt_firearm_desc && rdv<uintptr_t>(desc) == g.vt_firearm_desc; }
@@ -570,6 +572,20 @@ inline void restore_mod(uintptr_t blueprint) {
 inline void reapply_stats() {
     for (auto& [key, v] : g.stat_overrides)
         if (get_stat(key.first, key.second) != v) write_stat(key.first, key.second, v);
+}
+
+// Level loads free and reallocate descriptors. Forget edits on any that moved or now hold another item.
+inline void forget_moved_descs(const std::map<std::string, uintptr_t>& fresh) {
+    std::map<uintptr_t, std::string> was, now;
+    for (auto& [id, d] : g.descs) was[d] = id;
+    for (auto& [id, d] : fresh) now[d] = id;
+    auto kept = [&](uintptr_t d) {
+        auto n = now.find(d), w = was.find(d);
+        return n != now.end() && (w == was.end() || w->second == n->second);
+    };
+    for (auto it = g.stat_overrides.begin(); it != g.stat_overrides.end();) it = kept(it->first.first) ? std::next(it) : g.stat_overrides.erase(it);
+    for (auto it = slot_originals.begin(); it != slot_originals.end();) it = kept(it->first) ? std::next(it) : slot_originals.erase(it);
+    for (auto it = mod_originals.begin(); it != mod_originals.end();) it = kept(it->first) ? std::next(it) : mod_originals.erase(it);
 }
 
 inline void calibrate_stats(const std::vector<std::pair<uintptr_t, const ItemInfo*>>& descs, StatField out[ST_COUNT]) {
@@ -765,6 +781,9 @@ inline void refresh() {
             }
         }
     }
+    std::set<uintptr_t> desc_vts;
+    for (auto& [d, info] : desc_list)
+        if (uintptr_t vt = rdv<uintptr_t>(d); in_image(vt)) desc_vts.insert(vt);
     StatField stats[ST_COUNT];
     calibrate_stats(desc_list, stats);
     auto class_stats = calibrate_classes(desc_list, stats);
@@ -788,7 +807,9 @@ inline void refresh() {
 #endif
     g.wallets = wallets;
     g.invs = std::move(invs);
+    forget_moved_descs(descs);
     g.descs = std::move(descs);
+    g.desc_vts = std::move(desc_vts);
     for (int s = 0; s < ST_COUNT; s++) g.stats[s] = stats[s], g.class_stats[s] = std::move(class_stats[s]);
     g.desc_name = name_off;
     g.rule = rule;
