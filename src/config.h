@@ -90,7 +90,8 @@ struct Look {
 };
 
 struct Config {
-    float accent[3] = {0.910f, 0.592f, 0.227f};
+    float accent[3] = {0.392f, 0.784f, 0.392f};
+    float background[3] = {0.027f, 0.027f, 0.031f};
     float dim = 0.6f;
     float scale = 1.0f;
     float window[2] = {};
@@ -495,6 +496,15 @@ inline bool delete_visual_config(const std::string& name) {
     return !path.empty() && DeleteFileA(path.c_str());
 }
 
+const float BACKGROUND_MAX = 0.3f;
+// Menu background: no channel above BACKGROUND_MAX, so the light text stays readable.
+inline void keep_dark(float rgb[3]) {
+    float top = 0;
+    for (int i = 0; i < 3; i++) rgb[i] = std::isfinite(rgb[i]) ? std::clamp(rgb[i], 0.0f, 1.0f) : 0, top = std::max(top, rgb[i]);
+    if (top > BACKGROUND_MAX)
+        for (int i = 0; i < 3; i++) rgb[i] *= BACKGROUND_MAX / top;
+}
+
 inline float* color_of(const std::string& key) {
     if (key == "accent") return cfg.accent;
     if (key == "esp_hunter") return cfg.esp.hunter;
@@ -545,6 +555,10 @@ inline void load(const std::string& path) {
         std::string k = s.substr(0, eq), v = s.substr(eq + 1);
         if (read_visual_line(k, v)) continue;
         if (k == "accent") sscanf(v.c_str(), "%f,%f,%f", &cfg.accent[0], &cfg.accent[1], &cfg.accent[2]);
+        else if (k == "background") {
+            float b[3];
+            if (sscanf(v.c_str(), "%f,%f,%f", &b[0], &b[1], &b[2]) == 3) memcpy(cfg.background, b, sizeof b), keep_dark(cfg.background);
+        }
         else if (k == "dim") read_float(v.c_str(), cfg.dim);
         else if (k == "scale") read_float(v.c_str(), cfg.scale);
         else if (k == "window") sscanf(v.c_str(), "%f,%f", &cfg.window[0], &cfg.window[1]);
@@ -665,6 +679,7 @@ inline bool save(const std::string& path) {
     FILE* f = fopen(path.c_str(), "w");
     if (!f) return false;
     fprintf(f, "accent=%.3f,%.3f,%.3f\n", cfg.accent[0], cfg.accent[1], cfg.accent[2]);
+    fprintf(f, "background=%.3f,%.3f,%.3f\n", cfg.background[0], cfg.background[1], cfg.background[2]);
     fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\nallow_older=%d\nbeta=%d\n", cfg.dim, cfg.scale, cfg.menu_key,
             (int)cfg.remember_cheats, (int)cfg.allow_older, (int)cfg.beta);
     fprintf(f, "cheat_engine=%d\n", (int)cfg.cheat_engine);

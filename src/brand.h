@@ -30,7 +30,7 @@ namespace brand {
 
 const ImU32 GROUND = IM_COL32(17, 17, 19, 255), RAISED = IM_COL32(24, 24, 27, 255), LINE = IM_COL32(42, 42, 46, 255),
             LINE_SOFT = IM_COL32(30, 30, 34, 255), TEXT = IM_COL32(236, 230, 218, 255), SOFT = IM_COL32(185, 178, 165, 255),
-            MUTED = IM_COL32(132, 125, 114, 255), ACCENT = IM_COL32(232, 151, 58, 255), ACCENT_INK = IM_COL32(27, 17, 5, 255),
+            MUTED = IM_COL32(132, 125, 114, 255), ACCENT = IM_COL32(100, 200, 100, 255), ACCENT_INK = IM_COL32(8, 24, 8, 255),
             GOOD = IM_COL32(126, 201, 140, 255), BAD = IM_COL32(236, 112, 96, 255);
 const float PI = 3.14159265f;
 
@@ -168,6 +168,8 @@ inline void draw_city(ImDrawList* dl, ImVec2 a, ImVec2 b, ImVec2 light, ImVec2 p
         float f = 1 - sqrtf((light.x - cx) * (light.x - cx) + (light.y - cy) * (light.y - cy)) / radius;
         return f > 0 ? f * f : 0.0f;
     };
+    ImU32 window_dim = (mix(IM_COL32(0, 0, 0, 255), look.accent, 0.72f) & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 150);
+    ImU32 window_lit = mix(look.accent, IM_COL32(255, 255, 255, 255), 0.6f);
     auto layer = [&](const std::vector<Building>& buildings, ImU32 wall, ImU32 wall_lit, float shift, float delay) {
         for (const Building& bd : buildings) {
             float x0 = ox + bd.x * k + shift, x1 = x0 + bd.w * k;
@@ -191,13 +193,14 @@ inline void draw_city(ImDrawList* dl, ImVec2 a, ImVec2 b, ImVec2 light, ImVec2 p
                 float wx = x0 + w.x * k, wy = y1 - (w.y + 10) * k * rise;
                 if (wy < y0) continue;
                 float wl = light_on(wx, wy, wx + 6 * k, wy + 9 * k);
-                ImU32 window = mix(IM_COL32(168, 104, 42, 150), IM_COL32(255, 216, 160, 255), wl * 1.6f);
+                ImU32 window = mix(window_dim, window_lit, wl * 1.6f);
                 dl->AddRectFilled({wx, wy}, {wx + std::max(2.0f, 6 * k), wy + std::max(3.0f, 9 * k)}, C(window, show));
             }
         }
     };
     if (look.glow > 0) soft_glow(dl, light, radius * 1.5f, look.accent, look.glow, look.glow_rings);
-    layer(city().back, IM_COL32(31, 31, 38, 255), IM_COL32(76, 63, 50, 255), parallax.x * 0.4f, 0);
+    ImU32 back = IM_COL32(31, 31, 38, 255), front = IM_COL32(13, 13, 16, 255);
+    layer(city().back, back, mix(back, look.accent, 0.22f), parallax.x * 0.4f, 0);
     float crane_rise = ease_expo((rise_t - 0.55f) / 0.8f);
     if (crane_rise > 0) {
         float cx = ox + city().crane_x * k + parallax.x * 0.4f, top = b.y - city().crane_h * k * crane_rise;
@@ -209,7 +212,7 @@ inline void draw_city(ImDrawList* dl, ImVec2 a, ImVec2 b, ImVec2 light, ImVec2 p
         float blink = fmodf(t, 2.4f) < 0.5f ? 1.0f : 0.25f;
         dl->AddCircleFilled({cx + 150 * k, top + 8 * k}, std::max(1.5f, 2.5f * k), C(IM_COL32(230, 70, 50, 255), blink * crane_rise));
     }
-    layer(city().front, IM_COL32(13, 13, 16, 255), IM_COL32(56, 46, 36, 255), parallax.x, 0.18f);
+    layer(city().front, front, mix(front, look.accent, 0.2f), parallax.x, 0.18f);
     float fog = (b.y - a.y) * look.fog;
     dl->AddRectFilledMultiColor({a.x, b.y - fog}, b, C(look.ground, 0), C(look.ground, 0), C(look.ground, 0.92f), C(look.ground, 0.92f));
 }

@@ -73,7 +73,7 @@ inline bool button(const char* id, const std::string& text, ImVec2 size, Kind ki
             ink = progress > 0.55f ? ACCENT_INK : TEXT;
         } else {
             for (int i = 1; i <= 4; i++) dl->AddRect({a.x - i * S(2), a.y - i * S(2)}, {b.x + i * S(2), b.y + i * S(2)}, C(ACCENT, h * 0.09f / i), r + i * S(2), 0, S(2));
-            ImU32 fill = mix(mix(IM_COL32(70, 62, 52, 255), ACCENT, e), IM_COL32(246, 181, 104, 255), h * 0.6f);
+            ImU32 fill = mix(mix(IM_COL32(70, 62, 52, 255), ACCENT, e), mix(ACCENT, IM_COL32(255, 255, 255, 255), 0.3f), h * 0.6f);
             dl->AddRectFilled(a, b, C(fill), r);
             ink = mix(MUTED, ACCENT_INK, e);
         }
@@ -556,16 +556,16 @@ inline void init(float dpi_scale) {
     s.Colors[ImGuiCol_WindowBg] = s.Colors[ImGuiCol_ChildBg] = {0, 0, 0, 0};
     s.Colors[ImGuiCol_FrameBg] = ImGui::ColorConvertU32ToFloat4(RAISED);
     s.Colors[ImGuiCol_FrameBgHovered] = s.Colors[ImGuiCol_FrameBgActive] = ImGui::ColorConvertU32ToFloat4(IM_COL32(30, 30, 34, 255));
-    s.Colors[ImGuiCol_TextSelectedBg] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 90));
+    s.Colors[ImGuiCol_TextSelectedBg] = ImGui::ColorConvertU32ToFloat4((ACCENT & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 90));
     s.Colors[ImGuiCol_ScrollbarBg] = {0, 0, 0, 0};
     s.Colors[ImGuiCol_ScrollbarGrab] = ImGui::ColorConvertU32ToFloat4(LINE);
     s.Colors[ImGuiCol_ScrollbarGrabHovered] = s.Colors[ImGuiCol_ScrollbarGrabActive] = ImGui::ColorConvertU32ToFloat4(MUTED);
     s.Colors[ImGuiCol_NavHighlight] = ImGui::ColorConvertU32ToFloat4(ACCENT);
     s.Colors[ImGuiCol_PopupBg] = ImGui::ColorConvertU32ToFloat4(IM_COL32(24, 24, 28, 255));
     s.Colors[ImGuiCol_Border] = ImGui::ColorConvertU32ToFloat4(LINE);
-    s.Colors[ImGuiCol_Header] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 60));
-    s.Colors[ImGuiCol_HeaderHovered] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 40));
-    s.Colors[ImGuiCol_HeaderActive] = ImGui::ColorConvertU32ToFloat4(IM_COL32(232, 151, 58, 80));
+    s.Colors[ImGuiCol_Header] = ImGui::ColorConvertU32ToFloat4((ACCENT & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 60));
+    s.Colors[ImGuiCol_HeaderHovered] = ImGui::ColorConvertU32ToFloat4((ACCENT & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 40));
+    s.Colors[ImGuiCol_HeaderActive] = ImGui::ColorConvertU32ToFloat4((ACCENT & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 80));
     s.Colors[ImGuiCol_Button] = s.Colors[ImGuiCol_FrameBg];
     s.Colors[ImGuiCol_ButtonHovered] = s.Colors[ImGuiCol_FrameBgHovered];
     s.PopupRounding = S(10), s.PopupBorderSize = 1;

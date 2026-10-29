@@ -2390,6 +2390,21 @@ int main(int argc, char** argv) {
         config::cfg = config::Config();
         config::load(ini);
         CHECK((config::cfg.wheel_pins == std::vector<std::string>{"a", "b", "c", "d", "e", "f", "g", "h"} && config::cfg.active_corner == config::CORNER_BOTTOM_RIGHT && !config::cfg.wheel_key));
+
+        config::cfg = config::Config();
+        config::cfg.background[0] = 0.1f, config::cfg.background[1] = 0.05f, config::cfg.background[2] = 0.2f;
+        CHECK(config::save(ini));
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(config::cfg.background[0] == 0.1f && config::cfg.background[1] == 0.05f && config::cfg.background[2] == 0.2f);
+        std::ofstream(ini) << "background=1,0.5,nan\n";
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(config::cfg.background[0] == config::BACKGROUND_MAX && config::cfg.background[1] == config::BACKGROUND_MAX / 2 && config::cfg.background[2] == 0);
+        std::ofstream(ini) << "background=0.1,x\n";
+        config::cfg = config::Config();
+        config::load(ini);
+        CHECK(config::cfg.background[0] == config::Config().background[0] && config::cfg.background[1] == config::Config().background[1]);
         DeleteFileA(ini.c_str());
         config::cfg = kept;
     }

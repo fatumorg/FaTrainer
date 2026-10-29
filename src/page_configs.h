@@ -27,7 +27,7 @@ inline void tile_frame(ImVec2 a, ImVec2 b, bool on, bool dashed = false) {
         }
         return;
     }
-    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(34, 32, 29, 255), hover)), R(10));
+    dl->AddRectFilled(a, b, C(brand::mix(T.frame, T.hover, hover)), R(10));
     if (lit > 0.01f) dl->AddRectFilled(a, b, C(T.accent, 0.08f * lit), R(10));
     dl->AddRect(a, b, C(line), R(10), 0, 1.0f + lit);
 }
@@ -53,7 +53,7 @@ inline void preset_tile(const cheats::Preset& p, float w, float h) {
     float hover = animate(ImGui::GetID("hover"), ImGui::IsMouseHoveringRect(a, b) ? 1.0f : 0.0f);
     float lit = animate(ImGui::GetID("on"), on ? 1.0f : 0.0f);
     auto* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(a, b, C(brand::mix(T.frame, IM_COL32(34, 32, 29, 255), hover)), R(10));
+    dl->AddRectFilled(a, b, C(brand::mix(T.frame, T.hover, hover)), R(10));
     if (lit > 0.01f) dl->AddRectFilled(a, b, C(T.accent, 0.08f * lit), R(10));
     dl->AddRect(a, b, C(brand::mix(brand::mix(T.line_soft, T.line, hover), T.accent, lit)), R(10), 0, 1.0f + lit);
     float pad = S(16), fs = font_size(f_label);

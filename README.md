@@ -4,7 +4,7 @@
 
 **In-game trainer for Dying Light 1 on Windows and Linux**
 
-![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-orange)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-64C864)
 ![game](https://img.shields.io/badge/game-Dying%20Light%201-red)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
@@ -46,7 +46,7 @@
 - **Configs**: cheat configs (four built-in ones plus your own) and visual configs that keep your Player ESP, colors, glow, HUD, crosshair, field of view and screen settings; create, load, save over, rename and delete
 - **Keybinds**: the menu key and a key for every cheat, slider, action and config. A slider key sets Max or your own On and Off levels; a config key loads the config and puts back what you had on the next press
 - **Quick wheel** (Fatum Version): hold a key, point and let go to switch one of up to 8 pinned cheats, sliders and configs
-- **Settings**: accent color, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility; window style (Classic, Compact rail, Top tabs, Side dock), density, font, text size, card style, switches or checkboxes, descriptions, where the menu opens and sidebar width; in the Fatum Version, the Active list of what is on in a screen corner while the menu is closed; all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Visuals Version
+- **Settings**: accent and background colors, window opacity, corner roundness, animations (Full, Subtle, Off), Harran skyline and accent glow, interface size, background dim, menu key, sidebar order and visibility; window style (Classic, Compact rail, Top tabs, Side dock), density, font, text size, card style, switches or checkboxes, descriptions, where the menu opens and sidebar width; in the Fatum Version, the Active list of what is on in a screen corner while the menu is closed; all saved to `fatrainer.ini`. About shows your version and whether it is the Fatum Version or the Visuals Version
 
 ### Install
 

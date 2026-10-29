@@ -58,11 +58,12 @@ inline const QuickTargets& quick_targets() {
     return t;
 }
 
-inline void quick_column(const char* button, bool ready, const std::string& line, void (*go)(), float width) {
+inline void quick_column(const char* button, const char* pin, bool ready, const std::string& line, void (*go)(), float width) {
     ImGui::BeginGroup();
     ImGui::BeginDisabled(!ready);
     if (accent_button(button, {width, S(38)})) go();
     ImGui::EndDisabled();
+    pin_menu(pin);
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
     label(line.c_str());
     ImGui::PopTextWrapPos();
@@ -76,9 +77,9 @@ inline void quick_card(cheats::Vec3 me, bool here) {
     std::string goal = t.tracked ? (t.title.empty() ? "Tracked objective" : t.title) + where(t.objective_at) : "No tracked objective";
     begin_card("quick", "QUICK");
     float gap = S(12), width = (ImGui::GetContentRegionAvail().x - gap) / 2;
-    quick_column("Go to waypoint", t.marker, marker, go_waypoint, width);
+    quick_column("Go to waypoint", "go_waypoint", t.marker, marker, go_waypoint, width);
     ImGui::SameLine(0, gap);
-    quick_column("Go to objective", t.tracked, goal, go_objective, width);
+    quick_column("Go to objective", "go_objective", t.tracked, goal, go_objective, width);
     end_card();
 }
 
@@ -101,6 +102,7 @@ inline void teleport_page() {
     ImGui::SameLine(0, gap);
     ImGui::BeginDisabled(!here);
     if (accent_button("Save here", {button, 0}) || (enter && here)) save_spot(typed), typed[0] = 0;
+    pin_menu("save_position");
     ImGui::EndDisabled();
     auto& list = teleport::spots[level];
     for (int i = 0; i < (int)list.size(); i++) {

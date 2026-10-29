@@ -16,7 +16,7 @@ namespace menu {
 inline ImFont *f_body, *f_strong, *f_small, *f_label, *f_head, *f_tile, *f_big, *f_brand, *f_mono;
 inline ImFont* g_faces[config::MENU_FONTS][4];
 
-struct Theme { ImU32 accent, accent_ink, ground, side, raised, raised_hi, frame, line, line_soft, text, soft, muted, ok, bad; };
+struct Theme { ImU32 accent, accent_ink, ground, side, raised, raised_hi, frame, line, line_soft, hover, press, text, soft, muted, ok, bad; };
 inline Theme T;
 
 inline float S(float v) { return v * config::cfg.scale; }
@@ -40,8 +40,10 @@ inline void apply_style() {
     T.accent = IM_COL32((int)(a[0] * 255), (int)(a[1] * 255), (int)(a[2] * 255), 255);
     float luminance = 0.299f * a[0] + 0.587f * a[1] + 0.114f * a[2];
     T.accent_ink = luminance > 0.52f ? brand::ACCENT_INK : IM_COL32(250, 246, 240, 255);
-    T.ground = IM_COL32(12, 11, 10, 255), T.side = IM_COL32(15, 14, 13, 255), T.raised = IM_COL32(20, 19, 17, 255), T.raised_hi = IM_COL32(29, 27, 25, 255);
-    T.frame = IM_COL32(25, 24, 22, 255), T.line = IM_COL32(40, 38, 35, 255), T.line_soft = IM_COL32(29, 27, 25, 255);
+    auto& g = config::cfg.background;
+    auto tone = [&](int add) { return IM_COL32(std::min(255, color::to_byte(g[0]) + add), std::min(255, color::to_byte(g[1]) + add), std::min(255, color::to_byte(g[2]) + add), 255); };
+    T.ground = tone(0), T.side = tone(3), T.raised = tone(8), T.raised_hi = tone(17), T.frame = tone(13), T.line = tone(28), T.line_soft = tone(17);
+    T.hover = tone(23), T.press = tone(32);
     T.text = brand::TEXT, T.soft = brand::SOFT, T.muted = brand::MUTED, T.ok = brand::GOOD, T.bad = brand::BAD;
     float opacity = config::cfg.look.opacity;
     ImGuiStyle& s = ImGui::GetStyle();
@@ -59,10 +61,10 @@ inline void apply_style() {
     c[ImGuiCol_Text] = V(T.text);
     c[ImGuiCol_TextDisabled] = V(T.muted);
     c[ImGuiCol_FrameBg] = V(T.frame);
-    c[ImGuiCol_FrameBgHovered] = V(IM_COL32(35, 33, 30, 255));
-    c[ImGuiCol_FrameBgActive] = V(IM_COL32(40, 38, 35, 255));
+    c[ImGuiCol_FrameBgHovered] = V(T.hover);
+    c[ImGuiCol_FrameBgActive] = V(T.line);
     c[ImGuiCol_Button] = V(T.frame);
-    c[ImGuiCol_ButtonHovered] = V(IM_COL32(39, 37, 34, 255));
+    c[ImGuiCol_ButtonHovered] = V(T.line);
     c[ImGuiCol_ButtonActive] = V(T.accent, 0.5f);
     c[ImGuiCol_Header] = V(T.accent, 0.14f);
     c[ImGuiCol_HeaderHovered] = {1, 1, 1, 0.05f};
@@ -276,7 +278,7 @@ inline bool switch_row(const char* text, const char* hint, bool& value) {
     } else {
         float sw = S(44), sh = S(24);
         ImVec2 s0 = {p.x + w - sw - S(4), p.y + (h - sh) / 2};
-        dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, C(brand::mix(IM_COL32(44, 41, 38, 255), T.accent, t)), sh / 2);
+        dl->AddRectFilled(s0, {s0.x + sw, s0.y + sh}, C(brand::mix(T.press, T.accent, t)), sh / 2);
         ImVec2 knob{s0.x + sh / 2 + t * (sw - sh), s0.y + sh / 2};
         float* flipped_at = ImGui::GetStateStorage()->GetFloatRef(ImGui::GetID("flip"), -10);
         if (clicked) *flipped_at = now();
@@ -303,10 +305,16 @@ inline void toggle_pin(const std::string& id) {
     save_config();
 }
 
+// Right-click on the last item, also when it is disabled.
 inline void pin_menu(const std::string& id) {
-    if (!ImGui::BeginPopupContextItem("pin")) return;
-    if (ImGui::MenuItem(pinned(id) ? "Unpin" : "Pin to Quick wheel")) toggle_pin(id);
-    ImGui::EndPopup();
+    ImGui::PushID(id.c_str());
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Right) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup | ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::OpenPopup("pin");
+    if (ImGui::BeginPopup("pin")) {
+        if (ImGui::MenuItem(pinned(id) ? "Unpin" : "Pin to Quick wheel")) toggle_pin(id);
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
 }
 
 inline void cheat_switch(const char* key, const char* override_label = nullptr) {
@@ -1213,6 +1221,7 @@ inline void player_page() {
             std::lock_guard<std::mutex> l(game::mx);
             cheats::refill();
         });
+        pin_menu(REFILL_KEY);
         ImGui::Dummy({0, S(6)});
     }
     begin_card("survival", "SURVIVAL");
@@ -1247,6 +1256,7 @@ inline void kill_nearby() {
 
 inline void kill_all_button() {
     if (accent_button("Kill all enemies nearby", {ImGui::GetContentRegionAvail().x, S(38)})) kill_nearby();
+    pin_menu("kill_nearby");
 }
 
 inline void combat_page() {
@@ -1740,7 +1750,7 @@ inline bool key_binding(std::map<std::string, int>& keys, const std::string& id)
 
 const float CHANNELS_WIDTH = 314;
 
-inline bool color_field(const char* key, float rgb[3]) {
+inline bool color_field(const char* key, float rgb[3], bool rainbow = true) {
     bool changed = false;
     auto& cycles = config::cfg.rainbow;
     auto cycle = cycles.find(key);
@@ -1773,6 +1783,10 @@ inline bool color_field(const char* key, float rgb[3]) {
         snprintf(hex, sizeof hex, "%s", color::to_hex(rgb).c_str());
         ImGui::SetNextItemWidth(S(86));
         if (ImGui::InputText("##hex", hex, sizeof hex, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsUppercase)) changed |= color::from_hex(hex, rgb);
+    }
+    if (!rainbow) {
+        ImGui::PopID();
+        return changed;
     }
     same_line_if_room(ImGui::CalcTextSize("Rainbow").x + ImGui::GetStyle().FramePadding.x * 2, S(10));
     if (chip("Rainbow", cycle != cycles.end())) {
@@ -2089,7 +2103,7 @@ inline void draw_preview() {
     float fs = font_size(f_strong) * 1.25f, pad = S(18);
     float w = std::min(size.x * 0.8f, f_strong->CalcTextSizeA(fs, FLT_MAX, 0, visuals::without_colors(text).c_str()).x + pad * 2);
     ImVec2 a{(size.x - w) / 2, size.y * 0.2f}, b{a.x + w, a.y + fs + pad * 2 + S(18)};
-    dl->AddRectFilled(a, b, IM_COL32(12, 11, 10, 210), R(12));
+    dl->AddRectFilled(a, b, C(T.ground, 0.82f), R(12));
     dl->AddRect(a, b, C(T.accent, 0.6f), R(12), 0, S(1.5f));
     brand::spaced_caps(dl, f_label, font_size(f_label), {a.x + pad, a.y + S(10)}, "PREVIEW", C(T.accent), S(1.4f));
     draw_rich(dl, f_strong, fs, {a.x + pad, a.y + S(14) + pad}, text, IM_COL32(242, 237, 228, 255), w - pad * 2);
@@ -2505,6 +2519,7 @@ inline void visuals_page() {
     auto& e = config::cfg.esp;
     begin_card("esp", "PLAYER ESP");
     changed |= switch_row("Show players", "Draws every other player in your game through walls: survivors and the Night Hunter.", e.on);
+    pin_menu("esp");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::SliderFloat("##range", &e.max_distance, 25, 1000, "Up to %.0f m")) changed = true;
     ImGui::Dummy({0, S(4)});
@@ -2724,29 +2739,33 @@ inline void about_card() {
     end_card();
 }
 
-inline const float ACCENTS[][3] = {{0.910f, 0.592f, 0.227f}, {0.93f, 0.38f, 0.33f}, {0.49f, 0.79f, 0.55f}, {0.38f, 0.63f, 0.96f},
+inline const float ACCENTS[][3] = {{0.392f, 0.784f, 0.392f}, {0.93f, 0.38f, 0.33f}, {0.910f, 0.592f, 0.227f}, {0.38f, 0.63f, 0.96f},
                                    {0.67f, 0.50f, 0.96f},    {0.94f, 0.49f, 0.71f}, {0.85f, 0.82f, 0.76f}};
+inline const float BACKGROUNDS[][3] = {{0.027f, 0.027f, 0.031f}, {0.047f, 0.043f, 0.039f}, {0.024f, 0.035f, 0.063f},
+                                       {0.024f, 0.043f, 0.031f}, {0.043f, 0.031f, 0.059f}, {0, 0, 0}};
 
-inline void accent_swatches(bool& changed) {
-    auto& c = config::cfg;
-    for (int i = 0; i < (int)(sizeof ACCENTS / sizeof ACCENTS[0]); i++) {
+template <size_t N> inline void swatches(const char* key, const float (&list)[N][3], float rgb[3], bool rainbow, bool& changed) {
+    ImGui::PushID(key);
+    for (int i = 0; i < (int)N; i++) {
         ImGui::PushID(i);
         float d = ImGui::GetFrameHeight();
         if (i > 0) same_line_if_room(d, S(6));
         ImVec2 p = ImGui::GetCursorScreenPos();
-        if (ImGui::InvisibleButton("swatch", {d, d})) memcpy(c.accent, ACCENTS[i], sizeof c.accent), changed = true;
+        if (ImGui::InvisibleButton("swatch", {d, d})) memcpy(rgb, list[i], sizeof list[i]), changed = true;
         bool hovered = ImGui::IsItemHovered();
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        bool selected = !memcmp(c.accent, ACCENTS[i], sizeof c.accent);
+        bool selected = !memcmp(rgb, list[i], sizeof list[i]);
         float ring = animate(ImGui::GetID("ring"), selected ? 1.0f : hovered ? 0.45f : 0.0f, 16);
         auto* dl = ImGui::GetWindowDrawList();
         ImVec2 center{p.x + d / 2, p.y + d / 2};
-        ImU32 color = IM_COL32((int)(ACCENTS[i][0] * 255), (int)(ACCENTS[i][1] * 255), (int)(ACCENTS[i][2] * 255), 255);
+        ImU32 color = IM_COL32((int)(list[i][0] * 255), (int)(list[i][1] * 255), (int)(list[i][2] * 255), 255);
         dl->AddCircleFilled(center, d / 2 - S(4) - (1 - ring) * S(1), C(color));
+        if (!rainbow) dl->AddCircle(center, d / 2 - S(4) - (1 - ring) * S(1), C(T.line), 0, S(1));
         if (ring > 0.01f) dl->AddCircle(center, d / 2 - S(0.5f), C(T.text, ring), 0, S(1.6f));
         ImGui::PopID();
     }
-    if (color_field("accent", c.accent)) changed = true;
+    ImGui::PopID();
+    if (color_field(key, rgb, rainbow)) changed = true;
 }
 
 inline void menu_key_combo(bool& changed) {
@@ -2792,6 +2811,7 @@ struct WheelSlot { std::string id, label; bool found, on; };
 inline WheelSlot wheel_slot(const std::string& id) {
     if (auto* c = cheats::find(id)) return {id, c->label, true, c->on};
     if (auto* t = cheats::find_tweak(id)) return {id, t->label, true, t->factor != 1.0f};
+    if (auto* a = find_action(id)) return {id, a->label, true, id == "esp" && config::cfg.esp.on};
     bool loaded = cheats::cheat_key_id == id || config::visual_key_id == id;
     return {id, config_label(id), id.find(':') != std::string::npos && config_exists(id), loaded};
 }
@@ -2824,7 +2844,7 @@ inline void wheel_card(bool& changed) {
         if (!slot.found) ImGui::SameLine(0, S(12)), label("Not found");
         ImGui::PopID();
     }
-    note(pins.empty() ? "Right-click a cheat or slider to pin it. Up to 8 pins." : "Hold the key, point at a pin and let go to switch it. Up to 8 pins.");
+    note(pins.empty() ? "Right-click a cheat, slider or action button to pin it. Up to 8 pins." : "Hold the key, point at a pin and let go to switch it. Up to 8 pins.");
     end_card();
 }
 #endif
@@ -2970,7 +2990,11 @@ inline void settings_page() {
 
     begin_card("look", "APPEARANCE");
     setting_label("Accent");
-    accent_swatches(changed);
+    swatches("accent", ACCENTS, c.accent, true, changed);
+    setting_label("Background");
+    bool picked = false;
+    swatches("background", BACKGROUNDS, c.background, false, picked);
+    if (picked) config::keep_dark(c.background), changed = true;
     setting_label("Interface size");
     static float pending_scale = c.scale;
     float apply = f_strong->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, "Apply").x + ImGui::GetStyle().FramePadding.x * 2.6f + ImGui::GetStyle().ItemSpacing.x;
@@ -3001,6 +3025,7 @@ inline void settings_page() {
     if (ImGui::Button("Reset appearance")) {
         config::Config fresh;
         memcpy(c.accent, fresh.accent, sizeof c.accent);
+        memcpy(c.background, fresh.background, sizeof c.background);
         c.dim = fresh.dim, c.look = fresh.look;
         changed = true;
     }
@@ -3541,7 +3566,7 @@ inline void startup() {
     if (const char* scale = getenv("DLT_SCALE")) config::read_float(scale, config::cfg.scale), config::normalize(page_ids());
 #if !FATRAINER_VISUALS
     if (getenv("DLT_WHEEL")) {
-        config::cfg.wheel_pins = {"god", "speed", "stamina", "cheat:survivor_rage", "no_fall", "jump", "visual:Clean HUD"};
+        config::cfg.wheel_pins = {"god", "speed", "stamina", "cheat:survivor_rage", "no_fall", "jump", "visual:Clean HUD", "kill_nearby"};
         cheats::find("god")->on = true;
         g_wheel_at = {S(70), -S(120)};
     }
