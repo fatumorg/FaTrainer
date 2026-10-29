@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0 b5
+
+Lobby Update
+
+- Fixed: Go to objective on the Teleport page showed a text code such as "&Museum_Name&" for some quests instead of the quest name.
+- Fixed: dashes could disappear from wrapped text when the menu scale is below 100%.
+- Fixed: in narrow windows such as the Dock style, the Go, Rename and Delete buttons of a saved position covered its name. They move under the name now.
+- This is a beta build. The Quick wheel, the Active list, every window style and Teleport were tried in the game; picking from the Quick wheel with its key was not. If something goes wrong, send the log (fatrainer.log).
+
 ## 3.0 b4
 
 Lobby Update
