@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0 b7
+
+Lobby Update
+
+- Fixed: the frame rate dropped every 3 seconds while One hit kill was on, for example with the Hunter Rage config. FaTrainer searched the whole game memory for enemies each time, although One hit kill already reaches every enemy as the game updates it; the search now only runs when that path is not working.
+- This is a beta build. It has not been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
+
 ## 3.0 b6
 
 Lobby Update

@@ -1659,6 +1659,11 @@ inline void keep_enemy_modules(const std::vector<std::vector<uintptr_t>>& lists)
     nest_modules.swap(nests);
 }
 
+inline std::atomic<DWORD> module_hook_at{0};
+const DWORD MODULE_HOOK_STALE = 5000;
+
+inline bool module_hook_live() { DWORD at = module_hook_at.load(std::memory_order_relaxed); return at && GetTickCount() - at < MODULE_HOOK_STALE; }
+
 inline void scan_enemies() { keep_enemy_modules(game::scan({std::begin(g.vt_health), std::end(g.vt_health)})); }
 
 inline void weaken_enemies() {
@@ -2842,6 +2847,7 @@ asm(".text\n" FATRAINER_UPDATE_HOOK(0) FATRAINER_UPDATE_HOOK(1) FATRAINER_UPDATE
 
 extern "C" void fatrainer_module_update(uintptr_t module) {
     static cheats::Cheat* one_hit = cheats::find("one_hit");
+    cheats::module_hook_at.store(GetTickCount(), std::memory_order_relaxed);
     if (!one_hit->on || !cheats::is_enemy_module(module) || cheats::is_nest_module(module)) return;
     float cur = cheats::rdv<float>(module + cheats::MODULE_HEALTH, NAN);
     if (cur > cheats::ONE_HIT_HEALTH && cur < 1e7f) cheats::wr<float>(module + cheats::MODULE_HEALTH, cheats::ONE_HIT_HEALTH);

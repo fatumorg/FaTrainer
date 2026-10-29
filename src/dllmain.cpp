@@ -807,7 +807,7 @@ static void main_thread() {
             DWORD every = cheats::players_by_query ? PLAYER_CHECK : PLAYER_RESCAN;
             bool players = cheats::players_wanted() && GetTickCount() - last_players >= every;
             if (players) last_players = GetTickCount();
-            cheats::scan_targets(cheats::is_on("one_hit"), players);
+            cheats::scan_targets(cheats::is_on("one_hit") && !cheats::module_hook_live(), players);
             Sleep(ENEMY_RESCAN);
         }
     }).detach();

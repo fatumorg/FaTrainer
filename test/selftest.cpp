@@ -847,8 +847,12 @@ int main(int argc, char** argv) {
         cheats::set_level_fn = saved_set_level;
     }
     game::wr<float>(w.enemy_health + 0x78, 300);
+    cheats::module_hook_at = 0;
+    CHECK(!cheats::module_hook_live());
     fatrainer_module_update(w.enemy_health);
-    CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1);
+    CHECK(game::rdv<float>(w.enemy_health + 0x78) == 1 && cheats::module_hook_live());
+    cheats::module_hook_at = GetTickCount() - cheats::MODULE_HOOK_STALE - 1;
+    CHECK(!cheats::module_hook_live());
     CHECK(cheats::vt_nest_logic);
     {
         static uintptr_t nest_logic[4] = {cheats::vt_nest_logic};
