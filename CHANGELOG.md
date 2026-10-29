@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0 b4
+
+Lobby Update
+
+- Fixed: the game could crash with the menu open while the HUD was being rebuilt, for example when a match or map was loading, with HUD colors or your own texts on.
+- This is a beta build. Quick wheel, Active list and the window styles other than Classic have not been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
+
 ## 3.0 b3
 
 Lobby Update
