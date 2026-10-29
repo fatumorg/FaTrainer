@@ -23,7 +23,7 @@
 
 #### Be The Zombie
 
-- **Survivor**: Dodge spit steps you aside from spit that would hit you, with a human reaction time; One hit kill on the Night Hunter drops him to 1 health in your game (not in a real match); one reach slider per attack (death from above range, pull and height, dropkick range, angle and height, other kicks and ground pound, melee), throwable recharge and your survivor rank. At Max the dropkick and death from above also hit targets that are not in front of you
+- **Survivor**: Dodge spit steps you aside from spit that would hit you, with a human reaction time; Auto UV flare throws a UV flare when a UV Suppressor turns your UV light off (it presses the middle mouse button, the game's throw key); One hit kill on the Night Hunter drops him to 1 health in your game (not in a real match); one reach slider per attack (death from above range, pull and height, dropkick range, angle and height, other kicks and ground pound, melee), throwable recharge and your survivor rank. At Max the dropkick and death from above also hit targets that are not in front of you
 - **Night Hunter**: hunter god mode, infinite energy, take less damage, less UV damage, sure-hit ground pound, no ability cooldowns, infinite spits, long camouflage, one reach slider per attack (pounce, ground pound, tackle, claws, spit hit radius), spit keys and your hunter rank
 
 #### Modes

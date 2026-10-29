@@ -1065,10 +1065,43 @@ int main(int argc, char** argv) {
         CHECK(*(float*)(thrower + cheats::THROW_PHASE_TIMES) == 0.25f);
         cheats::keep_throw_phase_times((uintptr_t)thrower, 1.0f);
         CHECK(!memcmp(thrower + cheats::THROW_PHASE_TIMES, times, sizeof times));
+        uintptr_t hand0 = cheats::player + cheats::PLAYER_HANDS;
+        uintptr_t saved_hand = game::rdv<uintptr_t>(hand0), saved_item = game::rdv<uintptr_t>(hand0 + cheats::HAND_ITEM);
+        CHECK(cheats::flare_throw_running(cheats::player, (uintptr_t)thrower));
+        *(int*)(thrower + cheats::THROW_STATE) = cheats::THROW_IDLE;
+        game::wr<uintptr_t>(hand0, 1), game::wr<uintptr_t>(hand0 + cheats::HAND_ITEM, w.item("Throwable_ZaidFlare", 1));
+        CHECK(cheats::flare_throw_running(cheats::player, (uintptr_t)thrower));
+        game::wr<uintptr_t>(hand0 + cheats::HAND_ITEM, w.item("Crossbow_SHU", 1));
+        CHECK(!cheats::flare_throw_running(cheats::player, (uintptr_t)thrower));
+        game::wr<uintptr_t>(hand0, saved_hand), game::wr<uintptr_t>(hand0 + cheats::HAND_ITEM, saved_item);
         cheats::vt_throw_controller = saved_vt;
         CHECK(cheats::uv_flare_id("Throwable_Btz_Flare") && cheats::uv_flare_id("Throwable_ZaidFlare") && !cheats::uv_flare_id("Throwable_Smoke_Flare") && !cheats::uv_flare_id(nullptr));
     }
     CHECK(cheats::vt_throw_controller && cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
+    {
+        CHECK(cheats::vt_light_disable && cheats::vt_light_disable - game::g.base == 0x1729c00);
+        alignas(16) static uint8_t module[0x18] = {};
+        *(uintptr_t*)module = cheats::vt_light_disable;
+        *(float*)(module + cheats::LIGHT_DISABLE_LEFT) = -1.0f;
+        uintptr_t slot = cheats::player + cheats::LIGHT_DISABLE_MODULE, saved = game::rdv<uintptr_t>(slot);
+        game::wr<uintptr_t>(slot, (uintptr_t)module);
+        CHECK(!cheats::light_disabled(cheats::player));
+        *(float*)(module + cheats::LIGHT_DISABLE_LEFT) = 4.5f;
+        CHECK(cheats::light_disabled(cheats::player) && !cheats::light_disabled(0));
+        *(uintptr_t*)module = cheats::vt_throw_controller;
+        CHECK(!cheats::light_disabled(cheats::player));
+        game::wr<uintptr_t>(slot, saved);
+        cheats::FlareReply r;
+        CHECK(!cheats::flare_due(r, false, false, 1.0) && !cheats::flare_due(r, true, false, 1.0) && !cheats::flare_due(r, true, false, 1.1));
+        CHECK(cheats::flare_due(r, true, false, 1.2) && r.tries == 1 && !cheats::flare_due(r, true, false, 1.5));
+        CHECK(cheats::flare_due(r, true, false, 1.8) && r.tries == 2);
+        CHECK(!cheats::flare_due(r, true, true, 2.5) && !cheats::flare_due(r, true, false, 9.0));
+        CHECK(!cheats::flare_due(r, false, false, 10.0) && !cheats::flare_due(r, true, true, 11.0) && cheats::flare_due(r, true, true, 11.2));
+        cheats::FlareReply stuck;
+        int presses = 0;
+        for (double t = 0; t < 10; t += 0.05) presses += cheats::flare_due(stuck, true, false, t);
+        CHECK(presses == cheats::FLARE_TRIES);
+    }
     {
         CHECK(game::g.context_ctor == game::g.base + 0x745130 && game::g.elemental_root == game::g.base + 0x1c16348);
         CHECK(game::g.vt_upgrade_desc && game::g.vt_blueprint_desc);

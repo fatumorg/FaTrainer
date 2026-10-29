@@ -102,6 +102,7 @@ inline void zombie_page() {
 inline void survivor_page() {
     begin_card("auto", "AUTO CHEATS");
     cheat_switch("dodge_spit");
+    cheat_switch("auto_flare");
     cheat_switch("one_hit_hunter");
     end_card();
     begin_card("reach", "REACH AND THROWABLES");

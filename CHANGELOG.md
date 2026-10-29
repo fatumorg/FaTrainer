@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0 b6
+
+Lobby Update
+
+- New: Auto UV flare on the Survivor page. When a UV Suppressor turns your UV light off, it throws a UV flare by pressing the middle mouse button, the game's throw key.
+- Fixed: with UV flare throw speed on, the flare stayed in your hand for a second or two after the throw.
+- This is a beta build. Neither change has been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
+
 ## 3.0 b5
 
 Lobby Update

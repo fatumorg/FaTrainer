@@ -97,6 +97,8 @@ inline Cheat CHEATS[] = {
     {"dodge_spit", "Dodge spit",
      "Steps you aside from spit that would hit you, after a human reaction time.",
      {}, {}},
+    {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
+     {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",
      {}, {}},
 };
@@ -309,7 +311,7 @@ inline void read_param_names() {
         if (is_case(entry(p), common)) param_ids[(const char*)game::rip_target(entry(p), 3, 7)] = (int)((p - start) / 4);
 }
 
-inline uintptr_t vt_melee_desc = 0, vt_melee_controller = 0, vt_throw_controller = 0;
+inline uintptr_t vt_melee_desc = 0, vt_melee_controller = 0, vt_throw_controller = 0, vt_light_disable = 0;
 inline uintptr_t locations_root = 0, vt_quest_goals = 0, vt_quest = 0;
 const char LOCATIONS_CODE[] = "8B D7 48 8B CE E8 ? ? ? ? E8 ? ? ? ? 48 8B D8 8B 48 08 8B 40 0C FF C1 3B C8";
 const int LOCATIONS_GETTER_CALL = 10;
@@ -318,6 +320,7 @@ inline void locate(uintptr_t base) {
     vt_melee_desc = game::find_vtable(base, "ItemDescMelee");
     vt_melee_controller = game::find_vtable(base, "WeaponMeleeController");
     vt_throw_controller = game::find_vtable(base, "WeaponThrowController");
+    vt_light_disable = game::find_vtable(base, "PlayerLightDisableModule");
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 85 C0 74 ? 48 8B 88 80 07 00 00"); !hits.empty())
         local_player_root = game::rip_target(hits[0], 3, 7);
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 74 07 48 8B ? 58 0E 00 00"); !hits.empty())
@@ -833,6 +836,33 @@ inline bool throw_busy(uintptr_t controller) {
     return controller && rdv<uintptr_t>(controller) == vt_throw_controller && rdv<int>(controller + THROW_STATE, THROW_IDLE) != THROW_IDLE;
 }
 
+inline bool flare_throw_running(uintptr_t p, uintptr_t thrower) {
+    return throw_busy(thrower) || uv_flare_id(hand_item_id(p, 0));
+}
+
+const size_t LIGHT_DISABLE_MODULE = 0x1388, LIGHT_DISABLE_LEFT = 0x14;
+const BYTE USE_EQUIPMENT_BUTTON = 2;
+const DWORD FLARE_CLICK_MS = 60;
+const double FLARE_FIRST_PRESS = 0.12, FLARE_RETRY = 0.6;
+const int FLARE_TRIES = 3;
+
+inline bool light_disabled(uintptr_t p) {
+    uintptr_t m = p ? rdv<uintptr_t>(p + LIGHT_DISABLE_MODULE) : 0;
+    return m && vt_light_disable && rdv<uintptr_t>(m) == vt_light_disable && rdv<float>(m + LIGHT_DISABLE_LEFT) > 0;
+}
+
+struct FlareReply { bool was_off = false; int tries = 0; double next = 0; };
+inline FlareReply flare_reply;
+
+inline bool flare_due(FlareReply& r, bool off, bool throwing, double now) {
+    if (!off) return r = {}, false;
+    if (!r.was_off) r = {true, 0, now + FLARE_FIRST_PRESS};
+    if (throwing && r.tries) r.tries = FLARE_TRIES;
+    if (r.tries >= FLARE_TRIES || now < r.next) return false;
+    r.tries++, r.next = now + FLARE_RETRY;
+    return true;
+}
+
 struct ThrowPhaseTimes {
     uintptr_t controller = 0;
     float original[THROW_PHASE_COUNT] = {}, written[THROW_PHASE_COUNT] = {};
@@ -900,7 +930,7 @@ inline void speed_melee_anims() {
     uintptr_t thrower = p ? rdv<uintptr_t>(p + THROW_CONTROLLER) : 0;
     keep_throw_phase_times(thrower, flare_on ? flare_f : 1.0f);
     if (flare_f != 1.0f) log_flare_throw(p, thrower, flare_on);
-    bool animate = (on && melee_busy(controller)) || (flare_on && throw_busy(thrower));
+    bool animate = (on && melee_busy(controller)) || (flare_on && flare_throw_running(p, thrower));
     float scale = on ? f : flare_f;
     keep_melee_durations(p, on ? f : 1.0f);
     keep_melee_phases(controller, on ? f : 1.0f);
@@ -2495,6 +2525,14 @@ inline void dodge_spits() {
         if (key) pending_dodge = {key, now + reaction, HOLD_MIN_MS + (DWORD)(dodge_rng() % HOLD_SPREAD_MS)};
     }
     for (auto it = flying.begin(); it != flying.end();) it = present.count(it->first) ? std::next(it) : flying.erase(it);
+}
+
+inline void auto_flare() {
+    uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
+    uintptr_t thrower = p ? rdv<uintptr_t>(p + THROW_CONTROLLER) : 0;
+    if (!flare_due(flare_reply, light_disabled(p), throw_busy(thrower), now_seconds())) return;
+    input::click(USE_EQUIPMENT_BUTTON, FLARE_CLICK_MS);
+    logf_hook("flare: UV light off, pressing throw (try %d)", flare_reply.tries);
 }
 
 inline bool esp_snapshot(float m[16], std::vector<EspTarget>& out, float max_distance) {

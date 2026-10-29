@@ -436,6 +436,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     bool esp = config::cfg.esp.on;
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
+    if (g_ready && !g_open && cheats::is_on("auto_flare")) cheats::auto_flare();
     if (g_ready) cheats::speed_melee_anims();
 #if FATRAINER_DEV
     probe::watch_frame();
