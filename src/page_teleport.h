@@ -88,6 +88,13 @@ inline void teleport_page() {
     static int renaming = -1, confirm_delete = -1;
     static std::string last_level;
     std::string level = teleport::level_name();
+    static int level_logs = 0;
+    if (level != last_level && level_logs++ < 40) {
+        uintptr_t game_object = cheats::profile_root ? game::rdv<uintptr_t>(cheats::profile_root) : 0;
+        uintptr_t active = game_object && cheats::active_level ? cheats::active_level(game_object) : 0;
+        logf("teleport level: '%s' -> '%s' (active %llx, current %llx)", last_level.c_str(), level.c_str(), (unsigned long long)active,
+             (unsigned long long)cheats::current_level());
+    }
     if (level != last_level) last_level = level, renaming = -1, confirm_delete = -1;
     cheats::Vec3 me = cheats::player_position();
     bool here = std::isfinite(me.x);
