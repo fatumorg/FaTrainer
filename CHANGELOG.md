@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0 b3
+
+Lobby Update
+
+- Changed: the menu is green (#64C864) by default, and the Harran skyline windows take your accent color. An accent you picked before stays; Reset appearance or the green swatch gives you the new one.
+- New: Background color in Settings. The menu background is darker by default and stays dark enough for the text to read.
+- Fixed: the game could crash after loading another save or map with weapon edits on. Weapon edits are now only applied while you are in the game.
+- Fixed: the map name in Saved positions on the Teleport page flickered.
+- Fixed: right-click did nothing on the big buttons, such as Kill all enemies nearby. It pins them to the Quick wheel now.
+- Fixed: holding the Quick wheel key could keep keyboard presses from reaching the game.
+- Changed: Sidebar width is only shown for the Classic window style, the only one with a sidebar.
+- This is a beta build. Quick wheel, Active list and the window styles other than Classic have not been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
+
 ## 3.0 b2
 
 Lobby Update
