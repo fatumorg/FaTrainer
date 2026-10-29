@@ -434,6 +434,13 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     poll_cheat_keys();
     poll_wheel();
     bool esp = config::cfg.esp.on;
+    const DWORD PLAYER_QUERY_EVERY = 1000;
+    static DWORD last_query = 0;
+    if (g_ready && GetTickCount() - last_query >= PLAYER_QUERY_EVERY) {
+        last_query = GetTickCount();
+        bool by_query = cheats::players_wanted() && cheats::query_players();
+        if (by_query != cheats::players_by_query.exchange(by_query)) logf("players: %s", by_query ? "found through the game's radius query" : "found through the heap scan");
+    }
     if (g_ready && esp) cheats::track_players();
     if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
     if (g_ready && !g_open && cheats::is_on("auto_flare")) cheats::auto_flare();
@@ -794,10 +801,11 @@ static void main_thread() {
     if (getenv("DLT_OPEN") && !getenv("DLT_WHEEL") && !getenv("DLT_ACTIVE")) g_open = true;
     std::thread([] {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-        const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000;
+        const DWORD ENEMY_RESCAN = 3000, PLAYER_RESCAN = 10000, PLAYER_CHECK = 60000;
         DWORD last_players = 0;
         for (;;) {
-            bool players = (config::cfg.esp.on || cheats::is_on("one_hit_hunter") || cheats::human_targeting_set()) && GetTickCount() - last_players >= PLAYER_RESCAN;
+            DWORD every = cheats::players_by_query ? PLAYER_CHECK : PLAYER_RESCAN;
+            bool players = cheats::players_wanted() && GetTickCount() - last_players >= every;
             if (players) last_players = GetTickCount();
             cheats::scan_targets(cheats::is_on("one_hit"), players);
             Sleep(ENEMY_RESCAN);

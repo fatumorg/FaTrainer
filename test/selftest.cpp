@@ -1097,6 +1097,9 @@ int main(int argc, char** argv) {
         CHECK(cheats::flare_due(r, true, false, 1.8) && r.tries == 2);
         CHECK(!cheats::flare_due(r, true, true, 2.5) && !cheats::flare_due(r, true, false, 9.0));
         CHECK(!cheats::flare_due(r, false, false, 10.0) && !cheats::flare_due(r, true, true, 11.0) && cheats::flare_due(r, true, true, 11.2));
+        bool counted = cheats::alive(cheats::player) && cheats::in_game_module(game::rdv<uintptr_t>(cheats::player + cheats::HEALTH_OBJECT));
+        CHECK(cheats::is_player_object(cheats::player) && !cheats::is_player_object(0) && !cheats::is_player_object((uintptr_t)module));
+        CHECK(!cheats::query_missed({cheats::player}, {cheats::player}) && cheats::query_missed({cheats::player}, {}) == counted && !cheats::query_missed({0x10}, {}));
         cheats::FlareReply stuck;
         int presses = 0;
         for (double t = 0; t < 10; t += 0.05) presses += cheats::flare_due(stuck, true, false, t);

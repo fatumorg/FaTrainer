@@ -592,6 +592,8 @@ inline bool human_targeting_set() {
     return false;
 }
 
+inline bool players_wanted() { return config::cfg.esp.on || is_on("one_hit_hunter") || human_targeting_set(); }
+
 inline bool human_targeting_widened() { return side != SIDE_HUNTER && human_targeting_set(); }
 
 inline float tweak_factor(const char* key) {
@@ -2009,6 +2011,39 @@ inline void keep_players(const std::vector<uintptr_t>& list) {
     esp_players.swap(found);
 }
 
+const float PLAYER_QUERY_RADIUS = 2000.0f;
+inline EngineVector player_query{};
+inline std::atomic<bool> players_by_query{false}, player_query_broken{false};
+inline std::mutex queried_mx;
+inline std::vector<uintptr_t> queried_players;
+
+inline bool is_player_object(uintptr_t p) {
+    uintptr_t vt = rdv<uintptr_t>(p);
+    return vt && (vt == g.vt_player || vt == g.vt_tutorial_player);
+}
+
+inline bool query_players() {
+    uintptr_t level = current_level();
+    Vec3 me;
+    if (player_query_broken || !level || !find_in_radius || g.player_control < 0 || !alive(player) || !position_of(player + g.player_control, &me)) return false;
+    player_query.size = 0;
+    find_in_radius(level, &player_query, &me, PLAYER_QUERY_RADIUS, 0, false, nullptr);
+    std::vector<uintptr_t> found;
+    for (uint32_t i = 0; i < player_query.size && player_query.data; i++)
+        if (uintptr_t p = player_query.data[i] - g.player_control; is_player_object(p) && std::find(found.begin(), found.end(), p) == found.end()) found.push_back(p);
+    if (std::find(found.begin(), found.end(), player) == found.end()) return false;
+    keep_players(found);
+    std::lock_guard<std::mutex> l(queried_mx);
+    queried_players = found;
+    return true;
+}
+
+inline bool query_missed(const std::vector<uintptr_t>& scanned, const std::vector<uintptr_t>& queried) {
+    for (uintptr_t p : scanned)
+        if (alive(p) && in_game_module(rdv<uintptr_t>(p + HEALTH_OBJECT)) && std::find(queried.begin(), queried.end(), p) == queried.end()) return true;
+    return false;
+}
+
 inline void scan_targets(bool enemies, bool players) {
     if (!enemies && !players) return;
     std::vector<uintptr_t> vts(std::begin(g.vt_health), std::end(g.vt_health));
@@ -2019,6 +2054,16 @@ inline void scan_targets(bool enemies, bool players) {
     if (enemies) keep_enemy_modules({found[0], found[1], found[2]});
     if (players) {
         found[3].insert(found[3].end(), found[4].begin(), found[4].end());
+        if (players_by_query) {
+            std::vector<uintptr_t> queried;
+            {
+                std::lock_guard<std::mutex> l(queried_mx);
+                queried = queried_players;
+            }
+            if (!query_missed(found[3], queried)) return;
+            player_query_broken = true, players_by_query = false;
+            logf_hook("players: the radius query missed players the heap scan found, scanning the heap again");
+        }
         keep_players(found[3]);
     }
 }

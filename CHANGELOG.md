@@ -6,7 +6,8 @@ Lobby Update
 
 - New: Auto UV flare on the Survivor page. When a UV Suppressor turns your UV light off, it throws a UV flare by pressing the middle mouse button, the game's throw key.
 - Fixed: with UV flare throw speed on, the flare stayed in your hand for a second or two after the throw.
-- This is a beta build. Neither change has been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
+- Fixed: the frame rate dropped every 10 seconds while a survivor reach slider, the Player ESP or One hit kill on the Night Hunter was on. FaTrainer searched the whole game memory for the players each time; it now asks the game for them once a second and searches the memory only once a minute to check that no player is missing.
+- This is a beta build. None of these changes has been tried in the game yet: if something goes wrong, send the log (fatrainer.log).
 
 ## 3.0 b5
 
