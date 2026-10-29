@@ -80,6 +80,7 @@ static void nixos_hint() {
 
 int main(int, char** argv) {
     program = argv[0];
+    platform::refresh_shortcut_icon({(const char*)icon_png, (size_t)(icon_png_end - icon_png)});
     glfwSetErrorCallback([](int code, const char* text) { fprintf(stderr, "glfw %d: %s\n", code, text); });
     if (!glfwInit()) {
         fprintf(stderr, "FaTrainer needs a desktop session with X11 or XWayland.\n");

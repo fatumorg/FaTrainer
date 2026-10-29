@@ -286,6 +286,16 @@ inline bool add_shortcut(const std::string& icon_png, std::string& error) {
     return true;
 }
 
+// A shortcut added by an older launcher keeps that launcher's icon until the icon is written again.
+inline void refresh_shortcut_icon(const std::string& icon_png) {
+    std::error_code ec;
+    if (!fs::exists(shortcut_file(), ec)) return;
+    std::ifstream in(shortcut_icon(), std::ios::binary);
+    if (std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()) == icon_png) return;
+    in.close();
+    std::ofstream(shortcut_icon(), std::ios::binary | std::ios::trunc).write(icon_png.data(), (std::streamsize)icon_png.size());
+}
+
 inline std::vector<fs::path> steam_roots() {
     std::vector<fs::path> roots;
     if (const char* data = getenv("XDG_DATA_HOME")) roots.push_back(fs::path(data) / "Steam");

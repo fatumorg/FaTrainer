@@ -4,7 +4,7 @@
 <p style="margin:0 0 16px;font-weight:600">FaTrainer Forum</p>
 <p><%= it.items.length %> new on the forum:</p>
 <ul style="padding-left:20px">
-<% for (const i of it.items) { %>  <li style="margin:0 0 8px"><a href="<%= i.url %>" style="color:#ff8a3d"><%= i.text %></a></li>
+<% for (const i of it.items) { %>  <li style="margin:0 0 8px"><a href="<%= i.url %>" style="color:#64c864"><%= i.text %></a></li>
 <% } %></ul>
 <p style="margin-top:24px;font-size:13px;color:#a69c8f">
   <a href="<%= it.links.settings %>" style="color:#a69c8f">E-mail settings</a> ·
