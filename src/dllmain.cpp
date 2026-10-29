@@ -73,14 +73,16 @@ static std::atomic<long> g_frames{0};
 static std::string g_outdated;
 static std::atomic<int> g_build = menu::NOTICE_UPDATE;
 
-static void on_raw_input(LPARAM l) {
+// True for a mouse packet.
+static bool on_raw_input(LPARAM l) {
     RAWINPUT ri;
     UINT sz = sizeof ri;
-    if (GetRawInputData((HRAWINPUT)l, RID_INPUT, &ri, &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1) return;
-    if (ri.header.dwType != RIM_TYPEMOUSE) return;
+    if (GetRawInputData((HRAWINPUT)l, RID_INPUT, &ri, &sz, sizeof(RAWINPUTHEADER)) == (UINT)-1) return false;
+    if (ri.header.dwType != RIM_TYPEMOUSE) return false;
     auto& m = ri.data.mouse;
     if (!(m.usFlags & MOUSE_MOVE_ABSOLUTE)) { g_dx += m.lLastX; g_dy += m.lLastY; }
     if (m.usButtonFlags & RI_MOUSE_WHEEL) g_wheel += (SHORT)m.usButtonData;
+    return true;
 }
 
 static LRESULT CALLBACK hkWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -90,10 +92,8 @@ static LRESULT CALLBACK hkWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     drain_queue();
     if (m == WM_FATRAINER) return 0;
 #if !FATRAINER_VISUALS
-    if (input::pointing && m == WM_INPUT) {
-        on_raw_input(l);
+    if (input::pointing && m == WM_INPUT && on_raw_input(l))
         return DefWindowProcW(h, m, w, l);
-    }
 #endif
     if (g_open) {
         switch (m) {

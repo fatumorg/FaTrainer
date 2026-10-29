@@ -3028,12 +3028,14 @@ inline void settings_page() {
     if (switch_row("Show descriptions", "The grey line under each cheat and option.", look.descriptions)) changed = true;
     const char* places[] = {"Center", "Where I left it", "Left", "Right"};
     if (setting_choice("Opens at", "open_at", places, 4, look.open_at)) changed = true;
-    setting_label("Sidebar width");
-    static float sidebar = look.sidebar_width;
-    if (ImGui::GetActiveID() != ImGui::GetID("##sidebar")) sidebar = look.sidebar_width;
-    setting_width();
-    ImGui::SliderFloat("##sidebar", &sidebar, config::SIDEBAR_MIN, config::SIDEBAR_MAX, "%.0f px", ImGuiSliderFlags_NoInput);
-    if (ImGui::IsItemDeactivatedAfterEdit()) look.sidebar_width = roundf(sidebar), changed = true;
+    if (look.style == config::STYLE_CLASSIC) {
+        setting_label("Sidebar width");
+        static float sidebar = look.sidebar_width;
+        if (ImGui::GetActiveID() != ImGui::GetID("##sidebar")) sidebar = look.sidebar_width;
+        setting_width();
+        ImGui::SliderFloat("##sidebar", &sidebar, config::SIDEBAR_MIN, config::SIDEBAR_MAX, "%.0f px", ImGuiSliderFlags_NoInput);
+        if (ImGui::IsItemDeactivatedAfterEdit()) look.sidebar_width = roundf(sidebar), changed = true;
+    }
 #if !FATRAINER_VISUALS
     if (switch_row("Active list", "While the menu is closed, a screen corner lists what is on.", c.active_list)) changed = true;
     const char* corners[] = {"Top left", "Top right", "Bottom left", "Bottom right"};
