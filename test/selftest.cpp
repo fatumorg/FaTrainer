@@ -599,6 +599,18 @@ int main(int argc, char** argv) {
         CHECK(!teleport::tracked_location({0, 0, 0}, found));
         cheats::locations_root = real_locations;
     }
+    {
+        static visuals::TextEntry fake_texts[] = {{"Stage_Name", L"&Quest_Name&"}, {"Quest_Name", L"The Museum"}, {"Odd_Name", L"A & B &Quest_Name& &bad key&"}, {"Loop_Name", L"&Loop_Name&"}};
+        auto real_find = visuals::texts_api.find;
+        visuals::texts_api.find = [](uintptr_t, const char* const* key) -> visuals::TextEntry* {
+            for (auto& e : fake_texts)
+                if (!strcmp(e.key, *key)) return &e;
+            return nullptr;
+        };
+        CHECK(teleport::expanded_text("Stage_Name") == L"The Museum" && teleport::expanded_text("Missing_Name").empty());
+        CHECK(teleport::expanded_text("Odd_Name") == L"A & B The Museum &bad key&" && teleport::expanded_text("Loop_Name") == L"&Loop_Name&");
+        visuals::texts_api.find = real_find;
+    }
     CHECK(cheats::forced_damage_jump == (uintptr_t)m + 0xbae6c3);
     CHECK(cheats::pound_exposure_check == (uintptr_t)m + 0xd654e7);
     uintptr_t pound_code = cheats::pound_exposure_check;

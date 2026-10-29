@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cwctype>
 #include <fstream>
 #include <map>
 #include <string>
@@ -121,6 +122,25 @@ inline bool waypoint(cheats::Vec3& out) {
     return cheats::field_bool(lp, "m_WaypointVisible", &shown) && shown && cheats::field_vec3(lp, "m_WaypointPos", &out) && sane(out);
 }
 
+// A text can hold "&Other_Key&" references, which the game's UI expands: quest stages name their quest that way.
+inline std::wstring expanded_text(const std::string& key, int depth = 0) {
+    const int DEEPEST = 4;
+    const wchar_t* text = visuals::shown_text(key);
+    std::wstring s = text ? text : L"";
+    for (size_t at = 0, end; depth < DEEPEST && (at = s.find(L'&', at)) != std::wstring::npos && (end = s.find(L'&', at + 1)) != std::wstring::npos;) {
+        std::string inner;
+        for (size_t i = at + 1; i < end && (iswalnum(s[i]) || s[i] == L'_') && s[i] < 128; i++) inner += (char)s[i];
+        std::wstring with = inner.size() == end - at - 1 && !inner.empty() ? expanded_text(inner, depth + 1) : L"";
+        if (with.empty()) {
+            at = end;
+            continue;
+        }
+        s.replace(at, end - at + 1, with);
+        at += with.size();
+    }
+    return s;
+}
+
 const size_t GOAL_MANAGER = 0x8e0, TRACKED_GOAL = 0x48, GOAL_QUEST = 0x10, QUEST_NAME = 0x18, LONGEST_QUEST_NAME = 96;
 
 inline std::string tracked_quest_title() {
@@ -133,10 +153,10 @@ inline std::string tracked_quest_title() {
     if (!name.text || !name.size || name.size > LONGEST_QUEST_NAME || !game::rd((uintptr_t)name.text, id, name.size)) return "";
     for (char ch : std::string(id))
         if (!isalnum((unsigned char)ch) && ch != '_') return "";
-    const wchar_t* text = visuals::shown_text(std::string(id) + "_Name");
-    int bytes = text ? WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr) : 0;
+    std::wstring text = expanded_text(std::string(id) + "_Name");
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
     std::string out(bytes > 1 ? bytes - 1 : 0, '\0');
-    if (bytes > 1) WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), bytes, nullptr, nullptr);
+    if (bytes > 1) WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, out.data(), bytes, nullptr, nullptr);
     for (char& ch : out)
         if ((unsigned char)ch < 32) ch = ' ';
     return out;

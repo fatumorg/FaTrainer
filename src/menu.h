@@ -3541,6 +3541,14 @@ inline void load_fonts() {
     f_tile = brand::load_font(brand::HEADING, 28);
     f_brand = brand::load_font(brand::DISPLAY, 24);
     f_big = brand::load_font(brand::DISPLAY, 58);
+    // Fonts are drawn scaled: below 1 a dash is under a pixel tall and on a wrapped line can miss every pixel center.
+    // Half a texel of the transparent packing padding above and below keeps thin glyphs at least a pixel tall.
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    atlas->Build();
+    float half_texel = 0.5f / atlas->TexHeight;
+    for (ImFont* font : atlas->Fonts)
+        for (ImFontGlyph& g : font->Glyphs)
+            if (g.Visible && g.Y1 - g.Y0 < 2) g.Y0 -= 0.5f, g.Y1 += 0.5f, g.V0 -= half_texel, g.V1 += half_texel;
 }
 
 inline void startup() {

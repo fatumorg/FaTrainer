@@ -132,9 +132,11 @@ inline void teleport_page() {
         ImGui::TextUnformatted(list[i].name.c_str());
         if (here) label(teleport::distance_text(me, list[i].pos).c_str());
         ImGui::EndGroup();
-        float h = ImGui::GetItemRectSize().y, small = S(90);
-        ImGui::SameLine();
-        ImGui::SetCursorPos({x + avail - small * 3 - gap * 2, y + std::max(0.0f, (h - ImGui::GetFrameHeight()) / 2)});
+        float h = ImGui::GetItemRectSize().y, small = S(90), buttons = small * 3 + gap * 2;
+        if (ImGui::GetItemRectSize().x + gap + buttons <= avail) {
+            ImGui::SameLine();
+            ImGui::SetCursorPos({x + avail - buttons, y + std::max(0.0f, (h - ImGui::GetFrameHeight()) / 2)});
+        }
         ImGui::BeginDisabled(!here);
         if (accent_button("Go", {small, 0})) go_to(list[i].pos), confirm_delete = -1;
         ImGui::EndDisabled();
