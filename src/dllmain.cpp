@@ -452,8 +452,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
 #if FATRAINER_VISUALS
     bool wheel = false, active_list = false;
 #else
-    static const bool wheel_sample = getenv("DLT_WHEEL") != nullptr;
-    bool wheel = g_ready && (g_wheel_held || wheel_sample || menu::g_wheel_shown > 0);
+    bool wheel = g_ready && (g_wheel_held || menu::g_wheel_sample || menu::g_wheel_shown > 0);
     bool active_list = g_ready && shown <= 0 && config::cfg.active_list && cheats::active_count() > 0;
 #endif
     if (g_ready && (shown > 0 || esp || notice > 0 || toast_only || crosshair || previewing || wheel || active_list)) {
@@ -473,7 +472,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
 #if !FATRAINER_VISUALS
         if (esp) menu::draw_esp();
         if (active_list) menu::draw_active_list();
-        if (wheel) menu::draw_wheel(g_wheel_held || wheel_sample);
+        if (wheel) menu::draw_wheel(g_wheel_held || menu::g_wheel_sample);
 #endif
         if (shown > 0) menu::draw(shown, g_open && !previewing);
         if (previewing) menu::draw_preview();

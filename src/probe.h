@@ -470,6 +470,29 @@ inline std::string run(const std::string& line) {
         g_open = *page != 0;
         return out + (g_open ? "  open\n" : "  closed\n");
     }
+#if !FATRAINER_VISUALS
+    if (c == "action") {
+        char key[64] = {};
+        sscanf(p.s, "%63s", key);
+        const menu::KeyAction* a = menu::find_action(key);
+        if (!a) return out + "  unknown action\n";
+        a->run();
+        return out + "  ran\n";
+    }
+    if (c == "style" || c == "active" || c == "wheel") {
+        int v = atoi(p.s);
+        if (c == "style") config::cfg.look.style = std::clamp(v, 0, 3);
+        else if (c == "active") config::cfg.active_list = v != 0;
+        else menu::g_wheel_sample = v != 0;
+        return out + "  set\n";
+    }
+#endif
+    if (c == "fg") {
+        if (atoi(p.s)) SetForegroundWindow(g_hwnd);
+        char line[96];
+        snprintf(line, sizeof line, "  game %p foreground %p active %p\n", (void*)g_hwnd, (void*)GetForegroundWindow(), (void*)GetActiveWindow());
+        return out + line;
+    }
     if (c == "ui") {
         char key[64] = {};
         sscanf(p.s, "%63s", key);

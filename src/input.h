@@ -98,6 +98,13 @@ inline bool mouse_device(void* device) {
 
 inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
     HRESULT r = patch_for(device)->get_state(device, size, data);
+#if FATRAINER_DEV
+    // The rig's game window never has focus, so the device is never acquired: probe keys still go through.
+    if (r == DIERR_NOTACQUIRED || r == DIERR_INPUTLOST) {
+        if (data) memset(data, 0, size);
+        r = DI_OK;
+    }
+#endif
     if (FAILED(r) || !data) return r;
     if (!blocked) {
         bool mouse = mouse_device(device);
@@ -118,6 +125,9 @@ inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
 inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA* data, DWORD* count, DWORD flags) {
     DWORD capacity = count ? *count : 0;
     HRESULT r = patch_for(device)->get_data(device, size, data, count, flags);
+#if FATRAINER_DEV
+    if ((r == DIERR_NOTACQUIRED || r == DIERR_INPUTLOST) && count) *count = 0, r = DI_OK;
+#endif
     if (FAILED(r) || !data || !count || (flags & DIGDD_PEEK)) return r;
     bool mouse = mouse_device(device);
     if (!blocked) {

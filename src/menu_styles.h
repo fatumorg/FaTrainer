@@ -262,6 +262,7 @@ inline void dock_window(float shown) {
 #if !FATRAINER_VISUALS
 inline ImVec2 g_wheel_at;
 inline float g_wheel_shown = 0;
+inline bool g_wheel_sample = getenv("DLT_WHEEL") != nullptr;
 
 inline void draw_wheel(bool held) {
     float step_in = ImGui::GetIO().DeltaTime * (motion() > 0 ? 8.0f : 1000.0f);
