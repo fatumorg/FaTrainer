@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0 b8
+
+Lobby Update
+
+- Fixed: Show descriptions off still showed the grey line under the language rows on the Texts page.
+- Fixed: in the Top tabs style, the last card of a page with an odd number of cards took only half the width.
+- Fixed: with a bigger Text size or the Mono font, the Edit, Set 99 and Delete buttons, the hex color field and the language lists cut off their text.
+- This is a beta build. These changes have not been tried in the game yet: if something looks wrong, send a screenshot and the log (fatrainer.log).
+
 ## 3.0 b7
 
 Lobby Update

@@ -183,8 +183,14 @@ inline float g_page_at = -10;
 enum CardSide { CARD_FULL, CARD_LEFT, CARD_RIGHT };
 struct CardOpen { float offset; int side; };
 inline std::vector<CardOpen> g_card_offsets;
-struct CardFlow { ImGuiWindow* window = nullptr; float x = 0, top = 0, left_end = 0, after = -1; };
+struct CardFlow { ImGuiWindow* window = nullptr; float x = 0, top = 0, left_end = 0, after = -1; ImGuiID left_id = 0; bool paired = false; };
 inline CardFlow g_flow;
+inline std::set<ImGuiID> g_lone_cards;
+
+inline void close_card_row() {
+    if (g_flow.left_id && !g_flow.paired) g_lone_cards.insert(g_flow.left_id);
+    g_flow.left_id = 0;
+}
 
 inline float card_reveal(int index) {
     float m = motion();
@@ -216,12 +222,19 @@ inline void begin_card(const char* id, const char* title = nullptr) {
     int side = CARD_FULL;
     if (width > 0) {
         ImGuiWindow* window = ImGui::GetCurrentWindow();
+        ImGuiID card_id = window->GetID(id);
         if (g_flow.window == window && ImGui::GetCursorPosY() == g_flow.after) {
-            side = CARD_RIGHT;
+            side = CARD_RIGHT, g_flow.paired = true;
             ImGui::SetCursorPos({g_flow.x + width + gap, g_flow.top});
         } else {
-            side = CARD_LEFT;
-            g_flow = {window, ImGui::GetCursorPosX(), ImGui::GetCursorPosY()};
+            close_card_row();
+            if (g_lone_cards.count(card_id)) {
+                width = 0, g_flow.window = nullptr;
+            } else {
+                side = CARD_LEFT;
+                g_flow = {window, ImGui::GetCursorPosX(), ImGui::GetCursorPosY()};
+                g_flow.left_id = card_id;
+            }
         }
     }
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * a);
@@ -372,6 +385,12 @@ inline void stat_tile(const char* id, const char* name, float value, float full,
     if (drag_bar("bar", frac, color, picked) && set && full > 0) set(picked * full);
     ImGui::EndChild();
     pop_card_look();
+}
+
+inline float text_fit(float base, std::initializer_list<const char*> labels, float extra = 0) {
+    float w = base;
+    for (const char* l : labels) w = std::max(w, ImGui::CalcTextSize(l).x + ImGui::GetStyle().FramePadding.x * 2 + extra);
+    return w;
 }
 
 inline void note(const char* text) {
@@ -1029,21 +1048,22 @@ inline void inventory_page(game::Kind kind) {
             }
             ImGui::SameLine(0, S(4));
             if (ImGui::Button("+", {bw, 0})) game::set_count(it, v + 1);
-            same_line_if_room(S(64), S(8));
+            float row_bw = text_fit(S(64), {"Edit", "Set 99", "Sure?", "Delete"});
+            same_line_if_room(row_bw, S(8));
             static bool auto_edit = getenv("DLT_EDIT") != nullptr;
             if (auto_edit && editable(it) && strstr(id, "Machete")) {
                 open_editor(it, id);
                 auto_edit = false;
             }
             if (editable(it)) {
-                if (ImGui::Button("Edit", {S(64), 0})) open_editor(it, id);
-            } else if (ImGui::Button("Set 99", {S(64), 0})) {
+                if (ImGui::Button("Edit", {row_bw, 0})) open_editor(it, id);
+            } else if (ImGui::Button("Set 99", {row_bw, 0})) {
                 game::set_count(it, 99);
             }
-            same_line_if_room(S(64), S(4));
+            same_line_if_room(row_bw, S(4));
             static uintptr_t confirm_delete_item = 0;
             bool sure = confirm_delete_item == it.addr;
-            if (ImGui::Button(sure ? "Sure?" : "Delete", {S(64), 0})) {
+            if (ImGui::Button(sure ? "Sure?" : "Delete", {row_bw, 0})) {
                 if (sure) delete_item(inv, it), confirm_delete_item = 0;
                 else confirm_delete_item = it.addr;
             }
@@ -1778,10 +1798,11 @@ inline bool color_field(const char* key, float rgb[3], bool rainbow = true) {
             if (ImGui::InputInt("##c", &v, 0, 0)) rgb[i] = std::clamp(v, 0, 255) / 255.0f, changed = true;
             ImGui::PopID();
         }
-        same_line_if_room(S(86), S(10));
+        float hex_w = text_fit(S(86), {"#DDDDDD"});
+        same_line_if_room(hex_w, S(10));
         char hex[16];
         snprintf(hex, sizeof hex, "%s", color::to_hex(rgb).c_str());
-        ImGui::SetNextItemWidth(S(86));
+        ImGui::SetNextItemWidth(hex_w);
         if (ImGui::InputText("##hex", hex, sizeof hex, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_CharsUppercase)) changed |= color::from_hex(hex, rgb);
     }
     if (!rainbow) {
@@ -2157,11 +2178,14 @@ inline std::string steam_label() {
 inline bool choice_row(const char* id, const char* text, const char* hint, std::string& value, const std::vector<Choice>& options) {
     ImGui::PushID(id);
     float w = ImGui::GetContentRegionAvail().x, combo_w = S(300), body = ImGui::GetFontSize(), small = font_size(f_small), pad = D(10);
-    float h = std::max(D(60), body + S(3) + small + pad * 2);
+    for (auto& o : options) combo_w = std::max(combo_w, text_fit(0, {o.name.c_str()}, ImGui::GetFrameHeight()));
+    combo_w = std::min(combo_w, w * 0.6f);
+    bool described = hint && *hint && config::cfg.look.descriptions;
+    float h = described ? std::max(D(60), body + S(3) + small + pad * 2) : std::max(D(44), body + pad * 2);
     ImVec2 p = ImGui::GetCursorScreenPos();
     auto* dl = ImGui::GetWindowDrawList();
-    dl->AddText(f_body, body, {p.x + S(4), p.y + pad}, C(T.text), text);
-    dl->AddText(f_small, small, {p.x + S(4), p.y + pad + body + S(3)}, C(T.muted), fit_text(f_small, small, hint, w - combo_w - S(24)).c_str());
+    dl->AddText(f_body, body, {p.x + S(4), p.y + (described ? pad : (h - body) / 2)}, C(T.text), text);
+    if (described) dl->AddText(f_small, small, {p.x + S(4), p.y + pad + body + S(3)}, C(T.muted), fit_text(f_small, small, hint, w - combo_w - S(24)).c_str());
     const Choice* current = &options[0];
     for (auto& o : options)
         if (o.value == value) current = &o;
@@ -3476,8 +3500,12 @@ inline void draw(float shown_raw, bool open) {
         if (preview_scroll && ImGui::GetFrameCount() > 5 && ImGui::GetFrameCount() < 30) ImGui::SetScrollY((float)atof(preview_scroll));
         g_card = 0;
         g_card_offsets.clear();
+        static std::string flow_page;
+        static int flow_style = -1;
+        if (flow_page != page->id || flow_style != config::cfg.look.style) g_lone_cards.clear(), flow_page = page->id, flow_style = config::cfg.look.style;
         g_flow = {};
         page->draw();
+        close_card_row();
         ImGui::EndChild();
         ImGui::EndChild();
     }
