@@ -1767,11 +1767,11 @@ using EngineGetterFn = uintptr_t (*)(uintptr_t);
 inline EngineGetterFn active_level = nullptr, view_camera = nullptr, object_level = nullptr;
 const size_t GS_LEVEL = 0x20;
 
+// The player's level first: off the game thread GetActiveLevel flips between 0, the player's level and others.
 inline uintptr_t current_level() {
+    if (object_level && player && rdv<uintptr_t>(player) == g.vt_player && rdv<uintptr_t>(player + GS_LEVEL)) return object_level(player);
     uintptr_t game_object = profile_root ? rdv<uintptr_t>(profile_root) : 0;
-    uintptr_t level = game_object && active_level ? active_level(game_object) : 0;
-    if (!level && object_level && player && rdv<uintptr_t>(player) == g.vt_player && rdv<uintptr_t>(player + GS_LEVEL)) level = object_level(player);
-    return level;
+    return game_object && active_level ? active_level(game_object) : 0;
 }
 struct EngineVector { uintptr_t* data; uint32_t size, capacity; };
 using FindInRadiusFn = bool (*)(uintptr_t, EngineVector*, const Vec3*, float, uintptr_t, bool, int*);

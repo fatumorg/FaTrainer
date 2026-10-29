@@ -2069,6 +2069,16 @@ int main(int argc, char** argv) {
         cheats::view_camera = [](uintptr_t level) -> uintptr_t { return level == 0x5678 ? (uintptr_t)engine_camera_holder : 0; };
         float got[16];
         CHECK(cheats::view_matrix(got) && got[0] == 0 && got[15] == 15);
+        static uintptr_t fake_player[8] = {};
+        fake_player[0] = game::g.vt_player ? game::g.vt_player : 0x1111, fake_player[cheats::GS_LEVEL / 8] = 1;
+        auto real_vt = game::g.vt_player, real_player = cheats::player;
+        auto real_object_level = cheats::object_level;
+        game::g.vt_player = fake_player[0], cheats::player = (uintptr_t)fake_player;
+        cheats::object_level = [](uintptr_t p) -> uintptr_t { return p ? 0x9abc : 0; };
+        CHECK(cheats::current_level() == 0x9abc);
+        cheats::player = 0;
+        CHECK(cheats::current_level() == 0x5678);
+        game::g.vt_player = real_vt, cheats::player = real_player, cheats::object_level = real_object_level;
         cheats::profile_root = real_root, cheats::active_level = real_level, cheats::view_camera = real_camera;
         std::string engine_path = argv[1];
         engine_path = engine_path.substr(0, engine_path.find_last_of("\\/") + 1) + "engine_x64_rwdi.dll";
