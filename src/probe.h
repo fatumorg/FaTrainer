@@ -463,6 +463,13 @@ inline std::string run(const std::string& line) {
         h.on = on != 0, h.hidden = hidden != 0, h.color[0] = r, h.color[1] = g, h.color[2] = bl;
         return out + "  set\n";
     }
+    if (c == "menu") {
+        char page[32] = {};
+        sscanf(p.s, "%31s", page);
+        if (*page) menu::open_page(page);
+        g_open = *page != 0;
+        return out + (g_open ? "  open\n" : "  closed\n");
+    }
     if (c == "ui") {
         char key[64] = {};
         sscanf(p.s, "%63s", key);
