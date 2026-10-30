@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0 b11
+
+Lobby Update
+
+- Fixed: Auto-Destroy Nests and the nest list on the Teleport page only found nests while the Player ESP or a survivor reach slider was on.
+- This is a beta build. It has not been tried in a real match yet: if a nest stays, send the log (fatrainer.log).
+
 ## 3.0 b10
 
 Lobby Update
