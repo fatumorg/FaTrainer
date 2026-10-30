@@ -13,6 +13,7 @@
 #include "cheat_engine.h"
 #include "teleport.h"
 #include "dlc.h"
+#include "pvp.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -1082,6 +1083,9 @@ int main(int argc, char** argv) {
         CHECK(cheats::uv_flare_id("Throwable_Btz_Flare") && cheats::uv_flare_id("Throwable_ZaidFlare") && !cheats::uv_flare_id("Throwable_Smoke_Flare") && !cheats::uv_flare_id(nullptr));
     }
     CHECK(cheats::vt_throw_controller && cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
+    pvp::locate(game::g.base);
+    CHECK(pvp::spike_start_fn == game::g.base + 0xd86ce0 && pvp::spike_controller == 0xce0);
+    CHECK(!memcmp((const void*)pvp::spike_start_fn, pvp::SPIKE_START_PROLOGUE, sizeof pvp::SPIKE_START_PROLOGUE));
     {
         CHECK(cheats::vt_light_disable && cheats::vt_light_disable - game::g.base == 0x1729c00);
         alignas(16) static uint8_t module[0x18] = {};
@@ -1289,6 +1293,10 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
+    cheats::find_tweak("spike_range")->factor = 5.5f;
+    CHECK(read_var("f_btz_pvpgrab_spikes_distance_to_path_max_min") == 6.5f && read_var("f_btz_pvpgrab_spikes_interrupt_search_distance_xz") == 9.5f);
+    cheats::find_tweak("spike_range")->factor = 1.0f;
+    CHECK(read_var("f_btz_pvpgrab_spikes_distance_to_path_max_min") == 7);
     int side = cheats::side;
     cheats::side = cheats::SIDE_HUNTER;
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_jump_attack_angle_max") == 7 && read_var("f_btz_zombie_grab_range") == 25);

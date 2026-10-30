@@ -99,11 +99,12 @@ inline Cheat CHEATS[] = {
      {}, {}},
     {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
      {}, {}},
+    {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot throw you onto spikes in your game.", {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",
      {}, {}},
 };
 
-enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER, G_WEAPONS };
+enum Group { G_GEAR, G_MOVEMENT, G_PROGRESS, G_ZOMBIE, G_HUMAN, G_SURVIVAL, G_HUNTER, G_WEAPONS, G_SPIKES };
 
 struct ScriptVar { const char* name; float at_max; };
 
@@ -174,6 +175,8 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
+    {"spike_range", "Spike range", "Spikes farther from where your kick, tackle or ground pound throws someone still impale him. At Max, spikes 6 m off the path.",
+     G_SPIKES, {}, {{"f_btz_pvpgrab_spikes_distance_to_path_max_min", 6}, {"f_btz_pvpgrab_spikes_extra_raytrace_radius", 3}, {"f_btz_pvpgrab_spikes_interrupt_search_distance_xz", 12}}},
     {"flare_speed", "UV flare throw speed", "How fast you throw the UV flare. Other throwables stay the same.", G_WEAPONS, {}, {}, 5.0f},
     {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 5.0f},
 };

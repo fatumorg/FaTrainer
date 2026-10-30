@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <cstdio>
+#include <atomic>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -165,6 +166,93 @@ inline void watch_frame() {
     }
     fprintf(watch.out, "\n");
     fflush(watch.out);
+}
+
+// Call breakpoints: int3 on the first byte, the handler logs the hit, puts the byte back for one single step and re-arms.
+struct Break { std::atomic<uintptr_t> at{0}; uint8_t original = 0; DWORD until = 0; std::atomic<int> hits{0}; };
+const int HIT_FRAMES = 8;
+struct Hit { uintptr_t at, ret, rcx, rdx, r8, r9; DWORD thread, tick; uintptr_t stack[HIT_FRAMES]; };
+const int BREAKS = 4, HITS = 256;
+inline Break breaks[BREAKS];
+inline Hit hits[HITS];
+inline std::atomic<unsigned> hits_written{0}, hits_read{0};
+inline thread_local Break* rearm = nullptr;
+
+inline LONG CALLBACK on_break(EXCEPTION_POINTERS* e) {
+    CONTEXT* c = e->ContextRecord;
+    DWORD code = e->ExceptionRecord->ExceptionCode;
+    if (code == EXCEPTION_SINGLE_STEP && rearm) {
+        Break* b = rearm;
+        rearm = nullptr;
+        const uint8_t int3 = 0xCC;
+        if (b->at && GetTickCount() < b->until) cheats::write_code(b->at, &int3, 1);
+        c->EFlags &= ~0x100u;
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    if (code != EXCEPTION_BREAKPOINT) return EXCEPTION_CONTINUE_SEARCH;
+    uintptr_t at = (uintptr_t)e->ExceptionRecord->ExceptionAddress;
+    for (Break& b : breaks) {
+        if (b.at != at) continue;
+        b.hits++;
+        unsigned slot = hits_written.fetch_add(1);
+        if (slot - hits_read < HITS) {
+            Hit& h = hits[slot % HITS];
+            h = {at, rdv<uintptr_t>(c->Rsp), c->Rcx, c->Rdx, c->R8, c->R9, GetCurrentThreadId(), GetTickCount(), {}};
+            CONTEXT u = *c;
+            for (int i = 0; i < HIT_FRAMES && u.Rip; i++) {
+                DWORD64 image = 0, frame = 0;
+                void* data = nullptr;
+                auto* fn = RtlLookupFunctionEntry(u.Rip, &image, nullptr);
+                if (!fn) break;
+                RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, u.Rip, fn, &u, &data, &frame, nullptr);
+                h.stack[i] = u.Rip;
+            }
+        }
+        cheats::write_code(at, &b.original, 1);
+        c->Rip = at;
+        c->EFlags |= 0x100u;
+        rearm = &b;
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+inline void break_frame() {
+    for (Break& b : breaks)
+        if (b.at && GetTickCount() >= b.until) {
+            uintptr_t at = b.at.exchange(0);
+            if (at && *(uint8_t*)at == 0xCC) cheats::write_code(at, &b.original, 1);
+            cheats::logf_hook("bp: %llx ended after %d hits", (unsigned long long)(at - game::g.base), b.hits.load());
+        }
+    for (unsigned end = hits_written; hits_read != end; hits_read++) {
+        const Hit& h = hits[hits_read % HITS];
+        std::string stack;
+        for (uintptr_t f : h.stack) {
+            if (!f) break;
+            char frame[32];
+            snprintf(frame, sizeof frame, " <%llx", (unsigned long long)(f - game::g.base));
+            stack += frame;
+        }
+        cheats::logf_hook("bp: gamedll+%llx thread %lu from gamedll+%llx rcx %llx (%s) rdx %llx r8 %llx r9 %llx stack%s", (unsigned long long)(h.at - game::g.base),
+                          (unsigned long)h.thread, (unsigned long long)(h.ret - game::g.base), (unsigned long long)h.rcx, game::class_name(h.rcx).c_str(),
+                          (unsigned long long)h.rdx, (unsigned long long)h.r8, (unsigned long long)h.r9, stack.c_str());
+    }
+}
+
+inline std::string set_break(uintptr_t at, double seconds) {
+    static PVOID handler = AddVectoredExceptionHandler(1, on_break);
+    (void)handler;
+    for (Break& b : breaks) {
+        if (b.at) continue;
+        b.original = *(uint8_t*)at, b.until = GetTickCount() + (DWORD)(seconds * 1000), b.hits = 0;
+        b.at = at;
+        const uint8_t int3 = 0xCC;
+        cheats::write_code(at, &int3, 1);
+        char line[96];
+        snprintf(line, sizeof line, "  breaking at %llx for %.0f s\n", (unsigned long long)at, seconds);
+        return line;
+    }
+    return "  all breakpoints in use\n";
 }
 
 inline std::string run(const std::string& line) {
@@ -534,6 +622,26 @@ inline std::string run(const std::string& line) {
         watch = {a, offsets, GetTickCount() + (DWORD)(seconds * 1000), {}, fopen((folder() + "fatrainer_watch.txt").c_str(), "wb")};
         snprintf(b, sizeof b, "  watching %llx, %zu offsets for %.0f s\n", (unsigned long long)a, offsets.size(), seconds);
         return out + b;
+    }
+    if (c == "players") {
+        std::vector<uintptr_t> list;
+        {
+            std::lock_guard<std::mutex> l(cheats::esp_mx);
+            list = cheats::esp_players;
+        }
+        uintptr_t me = cheats::local_player();
+        for (uintptr_t pl : list) {
+            cheats::Vec3 at{};
+            bool known = game::g.player_control >= 0 && cheats::position_of(pl + game::g.player_control, &at);
+            snprintf(b, sizeof b, "  %llx%s %s %.2f %.2f %.2f\n", (unsigned long long)pl, pl == me ? " (me)" : "", known ? "at" : "no position", at.x, at.y, at.z);
+            out += b;
+        }
+        return out + (list.empty() ? "  none\n" : "");
+    }
+    if (c == "bp") {
+        uintptr_t a = p.expr();
+        double seconds = atof(p.s);
+        return out + (a ? set_break(a, seconds > 0 ? seconds : 60) : "  bad address\n");
     }
     if (c == "near") {
         float radius = (float)atof(p.s);

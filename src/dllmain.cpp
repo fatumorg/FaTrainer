@@ -17,6 +17,7 @@
 #endif
 #if !FATRAINER_VISUALS
 #include "net_win.h"
+#include "pvp.h"
 #include "../installer/logic.h"
 #if !FATRAINER_VISUALS
 #include "cheat_engine.h"
@@ -447,6 +448,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_ready) cheats::speed_melee_anims();
 #if FATRAINER_DEV
     probe::watch_frame();
+    probe::break_frame();
 #endif
 #endif
     poll_config_keys();
@@ -780,6 +782,8 @@ static void main_thread() {
     logf("settings cache hook: %s", cheats::install_cache_hook() ? "ok" : cheats::cache_get_fn ? "unexpected code, skipped" : "not found");
     logf("kick filter hook: %s", cheats::install_grab_filter_hook() ? "ok" : "not found");
     logf("melee reach hook: %s", cheats::install_melee_reach_hook() ? "ok" : "not found");
+    pvp::locate((uintptr_t)gamedll);
+    logf("spike start hook: %s", pvp::install() ? "ok" : pvp::spike_start_fn ? "unexpected code, skipped" : "not found");
     logf("survivor level: %s", cheats::keep_lowered_survivor() ? "kept when a save loads" : "raise check not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");

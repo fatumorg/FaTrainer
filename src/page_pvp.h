@@ -95,6 +95,10 @@ inline void zombie_page() {
     begin_card("reach", "ATTACK REACH");
     tweak_sliders(cheats::G_ZOMBIE);
     end_card();
+    begin_card("spikes", "SPIKES");
+    cheat_switch("unspikeable");
+    tweak_sliders(cheats::G_SPIKES);
+    end_card();
     spit_keys_card();
     rank_card(true);
 }
@@ -107,6 +111,10 @@ inline void survivor_page() {
     end_card();
     begin_card("reach", "REACH AND THROWABLES");
     tweak_sliders(cheats::G_HUMAN);
+    end_card();
+    begin_card("spikes", "SPIKES");
+    cheat_switch("unspikeable");
+    tweak_sliders(cheats::G_SPIKES);
     end_card();
     rank_card(false);
 }
