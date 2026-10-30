@@ -623,6 +623,25 @@ inline std::string run(const std::string& line) {
         snprintf(b, sizeof b, "  watching %llx, %zu offsets for %.0f s\n", (unsigned long long)a, offsets.size(), seconds);
         return out + b;
     }
+    if (c == "strs") {
+        uintptr_t a = p.expr();
+        size_t n = std::min<size_t>(strtoul(p.s, nullptr, 16), 0x4000);
+        auto text_at = [](uintptr_t at) {
+            char s[64] = {};
+            if (!rd(at, s, sizeof s - 1)) return std::string();
+            std::string ascii, wide;
+            for (int i = 0; i < 63 && s[i] >= 0x20 && s[i] < 0x7f; i++) ascii += s[i];
+            for (int i = 0; i + 1 < 63 && s[i] >= 0x20 && s[i] < 0x7f && !s[i + 1]; i += 2) wide += s[i];
+            return ascii.size() >= 3 ? ascii : wide.size() >= 3 ? "u\"" + wide + "\"" : std::string();
+        };
+        for (size_t off = 0; off < n; off += 8) {
+            std::string inline_text = text_at(a + off), pointed = text_at(rdv<uintptr_t>(a + off));
+            if (inline_text.empty() && pointed.empty()) continue;
+            snprintf(b, sizeof b, "  +%zx%s%s%s%s\n", off, inline_text.empty() ? "" : " inline ", inline_text.c_str(), pointed.empty() ? "" : " -> ", pointed.c_str());
+            out += b;
+        }
+        return out;
+    }
     if (c == "players") {
         std::vector<uintptr_t> list;
         {
