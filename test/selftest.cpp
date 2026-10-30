@@ -2086,6 +2086,22 @@ int main(int argc, char** argv) {
     *(uintptr_t*)(control + cheats::CONTROL_ENTITY) = (uintptr_t)entity;
     cheats::Vec3 at;
     CHECK(cheats::position_of((uintptr_t)control, &at) && at.y == 2 && position_calls == 1);
+    {
+        int saved_control = game::g.human_control;
+        game::g.human_control = 0;
+        alignas(16) static uint8_t nest[0x400] = {};
+        *(uintptr_t*)(nest + cheats::MODULE_OWNER) = (uintptr_t)control;
+        *(float*)(nest + cheats::MODULE_HEALTH) = 50;
+        cheats::saw_nest((uintptr_t)nest);
+        auto nests = cheats::living_nests();
+        CHECK(nests.size() == 1 && nests[0].at.z == 3);
+        *(float*)(nest + cheats::MODULE_HEALTH) = 0;
+        CHECK(cheats::living_nests().empty() && cheats::nest_seen.size() == 1);
+        cheats::nest_seen[(uintptr_t)nest] = GetTickCount() - cheats::NEST_FORGET - 1;
+        CHECK(cheats::living_nests().empty() && cheats::nest_seen.empty());
+        game::g.human_control = saved_control;
+        position_calls = 1;
+    }
     *(uintptr_t*)(entity + cheats::ENTITY_NODE) = 0x10;
     CHECK(!cheats::position_of((uintptr_t)control, &at) && std::isnan(at.x) && position_calls == 1);
     *(uintptr_t*)(control + cheats::CONTROL_ENTITY) = 0xdead0000;

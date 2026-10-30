@@ -109,6 +109,12 @@ inline void survivor_page() {
     cheat_switch("auto_flare");
     cheat_switch("one_hit_hunter");
     end_card();
+    size_t left = cheats::living_nests().size();
+    begin_card("nests", left ? ("NESTS - " + std::to_string(left) + " LEFT").c_str() : "NESTS");
+    if (accent_button("Destroy all nests", {ImGui::GetContentRegionAvail().x, S(38)})) destroy_nests_now();
+    pin_menu("nests_once");
+    cheat_switch("nests_loop");
+    end_card();
     begin_card("reach", "REACH AND THROWABLES");
     tweak_sliders(cheats::G_HUMAN);
     end_card();

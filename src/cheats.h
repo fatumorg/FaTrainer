@@ -100,6 +100,7 @@ inline Cheat CHEATS[] = {
     {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
      {}, {}},
     {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot throw you onto spikes in your game.", {}, {}},
+    {"nests_loop", "Auto-Destroy Nests loop", "Keeps destroying the Night Hunter's nests, one every half second, until none is left.", {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",
      {}, {}},
 };
@@ -1961,6 +1962,57 @@ inline int kill_enemies(float radius) {
     return killed;
 }
 
+// Nests are seen through the module update hook while a Night Hunter is in the match; one not updated for NEST_FORGET is gone.
+inline std::map<uintptr_t, DWORD> nest_seen;
+const DWORD NEST_FORGET = 5000;
+const DWORD NEST_GAP_MS = 500;
+inline std::atomic<bool> nests_once{false};
+
+inline void saw_nest(uintptr_t m) {
+    std::lock_guard<std::mutex> l(modules_mx);
+    nest_seen[m] = GetTickCount();
+}
+
+struct Nest { uintptr_t module; Vec3 at; float distance; };
+
+inline std::vector<Nest> living_nests() {
+    Vec3 me = player_position();
+    std::vector<Nest> out;
+    DWORD now = GetTickCount();
+    std::lock_guard<std::mutex> l(modules_mx);
+    for (auto it = nest_seen.begin(); it != nest_seen.end();) {
+        if (now - it->second > NEST_FORGET) {
+            it = nest_seen.erase(it);
+            continue;
+        }
+        uintptr_t m = (it++)->first;
+        Nest n{m, {}, 0};
+        if (!(rdv<float>(m + MODULE_HEALTH, NAN) > 0) || g.human_control < 0 || !position_of(rdv<uintptr_t>(m + MODULE_OWNER) + g.human_control, &n.at)) continue;
+        n.distance = std::isfinite(me.x) ? distance(me, n.at) : 0;
+        out.push_back(n);
+    }
+    std::sort(out.begin(), out.end(), [](const Nest& a, const Nest& b) { return a.distance < b.distance; });
+    return out;
+}
+
+inline bool destroy_nest(uintptr_t m) {
+    uintptr_t owner = rdv<uintptr_t>(m + MODULE_OWNER), kill = slot(owner, SLOT_KILL);
+    if (!in_game_module(kill)) return false;
+    ((void (*)(uintptr_t))kill)(owner);
+    return true;
+}
+
+inline void destroy_nests_step() {
+    static DWORD next = 0;
+    if (!nests_once && !is_on("nests_loop")) return;
+    DWORD now = GetTickCount();
+    if ((LONG)(now - next) < 0) return;
+    auto nests = living_nests();
+    if (nests.empty()) return void(nests_once = false);
+    if (destroy_nest(nests[0].module)) logf_hook("nests: destroyed one %.0f m away, %zu left", nests[0].distance, nests.size() - 1);
+    next = now + NEST_GAP_MS;
+}
+
 inline int pause_prison() {
     DWORD now = GetTickCount();
     float dt = last_prison_tick ? (now - last_prison_tick) / 1000.0f : 0;
@@ -2760,6 +2812,7 @@ inline void tick() {
         dupe_drops(is_on("item_dupe"));
         if (is_on("one_hit")) weaken_enemies();
         if (is_on("one_hit_hunter")) weaken_hunter();
+        destroy_nests_step();
     }
     uintptr_t provider = alive(player) ? rdv<uintptr_t>(player + PARAM_PROVIDER) : 0;
     uintptr_t before = player_provider.exchange(provider);
@@ -2851,7 +2904,13 @@ asm(".text\n" FATRAINER_UPDATE_HOOK(0) FATRAINER_UPDATE_HOOK(1) FATRAINER_UPDATE
 extern "C" void fatrainer_module_update(uintptr_t module) {
     static cheats::Cheat* one_hit = cheats::find("one_hit");
     cheats::module_hook_at.store(GetTickCount(), std::memory_order_relaxed);
-    if (!one_hit->on || !cheats::is_enemy_module(module) || cheats::is_nest_module(module)) return;
+    bool nests = cheats::hunter_in_match.load(std::memory_order_relaxed);
+    if ((!one_hit->on && !nests) || !cheats::is_enemy_module(module)) return;
+    if (cheats::is_nest_module(module)) {
+        if (nests) cheats::saw_nest(module);
+        return;
+    }
+    if (!one_hit->on) return;
     float cur = cheats::rdv<float>(module + cheats::MODULE_HEALTH, NAN);
     if (cur > cheats::ONE_HIT_HEALTH && cur < 1e7f) cheats::wr<float>(module + cheats::MODULE_HEALTH, cheats::ONE_HIT_HEALTH);
 }

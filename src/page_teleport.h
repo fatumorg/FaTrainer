@@ -45,6 +45,34 @@ inline void go_objective() {
     });
 }
 
+inline void destroy_nests_now() {
+    cheats::nests_once = true;
+    toast("Destroying the nests");
+}
+
+inline void go_to_nest(cheats::Vec3 at) {
+    const float ABOVE = 1.0f;
+    go_to({at.x, at.y + ABOVE, at.z});
+}
+
+inline void nests_card(const std::vector<cheats::Nest>& nests) {
+    begin_card("nests", ("NESTS - " + std::to_string(nests.size()) + " LEFT").c_str());
+    float small = S(90);
+    if (accent_button("Nearest nest", {ImGui::GetContentRegionAvail().x, S(38)})) go_to_nest(nests[0].at);
+    for (size_t i = 0; i < nests.size(); i++) {
+        ImGui::PushID((int)i);
+        ImGui::Dummy({0, S(4)});
+        float avail = ImGui::GetContentRegionAvail().x, x = ImGui::GetCursorPosX();
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Nest %d, %.0f m", (int)i + 1, nests[i].distance);
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(x + avail - small);
+        if (accent_button("Go", {small, 0})) go_to_nest(nests[i].at);
+        ImGui::PopID();
+    }
+    end_card();
+}
+
 struct QuickTargets { bool marker = false, tracked = false; cheats::Vec3 marker_at{}, objective_at{}; std::string title; };
 
 inline const QuickTargets& quick_targets() {
@@ -92,6 +120,7 @@ inline void teleport_page() {
     cheats::Vec3 me = cheats::player_position();
     bool here = std::isfinite(me.x);
     quick_card(me, here);
+    if (auto nests = cheats::living_nests(); !nests.empty()) nests_card(nests);
     std::string title = "SAVED POSITIONS";
     if (!level.empty()) title += " - ";
     for (char ch : level) title += ch == '_' ? ' ' : (char)toupper((unsigned char)ch);
