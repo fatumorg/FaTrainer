@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0 b10
+
+Lobby Update
+
+- New: Auto-Destroy Nests on the Survivor page. Destroy all nests destroys the Night Hunter's nests one by one, and the loop switch keeps doing it until none is left. The card shows how many nests are left.
+- New: the Teleport page lists the living nests during an invasion, nearest first, with Go for each and Nearest nest.
+- This is a beta build. It has not been tried in a real match yet. Nests are destroyed with the game's own kill, the way Kill all enemies nearby kills; if a nest stays, or the match does not count it, send the log (fatrainer.log).
+
 ## 3.0 b9
 
 Lobby Update
