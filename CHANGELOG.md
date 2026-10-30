@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0 b9
+
+Lobby Update
+
+- New: Unspikeable on the Survivor and Night Hunter pages. When a kick, tackle or ground pound would throw you onto spikes, your game does not start the spike death.
+- New: Spike range on the Survivor and Night Hunter pages. Your kicks, tackles and ground pounds also find spikes farther from the path the target flies; at Max, spikes up to 6 m off it. The spike search runs in the attacker's game, so this works as the host and as a joined player.
+- This is a beta build. Neither has been seen to work in a real match yet: if a spike kill still happens with Unspikeable on, or Spike range does nothing, send the log (fatrainer.log).
+
 ## 3.0 b8
 
 Lobby Update
