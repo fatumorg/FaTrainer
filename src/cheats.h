@@ -1962,7 +1962,7 @@ inline int kill_enemies(float radius) {
     return killed;
 }
 
-// Nests are seen through the module update hook while a Night Hunter is in the match; one not updated for NEST_FORGET is gone.
+// Nests are seen through the module update hook while you are a survivor; one not updated for NEST_FORGET is gone.
 inline std::map<uintptr_t, DWORD> nest_seen;
 const DWORD NEST_FORGET = 5000;
 const DWORD NEST_GAP_MS = 500;
@@ -2904,7 +2904,7 @@ asm(".text\n" FATRAINER_UPDATE_HOOK(0) FATRAINER_UPDATE_HOOK(1) FATRAINER_UPDATE
 extern "C" void fatrainer_module_update(uintptr_t module) {
     static cheats::Cheat* one_hit = cheats::find("one_hit");
     cheats::module_hook_at.store(GetTickCount(), std::memory_order_relaxed);
-    bool nests = cheats::hunter_in_match.load(std::memory_order_relaxed);
+    bool nests = cheats::side.load(std::memory_order_relaxed) == cheats::SIDE_SURVIVOR;
     if ((!one_hit->on && !nests) || !cheats::is_enemy_module(module)) return;
     if (cheats::is_nest_module(module)) {
         if (nests) cheats::saw_nest(module);

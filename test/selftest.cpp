@@ -2092,6 +2092,7 @@ int main(int argc, char** argv) {
         alignas(16) static uint8_t nest[0x400] = {};
         *(uintptr_t*)(nest + cheats::MODULE_OWNER) = (uintptr_t)control;
         *(float*)(nest + cheats::MODULE_HEALTH) = 50;
+        cheats::nest_seen.clear();
         cheats::saw_nest((uintptr_t)nest);
         auto nests = cheats::living_nests();
         CHECK(nests.size() == 1 && nests[0].at.z == 3);
