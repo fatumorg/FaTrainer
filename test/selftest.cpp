@@ -1304,10 +1304,54 @@ int main(int argc, char** argv) {
     cheats::find_tweak("h_dfa_pull")->factor = 10.0f;
     CHECK(read_var("f_btz_jump_attack_angle_max") == 180 && read_var("f_btz_jump_attack_range") == 12);
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -90 && read_var("f_btz_zombie_grab_range") == 25);
-    cheats::find_tweak("spike_range")->factor = 5.5f;
-    CHECK(read_var("f_btz_pvpgrab_spikes_distance_to_path_max_min") == 6.5f && read_var("f_btz_pvpgrab_spikes_interrupt_search_distance_xz") == 9.5f);
-    cheats::find_tweak("spike_range")->factor = 1.0f;
-    CHECK(read_var("f_btz_pvpgrab_spikes_distance_to_path_max_min") == 7);
+    {
+        CHECK(cheats::SPIKE_VARS[0].value == game::g.base + 0x1d1c710 && cheats::SPIKE_VARS[0].guard == game::g.base + 0x1d1c70c);
+        CHECK(cheats::SPIKE_VARS[1].value == game::g.base + 0x1d1c700 && cheats::SPIKE_VARS[1].guard == game::g.base + 0x1d1c6fc);
+        CHECK(cheats::SPIKE_VARS[2].value == game::g.base + 0x1d1c6b4 && cheats::SPIKE_VARS[2].guard == game::g.base + 0x1d1c6b0);
+        static int guard = 0;
+        static float value = 1.0f;
+        cheats::CachedVar v{"x", 6, (uintptr_t)&value, (uintptr_t)&guard};
+        cheats::apply_cached_vars(&v, 1, 1.0f);
+        CHECK(value == 1.0f);
+        guard = -1;
+        cheats::apply_cached_vars(&v, 1, 1.0f);
+        CHECK(value == 1.0f);
+        guard = INT32_MIN + 3;
+        cheats::apply_cached_vars(&v, 1, 0.5f);
+        CHECK(value == 3.5f);
+        cheats::apply_cached_vars(&v, 1, 1.0f);
+        CHECK(value == 6.0f);
+        cheats::apply_cached_vars(&v, 1, 0.0f);
+        CHECK(value == 1.0f && std::isnan(v.original));
+    }
+    {
+        // Anti-AFK: the def's parser (vtable slot 1) stores the two forfeit times at +0x48 and +0x4c.
+        CHECK(game::g.vt_mission_def && game::rdv<uintptr_t>(game::g.vt_mission_def + 8) == game::g.base + 0xd3490);
+        alignas(16) static uintptr_t def[16] = {};
+        def[0] = game::g.vt_mission_def, def[1] = 0xb;
+        float* f = (float*)def;
+        f[cheats::MISSION_AFK_FORFEIT / 4] = 90, f[cheats::MISSION_IDLE_FORFEIT / 4] = 0;
+        auto defs = game::g.mission_defs;
+        game::g.mission_defs = {(uintptr_t)def};
+        cheats::apply_anti_afk(true);
+        CHECK(f[cheats::MISSION_AFK_FORFEIT / 4] == cheats::FORFEIT_NEVER && f[cheats::MISSION_IDLE_FORFEIT / 4] == 0);
+        def[0] = 0;
+        f[cheats::MISSION_AFK_FORFEIT / 4] = 5;
+        cheats::apply_anti_afk(false);
+        CHECK(f[cheats::MISSION_AFK_FORFEIT / 4] == 5);
+        def[0] = game::g.vt_mission_def;
+        cheats::apply_anti_afk(true);
+        cheats::apply_anti_afk(false);
+        CHECK(f[cheats::MISSION_AFK_FORFEIT / 4] == 5 && cheats::forfeit_originals.empty());
+        def[1] = (uintptr_t)def;  // a block holding pointers, not a settings action
+        cheats::apply_anti_afk(true);
+        CHECK(f[cheats::MISSION_AFK_FORFEIT / 4] == 5);
+        def[1] = 0xb, f[cheats::MISSION_AFK_FORFEIT / 4] = 6.6e-15f;
+        cheats::apply_anti_afk(true);
+        CHECK(f[cheats::MISSION_AFK_FORFEIT / 4] == 6.6e-15f);
+        cheats::apply_anti_afk(false);
+        game::g.mission_defs = defs;
+    }
     int side = cheats::side;
     cheats::side = cheats::SIDE_HUNTER;
     CHECK(read_var("f_btz_pvp_grab_below_angle_threshold") == -50 && read_var("f_btz_jump_attack_angle_max") == 7 && read_var("f_btz_zombie_grab_range") == 25);

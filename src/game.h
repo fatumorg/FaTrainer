@@ -107,7 +107,7 @@ inline std::vector<Section> sections(uintptr_t base) {
 }
 
 inline uintptr_t find_vtable(uintptr_t base, const char* cls) {
-    std::string needle = std::string(".?AV") + cls + "@@";
+    std::string needle = std::string(cls[0] == '.' ? "" : ".?AV") + cls + "@@";
     needle.push_back('\0');
     auto secs = sections(base);
     uintptr_t td = 0;
@@ -347,10 +347,10 @@ const uint32_t NIBBLE = 0xF;
 struct State {
     uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {}, vt_inv_container = 0;
     uintptr_t vt_player = 0, vt_tutorial_player = 0, vt_human = 0, vt_health[3] = {};
-    uintptr_t vt_firearm_desc = 0, vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0;
+    uintptr_t vt_firearm_desc = 0, vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0, vt_mission_def = 0;
     uintptr_t vt_upgrade_desc = 0, vt_blueprint_desc = 0, context_ctor = 0, elemental_root = 0;
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
-    std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds;
+    std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds, mission_defs;
 #if !FATRAINER_VISUALS
     uintptr_t vt_chat_input = 0;
     std::vector<uintptr_t> chat_inputs;
@@ -686,6 +686,7 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_logical_player = find_vtable(base, "LogicalPlayer");
     g.vt_logical_level = find_vtable(base, "LogicalLevel");
     g.vt_hud = find_vtable(base, "HUDScreenBase");
+    g.vt_mission_def = find_vtable(base, ".?AUZombieMissionActionDef");
 #if !FATRAINER_VISUALS
     g.vt_chat_input = find_vtable(base, "HudChatInput");
 #endif
@@ -733,6 +734,7 @@ inline void refresh() {
         vts.push_back(g.vt_rope);
         vts.push_back(g.vt_logical_player);
         vts.push_back(g.vt_hud);
+        vts.push_back(g.vt_mission_def);
 #if !FATRAINER_VISUALS
         vts.push_back(g.vt_chat_input);
 #endif
@@ -823,8 +825,9 @@ inline void refresh() {
     g.ropes = found[6 + N_INV_CLASSES];
     g.logical_players = found[7 + N_INV_CLASSES];
     g.huds = found[8 + N_INV_CLASSES];
+    g.mission_defs = found[9 + N_INV_CLASSES];
 #if !FATRAINER_VISUALS
-    g.chat_inputs = found[9 + N_INV_CLASSES];
+    g.chat_inputs = found[10 + N_INV_CLASSES];
 #endif
     g.wallets = wallets;
     g.invs = std::move(invs);

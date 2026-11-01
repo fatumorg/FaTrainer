@@ -100,6 +100,7 @@ inline Cheat CHEATS[] = {
     {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
      {}, {}},
     {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot throw you onto spikes in your game.", {}, {}},
+    {"anti_afk", "Anti-AFK", "Be The Zombie matches you host no longer end with Humans were inactive, however long the humans idle.", {}, {}},
     {"nests_loop", "Auto-Destroy Nests loop", "Keeps destroying the Night Hunter's nests, one every half second, until none is left.", {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",
      {}, {}},
@@ -177,7 +178,7 @@ inline Tweak TWEAKS[] = {
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
     {"spike_range", "Spike range", "Spikes farther from where your kick, tackle or ground pound throws someone still impale him. At Max, spikes 6 m off the path.",
-     G_SPIKES, {}, {{"f_btz_pvpgrab_spikes_distance_to_path_max_min", 6}, {"f_btz_pvpgrab_spikes_extra_raytrace_radius", 3}, {"f_btz_pvpgrab_spikes_interrupt_search_distance_xz", 12}}},
+     G_SPIKES, {}},
     {"flare_speed", "UV flare throw speed", "How fast you throw the UV flare. Other throwables stay the same.", G_WEAPONS, {}, {}, 5.0f},
     {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 5.0f},
 };
@@ -206,7 +207,7 @@ inline std::string tweak_text(const Tweak& t, float v) {
     char b[32];
     if (v == 1.0f) snprintf(b, sizeof b, "Normal");
     else if (v >= t.max) snprintf(b, sizeof b, "Max");
-    else if (!t.vars.empty()) snprintf(b, sizeof b, "%.0f%%", (v - 1.0f) / (t.max - 1.0f) * 100);
+    else if (!t.vars.empty() || t.group == G_SPIKES) snprintf(b, sizeof b, "%.0f%%", (v - 1.0f) / (t.max - 1.0f) * 100);
     else snprintf(b, sizeof b, "x%.1f", v);
     return b;
 }
@@ -320,6 +321,62 @@ inline uintptr_t locations_root = 0, vt_quest_goals = 0, vt_quest = 0;
 const char LOCATIONS_CODE[] = "8B D7 48 8B CE E8 ? ? ? ? E8 ? ? ? ? 48 8B D8 8B 48 08 8B 40 0C FF C1 3B C8";
 const int LOCATIONS_GETTER_CALL = 10;
 
+// The spike search keeps these vars in function statics, read once behind a thread-safe init guard, so the var hook
+// cannot reach them after the first search. The statics are written directly once the game has filled them.
+struct CachedVar { const char* name; float at_max; uintptr_t value = 0, guard = 0; float original = NAN; };
+inline CachedVar SPIKE_VARS[] = {{"f_btz_pvpgrab_spikes_distance_to_path_max_min", 6}, {"f_btz_pvpgrab_spikes_extra_raytrace_radius", 3},
+                                 {"f_btz_pvpgrab_spikes_interrupt_search_distance_xz", 12}};
+const int GUARD_UNSET = 0, GUARD_BUSY = -1, CACHE_STORE_WITHIN = 0x200, CACHE_GUARD_WITHIN = 0x40;
+
+inline uintptr_t find_string(uintptr_t base, const char* text) {
+    auto secs = game::sections(base);
+    auto* rdata = game::section_named(secs, ".rdata");
+    if (!rdata) return 0;
+    const char* b = (const char*)rdata->start;
+    size_t n = rdata->end - rdata->start, len = strlen(text) + 1;
+    for (size_t i = 0; i + len <= n; i++)
+        if (!memcmp(b + i, text, len) && (i == 0 || !b[i - 1])) return rdata->start + i;
+    return 0;
+}
+
+inline uintptr_t lea_of(uintptr_t base, uintptr_t target) {
+    auto secs = game::sections(base);
+    auto* text = game::section_named(secs, ".text");
+    if (!text || !target) return 0;
+    const uint8_t* b = (const uint8_t*)text->start;
+    for (size_t i = 0; i + 7 <= (size_t)(text->end - text->start); i++)
+        if ((b[i] == 0x48 || b[i] == 0x4C) && b[i + 1] == 0x8D && (b[i + 2] & 0xC7) == 0x05 && game::rip_target(text->start + i, 3, 7) == target)
+            return text->start + i;
+    return 0;
+}
+
+inline bool locate_cached_var(uintptr_t base, CachedVar& v) {
+    uintptr_t lea = lea_of(base, find_string(base, v.name));
+    if (!lea) return false;
+    for (uintptr_t p = lea; p > lea - CACHE_GUARD_WITHIN && !v.guard; p--)
+        if (rdv<uint16_t>(p) == 0x3D83 && rdv<uint8_t>(p + 6) == 0xFF) v.guard = game::rip_target(p, 2, 7);
+    // The float sits right after its guard; the store can be in the cold chunk's parent, before or after the lookup.
+    for (uintptr_t p = lea - CACHE_STORE_WITHIN; v.guard && p < lea + CACHE_STORE_WITHIN && !v.value; p++)
+        if (rdv<uint32_t>(p) == 0x05110FF3 && game::rip_target(p, 4, 8) == v.guard + 4) v.value = v.guard + 4;
+    return v.value && v.guard;
+}
+
+inline void apply_cached_vars(CachedVar* vars, size_t n, float strength) {
+    for (size_t i = 0; i < n; i++) {
+        CachedVar& v = vars[i];
+        int guard = rdv<int>(v.guard, GUARD_UNSET);
+        if (!v.value || guard == GUARD_UNSET || guard == GUARD_BUSY) continue;
+        if (strength > 0) {
+            if (std::isnan(v.original)) v.original = rdv<float>(v.value, NAN);
+            float want = v.original + (v.at_max - v.original) * strength;
+            if (std::isfinite(want) && rdv<float>(v.value) != want) wr<float>(v.value, want);
+        } else if (!std::isnan(v.original)) {
+            wr<float>(v.value, v.original);
+            v.original = NAN;
+        }
+    }
+}
+
 inline void locate(uintptr_t base) {
     vt_melee_desc = game::find_vtable(base, "ItemDescMelee");
     vt_melee_controller = game::find_vtable(base, "WeaponMeleeController");
@@ -381,6 +438,7 @@ inline void locate(uintptr_t base) {
     if (auto hits = game::find_code(base, "48 8B 05 ? ? ? ? 48 8B 0D ? ? ? ? 48 8B 18 48 8B 01 FF 90 90 01 00 00 48 8B 0D ? ? ? ? 48 8D 55 ? 4C 8B C0 FF 93 90 03 00 00");
         !hits.empty())
         var_root = game::rip_target(hits[0], 3, 7);
+    for (auto& v : SPIKE_VARS) locate_cached_var(base, v);
     if (auto hits = game::find_code(base, "F3 0F 10 05 ? ? ? ? F3 44 0F 10 15 ? ? ? ? 41 0F 57 C2 0F 2F 40 04"); !hits.empty())
         dfa_fall_speed = game::rip_target(hits[0], 4, 8);
     if (auto hits = game::find_code(base, LOCATIONS_CODE, 2); hits.size() == 1) {
@@ -2013,6 +2071,37 @@ inline void destroy_nests_step() {
     next = now + NEST_GAP_MS;
 }
 
+// The Be The Zombie mission forfeits the humans after SetHumanAfkForfeitTime without input and after
+// SetHumanNoInteractionkForfeitTime without touching a nest; both are read from its ZombieMissionActionDef.
+// Heap blocks that still carry that vtable but hold pointers (+8, the action kind, is then a pointer) are skipped.
+const int MISSION_KIND = 0x8, MISSION_AFK_FORFEIT = 0x48, MISSION_IDLE_FORFEIT = 0x4c;
+const uint64_t MISSION_KIND_MAX = 0x100;
+const float FORFEIT_MIN = 1.0f, FORFEIT_NEVER = 3.0e7f;
+
+inline bool mission_def(uintptr_t d) {
+    return rdv<uintptr_t>(d) == g.vt_mission_def && rdv<uint64_t>(d + MISSION_KIND, UINT64_MAX) < MISSION_KIND_MAX;
+}
+inline std::map<std::pair<uintptr_t, int>, float> forfeit_originals;
+
+inline int apply_anti_afk(bool on) {
+    int live = 0;
+    if (on)
+        for (uintptr_t d : g.mission_defs) {
+            if (!mission_def(d)) continue;
+            live++;
+            for (int off : {MISSION_AFK_FORFEIT, MISSION_IDLE_FORFEIT}) {
+                float v = rdv<float>(d + off, NAN);
+                if (v >= FORFEIT_MIN && v < FORFEIT_NEVER) forfeit_originals.emplace(std::make_pair(d, off), v);
+            }
+        }
+    for (auto& [at, original] : forfeit_originals) {
+        float want = on ? FORFEIT_NEVER : original;
+        if (mission_def(at.first) && rdv<float>(at.first + at.second, NAN) != want) wr<float>(at.first + at.second, want);
+    }
+    if (!on) forfeit_originals.clear();
+    return live;
+}
+
 inline int pause_prison() {
     DWORD now = GetTickCount();
     float dt = last_prison_tick ? (now - last_prison_tick) / 1000.0f : 0;
@@ -2787,6 +2876,7 @@ inline void update_side(uintptr_t who, bool new_player) {
 inline void tick() {
     std::lock_guard<std::mutex> l(game::mx);
     bool prison_missing = !pause_prison() && is_on("prison_pause");
+    bool afk_missing = !apply_anti_afk(is_on("anti_afk")) && is_on("anti_afk");
     bool uv_missing = is_on("uv") && !keep_uv_charge();
     float uv_slow = find_tweak("uv_slow")->factor;
     bool uv_slow_missing = false;
@@ -2797,8 +2887,10 @@ inline void tick() {
     patch_lockpick(is_on("lockpick"));
     patch_pound(is_on("z_pound_hits"));
     block_forced_damage(is_on("god"));
+    if (Tweak* t = find_tweak("spike_range"))
+        apply_cached_vars(SPIKE_VARS, std::size(SPIKE_VARS), std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f));
     apply_spit_radius(playing_hunter() ? std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max) : 1.0f);
-    objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing;
+    objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing || afk_missing;
     player = find_player();
     if (alive(player)) {
         apply_weapon_edits();

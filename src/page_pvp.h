@@ -82,6 +82,7 @@ inline void zombie_page() {
     begin_card("hunter", "HUNTER");
     cheat_switch("god", "Hunter god mode");
     cheat_switch("z_energy");
+    cheat_switch("anti_afk");
     ImGui::Dummy({0, S(4)});
     tweak_slider(*cheats::find_tweak("damage_taken"));
     tweak_sliders(cheats::G_HUNTER);
@@ -108,6 +109,7 @@ inline void survivor_page() {
     cheat_switch("dodge_spit");
     cheat_switch("auto_flare");
     cheat_switch("one_hit_hunter");
+    cheat_switch("anti_afk");
     end_card();
     size_t left = cheats::living_nests().size();
     begin_card("nests", left ? ("NESTS - " + std::to_string(left) + " LEFT").c_str() : "NESTS");
