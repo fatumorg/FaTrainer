@@ -345,7 +345,7 @@ struct StatField { int off = -1; bool is_float = true; int votes = 0, samples = 
 const uint32_t NIBBLE = 0xF;
 
 struct State {
-    uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {};
+    uintptr_t base = 0, vt_money = 0, vt_manager = 0, vt_inv[N_INV_CLASSES] = {}, vt_inv_container = 0;
     uintptr_t vt_player = 0, vt_tutorial_player = 0, vt_human = 0, vt_health[3] = {};
     uintptr_t vt_firearm_desc = 0, vt_equipment = 0, vt_prison_data = 0, vt_prison_sensor = 0, vt_rope = 0, vt_logical_player = 0, vt_logical_level = 0, vt_hud = 0;
     uintptr_t vt_upgrade_desc = 0, vt_blueprint_desc = 0, context_ctor = 0, elemental_root = 0;
@@ -673,6 +673,7 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_manager = find_vtable(base, "ItemManager");
     for (int i = 0; i < N_INV_CLASSES; i++) g.vt_inv[i] = find_vtable(base, INV_CLASSES[i]);
     g.vt_player = find_vtable(base, "PlayerDI");
+    g.vt_inv_container = find_vtable(base, "InventoryContainerDI");
     g.vt_tutorial_player = find_vtable(base, "TutorialPlayerDI");
     g.vt_human = find_vtable(base, "HumanAI");
     const char* health_classes[] = {"HealthModule", "ArmorHealthModule", "BodyPartsHealthModule"};
@@ -699,6 +700,22 @@ inline bool resolve_classes(uintptr_t base) {
     bool ok = g.vt_money && g.vt_inv[0];
     g.status = ok ? "ready" : "game classes not found (game updated?)";
     return ok;
+}
+
+// A player's own inventories: PlayerDI+0x938 holds 5 InventoryContainerDI, each with up to 10 inventories (money too).
+// The heap scan also finds freed inventories that still carry their vtable; their items are freed memory.
+const int PLAYER_CONTAINERS = 0x938, CONTAINER_COUNT = 5, CONTAINER_INVENTORIES = 0x40, CONTAINER_SLOTS = 10;
+
+inline std::set<uintptr_t> owned_inventories(const std::vector<uintptr_t>& players) {
+    std::set<uintptr_t> owned;
+    for (uintptr_t p : players)
+        for (int c = 0; c < CONTAINER_COUNT && g.vt_inv_container; c++) {
+            uintptr_t container = rdv<uintptr_t>(p + PLAYER_CONTAINERS + c * 8);
+            if (!container || rdv<uintptr_t>(container) != g.vt_inv_container) continue;
+            for (int i = 0; i < CONTAINER_SLOTS; i++)
+                if (uintptr_t inv = rdv<uintptr_t>(container + CONTAINER_INVENTORIES + i * 8)) owned.insert(inv);
+        }
+    return owned;
 }
 
 inline void refresh() {
@@ -728,8 +745,11 @@ inline void refresh() {
                 if (*(const uintptr_t*)p == g.vt_manager) found[1].push_back(p);
     DWORD t_scan = GetTickCount() - t0;
 
+    auto owned = owned_inventories(found[2 + N_INV_CLASSES]);
+    auto stale = [&](uintptr_t o) { return !owned.empty() && !owned.count(o); };
     std::vector<uintptr_t> wallets;
     for (auto w : found[0]) {
+        if (stale(w)) continue;
         int m = rdv<int>(w + 0x40, -1);
         if (m >= 0 && m < 1000000000) wallets.push_back(w);
     }
@@ -738,6 +758,7 @@ inline void refresh() {
     std::vector<uintptr_t> all;
     for (int c = 0; c < N_INV_CLASSES; c++)
         for (auto o : found[2 + c]) {
+            if (stale(o)) continue;
             uintptr_t arr = rdv<uintptr_t>(o + 0x40);
             uint32_t n = rdv<uint32_t>(o + 0x48);
             int cap = rdv<int>(o + 0x58);

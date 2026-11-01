@@ -1087,6 +1087,17 @@ int main(int argc, char** argv) {
     CHECK(pvp::spike_start_fn == game::g.base + 0xd86ce0 && pvp::spike_controller == 0xce0);
     CHECK(!memcmp((const void*)pvp::spike_start_fn, pvp::SPIKE_START_PROLOGUE, sizeof pvp::SPIKE_START_PROLOGUE));
     {
+        CHECK(game::g.vt_inv_container);
+        alignas(16) static uint8_t player[0x1000] = {}, container[0x100] = {}, other[0x100] = {};
+        uintptr_t owned_inv = 0x5000, stale_inv = 0x6000;
+        *(uintptr_t*)container = game::g.vt_inv_container;
+        *(uintptr_t*)(container + game::CONTAINER_INVENTORIES + 8) = owned_inv;
+        *(uintptr_t*)(other + game::CONTAINER_INVENTORIES) = stale_inv;
+        *(uintptr_t*)(player + game::PLAYER_CONTAINERS + 8) = (uintptr_t)container;
+        *(uintptr_t*)(player + game::PLAYER_CONTAINERS + 16) = (uintptr_t)other;
+        auto owned = game::owned_inventories({(uintptr_t)player});
+        CHECK(owned.size() == 1 && owned.count(owned_inv) && !owned.count(stale_inv));
+        CHECK(game::owned_inventories({}).empty());
         CHECK(cheats::vt_light_disable && cheats::vt_light_disable - game::g.base == 0x1729c00);
         alignas(16) static uint8_t module[0x18] = {};
         *(uintptr_t*)module = cheats::vt_light_disable;
