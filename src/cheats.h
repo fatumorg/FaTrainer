@@ -100,7 +100,7 @@ inline Cheat CHEATS[] = {
      {}, {}},
     {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
      {}, {}},
-    {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot throw you onto spikes in your game.", {}, {}},
+    {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot kill you on spikes. The other players still see you stuck on the spikes until you die.", {}, {}},
     {"anti_afk", "Anti-AFK", "Be The Zombie matches you host no longer end with Humans were inactive, however long the humans idle.", {}, {}},
     {"nests_loop", "Auto-Destroy Nests loop", "Keeps destroying the Night Hunter's nests, one every half second, until none is left.", {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",

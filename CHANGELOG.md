@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0 b15
+
+Lobby Update
+
+- Changed: Unspikeable says what the other players see. The attacker's game decides the spike death and starts it in every game, and only the victim's own death ends it there. When Unspikeable keeps you alive, the others see you stuck on the spikes while you move and attack in your game, until you die. Your game cannot change that.
+
 ## 3.0 b14
 
 Lobby Update
