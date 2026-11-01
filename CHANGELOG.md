@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0 b12
+
+Lobby Update
+
+- Fixed: a crash shortly after loading a save. FaTrainer also picked up old copies of your inventories and wallets that the game had already thrown away, and kept the stack, durability and money cheats writing into that memory, which the game may already be using for something else. It now only uses the inventories that belong to a player.
+- This is a beta build. If the game still crashes, send the log (fatrainer.log).
+
 ## 3.0 b11
 
 Lobby Update
