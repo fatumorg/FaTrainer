@@ -378,14 +378,30 @@ inline std::string read_file(const fs::path& p) {
     return std::string(std::istreambuf_iterator<char>(f), {});
 }
 
-inline std::vector<long> game_processes() {
+// A second copy of the game (another Steam account's library) is left alone: a process counts when its folder,
+// the exe's on Windows and the working directory under Proton, is the chosen game folder or cannot be read.
+inline bool in_game_dir(const fs::path& folder, const fs::path& dir) {
+    std::error_code ec;
+    return dir.empty() || folder.empty() || fs::equivalent(folder, dir, ec) || ec;
+}
+
+inline std::vector<long> game_processes(const fs::path& dir) {
     std::vector<long> out;
 #ifdef _WIN32
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return out;
     PROCESSENTRY32W e{sizeof e};
-    for (BOOL more = Process32FirstW(snap, &e); more; more = Process32NextW(snap, &e))
-        if (logic::game_process(utf8(e.szExeFile))) out.push_back((long)e.th32ProcessID);
+    for (BOOL more = Process32FirstW(snap, &e); more; more = Process32NextW(snap, &e)) {
+        if (!logic::game_process(utf8(e.szExeFile))) continue;
+        fs::path folder;
+        if (HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, e.th32ProcessID)) {
+            wchar_t path[MAX_PATH * 4];
+            DWORD n = sizeof path / sizeof *path;
+            if (QueryFullProcessImageNameW(h, 0, path, &n)) folder = fs::path(std::wstring(path, n)).parent_path();
+            CloseHandle(h);
+        }
+        if (in_game_dir(folder, dir)) out.push_back((long)e.th32ProcessID);
+    }
     CloseHandle(snap);
 #else
     std::error_code ec;
@@ -393,7 +409,10 @@ inline std::vector<long> game_processes() {
         std::string pid = entry.path().filename().string();
         if (pid.empty() || pid.find_first_not_of("0123456789") != std::string::npos || atol(pid.c_str()) == (long)getpid()) continue;
         std::string cmdline = read_file(entry.path() / "cmdline");
-        if (logic::game_process(cmdline.substr(0, cmdline.find('\0')))) out.push_back(atol(pid.c_str()));
+        if (!logic::game_process(cmdline.substr(0, cmdline.find('\0')))) continue;
+        std::error_code cwd_ec;
+        fs::path folder = fs::read_symlink(entry.path() / "cwd", cwd_ec);
+        if (in_game_dir(folder, dir)) out.push_back(atol(pid.c_str()));
     }
 #endif
     return out;

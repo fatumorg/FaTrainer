@@ -422,7 +422,12 @@ const int WATCH_MS = 1500, CLOSE_WAIT_MS = 15000, STEAM_SETTLE_MS = 3000;
 inline void watch_game() {
     std::thread([] {
         for (;;) {
-            bool running = !platform::game_processes().empty();
+            fs::path game;
+            {
+                std::lock_guard<std::mutex> l(M.mx);
+                game = M.game;
+            }
+            bool running = !platform::game_processes(game).empty();
             {
                 std::lock_guard<std::mutex> l(M.mx);
                 M.game_running = running;
@@ -433,15 +438,17 @@ inline void watch_game() {
 }
 
 inline void close_game(bool play_after) {
+    fs::path game;
     {
         std::lock_guard<std::mutex> l(M.mx);
         if (M.job == Job::working) return;
         M.job = Job::working, M.step = "Closing Dying Light", M.progress = 0, M.message.clear();
+        game = M.game;
     }
-    std::thread([play_after] {
-        auto pids = platform::game_processes();
+    std::thread([play_after, game] {
+        auto pids = platform::game_processes(game);
         platform::stop_processes(pids);
-        for (int waited = 0; !platform::game_processes().empty(); waited += 250) {
+        for (int waited = 0; !platform::game_processes(game).empty(); waited += 250) {
             if (waited >= CLOSE_WAIT_MS) return finish(Job::failed, "Dying Light did not close. " + replace_hint());
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
