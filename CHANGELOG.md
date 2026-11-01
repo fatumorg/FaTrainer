@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0 b13
+
+Lobby Update
+
+- New: Anti-AFK on the Survivor and Night Hunter pages. A Be The Zombie match no longer ends with Humans were inactive after 1:30 without input. The game that runs the match decides this, so turn it on when you host.
+- Fixed: Spike range did nothing after the first spike search of the session. The game reads the spike distances once and keeps them, so FaTrainer now changes the kept values.
+- This is a beta build. If a match still ends with Humans were inactive, or a spike far off the path still does not catch, send the log (fatrainer.log).
+
 ## 3.0 b12
 
 Lobby Update
