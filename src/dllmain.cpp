@@ -783,7 +783,11 @@ static void main_thread() {
     logf("kick filter hook: %s", cheats::install_grab_filter_hook() ? "ok" : "not found");
     logf("melee reach hook: %s", cheats::install_melee_reach_hook() ? "ok" : "not found");
     pvp::locate((uintptr_t)gamedll);
-    logf("spike start hook: %s", pvp::install() ? "ok" : pvp::spike_start_fn ? "unexpected code, skipped" : "not found");
+    bool spikes_hooked = pvp::install();
+    auto hook_state = [](bool hooked, uintptr_t fn) { return hooked ? "hooked" : fn ? "unexpected code" : "not found"; };
+    logf("pvp hooks: %s (spike start %s, spike search %s, slow motion %s)", spikes_hooked ? "ok" : "incomplete",
+         hook_state(pvp::spike_start_original, pvp::spike_start_fn), hook_state(pvp::spike_search_original, pvp::spike_search_fn),
+         hook_state(pvp::slowmo_pick_original, pvp::slowmo_pick_fn));
     logf("survivor level: %s", cheats::keep_lowered_survivor() ? "kept when a save loads" : "raise check not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");

@@ -28,6 +28,7 @@ using game::g;
 using game::rd;
 using game::rdv;
 using game::wr;
+using game::wr_bytes;
 
 const int LOCAL_PLAYER = 0x780, PARAM_CONTAINER = 0xe58, PARAM_TABLE = 0xd0, PARAM_VALUE = 8;
 const int HEALTH_OBJECT = 0x8f8, STAMINA_OBJECTS[] = {0x1340, 0x1348};
@@ -177,7 +178,9 @@ inline Tweak TWEAKS[] = {
      G_HUMAN, {}, {{"f_btz_pvp_grab_above_angle_threshold", 90}, {"f_btz_pvp_grab_below_angle_threshold", -90}}},
     {"h_kicks", "Other kicks & ground pound", "Wrestling kick and ground pound reach.", G_HUMAN, {"WrestlingKickRangeMul", "GroundPoundRangeMul"}},
     {"h_melee", "Melee reach", "How far every melee weapon reaches (its damage range).", G_HUMAN, {}},
-    {"spike_range", "Spike range", "Spikes farther from where your kick, tackle or ground pound throws someone still impale him. At Max, spikes 6 m off the path.",
+    {"spike_range", "Spike range", "Spike traps farther from where your kick, tackle or ground pound throws someone still impale him, and he flies onto them faster. At Max, three times as far and fast, and 6 m off the path.",
+     G_SPIKES, {}},
+    {"spike_angle", "Spike angle", "Spike traps beside the throw also catch: the throw turns onto the nearest one. At Max a trap in any direction, behind you too.",
      G_SPIKES, {}},
     {"flare_speed", "UV flare throw speed", "How fast you throw the UV flare. Other throwables stay the same.", G_WEAPONS, {}, {}, 5.0f},
     {"melee_speed", "Melee speed", "How fast your arms move while you hold a melee weapon, swings and two-handed weapons too.", G_WEAPONS, {}, {}, 5.0f},
@@ -593,7 +596,7 @@ inline uintptr_t param_value(uintptr_t container, const std::string& name) {
 }
 
 inline void put_bytes(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>& touched) {
-    if (!at || IsBadWritePtr((void*)at, n)) return;
+    if (!at) return;
     auto it = saved_bytes.find(at);
     if (it == saved_bytes.end()) {
         std::vector<uint8_t> b(n);
@@ -602,7 +605,7 @@ inline void put_bytes(uintptr_t at, const void* v, size_t n, std::set<uintptr_t>
     }
     it->second.written.assign((const uint8_t*)v, (const uint8_t*)v + n);
     touched.insert(at);
-    memcpy((void*)at, v, n);
+    wr_bytes(at, v, n);
 }
 
 inline float original_float(uintptr_t at) {
@@ -1237,7 +1240,7 @@ inline void apply_overrides() {
         auto& saved = it->second;
         std::vector<uint8_t> now(saved.written.size());
         bool still_ours = rd(it->first, now.data(), now.size()) && now == saved.written;
-        if (still_ours && !IsBadWritePtr((void*)it->first, saved.original.size())) memcpy((void*)it->first, saved.original.data(), saved.original.size());
+        if (still_ours) wr_bytes(it->first, saved.original.data(), saved.original.size());
         it = saved_bytes.erase(it);
     }
 }
@@ -2069,6 +2072,11 @@ inline void destroy_nests_step() {
     if (nests.empty()) return void(nests_once = false);
     if (destroy_nest(nests[0].module)) logf_hook("nests: destroyed one %.0f m away, %zu left", nests[0].distance, nests.size() - 1);
     next = now + NEST_GAP_MS;
+}
+
+inline float tweak_strength(const char* key) {
+    Tweak* t = find_tweak(key);
+    return t && t->max > 1 ? std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f) : 0.0f;
 }
 
 // The Be The Zombie mission forfeits the humans after SetHumanAfkForfeitTime without input and after

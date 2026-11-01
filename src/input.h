@@ -38,6 +38,9 @@ inline std::mutex inject_mx;
 inline std::vector<Injected> injected;
 inline DWORD injected_sequence = 0x40000000;
 const DWORD INJECT_FORGET = 1000;
+#if FATRAINER_DEV
+inline std::atomic<long> look_x{0}, look_y{0};  // probe mouse movement, used up by the next read
+#endif
 
 inline bool held(BYTE dik) { return GetAsyncKeyState(MapVirtualKeyW(dik, MAPVK_VSC_TO_VK)) & 0x8000; }
 
@@ -115,6 +118,9 @@ inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
         }
 #endif
         if (mouse ? size >= sizeof(DIMOUSESTATE) : size == 256) add_injected_state((BYTE*)data, size, mouse);
+#if FATRAINER_DEV
+        if (mouse && size >= sizeof(DIMOUSESTATE)) ((DIMOUSESTATE*)data)->lX += look_x.exchange(0), ((DIMOUSESTATE*)data)->lY += look_y.exchange(0);
+#endif
         return r;
     }
     if (size >= sizeof(DIMOUSESTATE) && mouse_device(device)) wheel += ((DIMOUSESTATE*)data)->lZ;
@@ -142,6 +148,13 @@ inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA*
         }
         if (point) *count = left;
 #endif
+#if FATRAINER_DEV
+        for (auto [axis, ofs] : {std::pair<std::atomic<long>*, DWORD>{&look_x, DIMOFS_X}, {&look_y, DIMOFS_Y}})
+            if (mouse && *axis && *count < capacity && size >= sizeof(DIDEVICEOBJECTDATA)) {
+                auto* e = (DIDEVICEOBJECTDATA*)((BYTE*)data + (*count)++ * size);
+                *e = {ofs, (DWORD)axis->exchange(0), GetTickCount(), injected_sequence++, 0};
+            }
+#endif
         add_injected_events((BYTE*)data, size, count, capacity, mouse);
         return r;
     }
@@ -156,11 +169,32 @@ inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA*
     return r;
 }
 
-inline SHORT WINAPI blocked_async_key(int vk) { return blocked ? 0 : real_async_key(vk); }
-inline SHORT WINAPI blocked_key_state(int vk) { return blocked ? 0 : real_key_state(vk); }
+#if FATRAINER_DEV
+// The game also asks Windows whether a key is still held (how long Space is held sets the jump height), so probe
+// keys count as held there too.
+inline bool injected_vk(int vk) {
+    const int MOUSE_VK[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
+    std::lock_guard<std::mutex> l(inject_mx);
+    DWORD now = GetTickCount();
+    for (auto& k : injected) {
+        if ((LONG)(k.until - now) <= 0) continue;
+        int at = k.mouse ? (k.at - DIMOFS_BUTTON0 < 5 ? MOUSE_VK[k.at - DIMOFS_BUTTON0] : 0) : (int)MapVirtualKeyW(k.at, MAPVK_VSC_TO_VK);
+        if (at == vk) return true;
+    }
+    return false;
+}
+#else
+inline bool injected_vk(int) { return false; }
+#endif
+
+inline SHORT WINAPI blocked_async_key(int vk) { return blocked ? 0 : injected_vk(vk) ? (SHORT)0x8001 : real_async_key(vk); }
+inline SHORT WINAPI blocked_key_state(int vk) { return blocked ? 0 : injected_vk(vk) ? (SHORT)0xFF80 : real_key_state(vk); }
 inline BOOL WINAPI blocked_keyboard_state(BYTE* keys) {
     BOOL r = real_keyboard_state(keys);
     if (blocked && r && keys) memset(keys, 0, 256);
+    else if (r && keys)
+        for (int vk = 1; vk < 256; vk++)
+            if (injected_vk(vk)) keys[vk] |= 0x80;
     return r;
 }
 

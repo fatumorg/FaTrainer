@@ -352,6 +352,11 @@ int main(int argc, char** argv) {
         CHECK(!game::safe_copy(big, (uintptr_t)gone, 0x2000));
         CHECK(game::safe_copy(to, (uintptr_t)from, sizeof from));
         VirtualFree(gone, 0, MEM_RELEASE);
+        void* guarded = VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE | PAGE_GUARD);
+        uint32_t v = 7;
+        CHECK(!game::rd((uintptr_t)guarded, &v, sizeof v) && game::rdv<uint32_t>((uintptr_t)guarded + 4, 9) == 0);
+        CHECK(game::wr((uintptr_t)guarded, 5u) && game::rdv<uint32_t>((uintptr_t)guarded) == 5 && game::rdv<uint32_t>((uintptr_t)from + 3, 1) != 1);
+        VirtualFree(guarded, 0, MEM_RELEASE);
     }
     printf("status: %s\nstats: %s\n", game::g.status.c_str(), game::stat_report().c_str());
     CHECK(game::g.wallets.size() == 1 && game::money(game::g.wallets[0]) == 15855);
@@ -1085,6 +1090,20 @@ int main(int argc, char** argv) {
     CHECK(cheats::vt_throw_controller && cheats::melee_reach_fn == game::g.base + 0xdbec70 && cheats::survivor_raise_check == game::g.base + 0x4ae135);
     pvp::locate(game::g.base);
     CHECK(pvp::spike_start_fn == game::g.base + 0xd86ce0 && pvp::spike_controller == 0xce0);
+    CHECK(pvp::spike_search_fn == game::g.base + 0xd860c0 && !memcmp((const void*)pvp::spike_search_fn, pvp::SPIKE_SEARCH_PROLOGUE, sizeof pvp::SPIKE_SEARCH_PROLOGUE));
+    CHECK(pvp::slowmo_pick_fn == game::g.base + 0xbcc8b0 && !memcmp((const void*)pvp::slowmo_pick_fn, pvp::SLOWMO_PICK_PROLOGUE, sizeof pvp::SLOWMO_PICK_PROLOGUE));
+    {
+        // Spike range scales the throw, Spike angle adds turned throws nearest first, 180 degrees only once.
+        auto close_to = [](cheats::Vec3 a, float x, float z) { return fabsf(a.x - x) < 1e-3f && fabsf(a.z - z) < 1e-3f; };
+        auto t = pvp::spike_throws({0, 1, 2}, 0, 0);
+        CHECK(t.size() == 1 && close_to(t[0], 0, 2) && t[0].y == 1);
+        t = pvp::spike_throws({0, 1, 2}, 1, 0);
+        CHECK(t.size() == 1 && close_to(t[0], 0, 6) && t[0].y == 1);
+        t = pvp::spike_throws({0, 1, 2}, 0, 0.5f);
+        CHECK(t.size() == 7 && close_to(t[5], -2, 0) && close_to(t[6], 2, 0));
+        t = pvp::spike_throws({0, 1, 2}, 0, 1);
+        CHECK(t.size() == 12 && close_to(t.back(), 0, -2));
+    }
     CHECK(!memcmp((const void*)pvp::spike_start_fn, pvp::SPIKE_START_PROLOGUE, sizeof pvp::SPIKE_START_PROLOGUE));
     {
         CHECK(game::g.vt_inv_container);

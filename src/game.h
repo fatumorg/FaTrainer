@@ -15,25 +15,43 @@
 
 namespace game {
 
-inline bool rd(uintptr_t a, void* out, size_t n) {
-    if (a < 0x10000 || IsBadReadPtr((const void*)a, n)) return false;
-    memcpy(out, (const void*)a, n);
-    return true;
+// Every read and write of game memory goes through this copy: a fault inside it (a freed object, or a page the
+// game guards, which IsBadReadPtr does not catch under Wine) just makes the copy fail.
+extern "C" {
+int fatrainer_copy(void* to, const void* from, size_t bytes);
+void fatrainer_copy_fault();
 }
+
+asm(".text\n"
+    ".globl fatrainer_copy\n"
+    "fatrainer_copy:\n"
+    "push %rsi\npush %rdi\nmov %rcx, %rdi\nmov %rdx, %rsi\nmov %r8, %rcx\nrep movsb\npop %rdi\npop %rsi\nmov $1, %eax\nret\n"
+    ".globl fatrainer_copy_fault\n"
+    "fatrainer_copy_fault:\n"
+    "cld\npop %rdi\npop %rsi\nxor %eax, %eax\nret\n");
+
+inline LONG CALLBACK skip_copy_fault(EXCEPTION_POINTERS* e) {
+    DWORD code = e->ExceptionRecord->ExceptionCode;
+    uintptr_t at = e->ContextRecord->Rip;
+    if ((code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_IN_PAGE_ERROR && code != EXCEPTION_GUARD_PAGE) ||
+        at < (uintptr_t)&fatrainer_copy || at >= (uintptr_t)&fatrainer_copy_fault)
+        return EXCEPTION_CONTINUE_SEARCH;
+    e->ContextRecord->Rip = (uintptr_t)&fatrainer_copy_fault;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+inline bool safe_copy(void* to, uintptr_t from, size_t bytes) {
+    static PVOID handler = AddVectoredExceptionHandler(1, skip_copy_fault);
+    return handler && fatrainer_copy(to, (const void*)from, bytes) == 1;
+}
+
+inline bool rd(uintptr_t a, void* out, size_t n) { return a >= 0x10000 && safe_copy(out, a, n); }
 template <class T> inline T rdv(uintptr_t a, T def = T{}) {
     T v;
     return rd(a, &v, sizeof v) ? v : def;
 }
-inline bool wr_bytes(uintptr_t a, const void* v, size_t n) {
-    if (a < 0x10000 || IsBadWritePtr((void*)a, n)) return false;
-    memcpy((void*)a, v, n);
-    return true;
-}
-template <class T> inline bool wr(uintptr_t a, T v) {
-    if (a < 0x10000 || IsBadWritePtr((void*)a, sizeof v)) return false;
-    memcpy((void*)a, &v, sizeof v);
-    return true;
-}
+inline bool wr_bytes(uintptr_t a, const void* v, size_t n) { return a >= 0x10000 && safe_copy((void*)a, (uintptr_t)v, n); }
+template <class T> inline bool wr(uintptr_t a, T v) { return wr_bytes(a, &v, sizeof v); }
 
 inline void* swap_pointer(uintptr_t at, void* value) {
     DWORD old;
@@ -177,38 +195,6 @@ inline uintptr_t rip_target(uintptr_t at, int disp_at, int length) { return at +
 inline bool on_wine() {
     static const bool wine = GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version") != nullptr;
     return wine;
-}
-
-extern "C" {
-int fatrainer_copy_qwords(void* to, const void* from, size_t qwords);
-void fatrainer_copy_fault();
-void fatrainer_copy_end();
-}
-
-asm(".text\n"
-    ".globl fatrainer_copy_qwords\n"
-    "fatrainer_copy_qwords:\n"
-    "push %rsi\npush %rdi\nmov %rcx, %rdi\nmov %rdx, %rsi\nmov %r8, %rcx\nrep movsq\npop %rdi\npop %rsi\nmov $1, %eax\nret\n"
-    ".globl fatrainer_copy_fault\n"
-    "fatrainer_copy_fault:\n"
-    "cld\npop %rdi\npop %rsi\nxor %eax, %eax\nret\n"
-    ".globl fatrainer_copy_end\n"
-    "fatrainer_copy_end:\n"
-    "ret\n");
-
-inline LONG CALLBACK skip_copy_fault(EXCEPTION_POINTERS* e) {
-    DWORD code = e->ExceptionRecord->ExceptionCode;
-    uintptr_t at = e->ContextRecord->Rip;
-    if ((code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_IN_PAGE_ERROR) || at < (uintptr_t)&fatrainer_copy_qwords ||
-        at >= (uintptr_t)&fatrainer_copy_fault)
-        return EXCEPTION_CONTINUE_SEARCH;
-    e->ContextRecord->Rip = (uintptr_t)&fatrainer_copy_fault;
-    return EXCEPTION_CONTINUE_EXECUTION;
-}
-
-inline bool safe_copy(void* to, uintptr_t from, size_t bytes) {
-    static PVOID handler = AddVectoredExceptionHandler(1, skip_copy_fault);
-    return handler && fatrainer_copy_qwords(to, (const void*)from, bytes / 8) == 1;
 }
 
 const size_t SCAN_CHUNK = 1 << 20, SCAN_PAUSE_EVERY = 64;

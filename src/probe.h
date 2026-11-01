@@ -171,7 +171,8 @@ inline void watch_frame() {
 // Call breakpoints: int3 on the first byte, the handler logs the hit, puts the byte back for one single step and re-arms.
 struct Break { std::atomic<uintptr_t> at{0}; uint8_t original = 0; DWORD until = 0; std::atomic<int> hits{0}; };
 const int HIT_FRAMES = 8;
-struct Hit { uintptr_t at, ret, rcx, rdx, r8, r9; DWORD thread, tick; uintptr_t stack[HIT_FRAMES]; };
+const int HIT_XMM = 4, HIT_ARGS = 4, FIRST_STACK_ARG = 0x28;
+struct Hit { uintptr_t at, ret, rcx, rdx, r8, r9; DWORD thread, tick; uintptr_t stack[HIT_FRAMES]; uintptr_t rax; float xmm[HIT_XMM]; uintptr_t args[HIT_ARGS]; };
 const int BREAKS = 4, HITS = 256;
 inline Break breaks[BREAKS];
 inline Hit hits[HITS];
@@ -197,7 +198,10 @@ inline LONG CALLBACK on_break(EXCEPTION_POINTERS* e) {
         unsigned slot = hits_written.fetch_add(1);
         if (slot - hits_read < HITS) {
             Hit& h = hits[slot % HITS];
-            h = {at, rdv<uintptr_t>(c->Rsp), c->Rcx, c->Rdx, c->R8, c->R9, GetCurrentThreadId(), GetTickCount(), {}};
+            h = {at, rdv<uintptr_t>(c->Rsp), c->Rcx, c->Rdx, c->R8, c->R9, GetCurrentThreadId(), GetTickCount(), {}, c->Rax, {}, {}};
+            const M128A* x = &c->Xmm0;
+            for (int i = 0; i < HIT_XMM; i++) memcpy(&h.xmm[i], &x[i], sizeof(float));
+            for (int i = 0; i < HIT_ARGS; i++) h.args[i] = rdv<uintptr_t>(c->Rsp + FIRST_STACK_ARG + i * 8);
             CONTEXT u = *c;
             for (int i = 0; i < HIT_FRAMES && u.Rip; i++) {
                 DWORD64 image = 0, frame = 0;
@@ -233,9 +237,19 @@ inline void break_frame() {
             snprintf(frame, sizeof frame, " <%llx", (unsigned long long)(f - game::g.base));
             stack += frame;
         }
-        cheats::logf_hook("bp: gamedll+%llx thread %lu from gamedll+%llx rcx %llx (%s) rdx %llx r8 %llx r9 %llx stack%s", (unsigned long long)(h.at - game::g.base),
-                          (unsigned long)h.thread, (unsigned long long)(h.ret - game::g.base), (unsigned long long)h.rcx, game::class_name(h.rcx).c_str(),
-                          (unsigned long long)h.rdx, (unsigned long long)h.r8, (unsigned long long)h.r9, stack.c_str());
+        std::string regs;
+        char part[64];
+        for (int i = 0; i < HIT_XMM; i++) snprintf(part, sizeof part, " xmm%d %g", i, h.xmm[i]), regs += part;
+        for (int i = 0; i < HIT_ARGS; i++) {
+            float f;
+            memcpy(&f, &h.args[i], sizeof f);
+            snprintf(part, sizeof part, " arg%d %llx/%g", 5 + i, (unsigned long long)h.args[i], f);
+            regs += part;
+        }
+        cheats::logf_hook("bp: gamedll+%llx thread %lu from gamedll+%llx rcx %llx (%s) rdx %llx r8 %llx r9 %llx rax %llx%s stack%s",
+                          (unsigned long long)(h.at - game::g.base), (unsigned long)h.thread, (unsigned long long)(h.ret - game::g.base), (unsigned long long)h.rcx,
+                          game::class_name(h.rcx).c_str(), (unsigned long long)h.rdx, (unsigned long long)h.r8, (unsigned long long)h.r9, (unsigned long long)h.rax,
+                          regs.c_str(), stack.c_str());
     }
 }
 
@@ -517,9 +531,18 @@ inline std::string run(const std::string& line) {
     }
     if (c == "tracelevel") return out + (trace_set_level() && trace_restore() ? "  tracing\n" : "  failed\n");
     if (c == "pos") {
-        cheats::Vec3 at = cheats::player_position();
+        cheats::Vec3 at = cheats::player_position(), eye{};
+        float m[16] = {}, f = 0;
+        if (cheats::view_matrix(m, &eye)) f = std::sqrt(m[12] * m[12] + m[13] * m[13] + m[14] * m[14]);
+        if (f > 0) snprintf(b, sizeof b, "  eye %.2f %.2f %.2f facing %.3f %.3f %.3f\n", eye.x, eye.y, eye.z, m[12] / f, m[13] / f, m[14] / f), out += b;
         snprintf(b, sizeof b, "  %.2f %.2f %.2f\n", at.x, at.y, at.z);
         return out + b;
+    }
+    if (c == "look") {
+        long dx = 0, dy = 0;
+        sscanf(p.s, "%ld %ld", &dx, &dy);
+        input::look_x += dx, input::look_y += dy;
+        return out + "  moved\n";
     }
     if (c == "tp") {
         cheats::Vec3 at = cheats::player_position(), d{};
@@ -660,7 +683,34 @@ inline std::string run(const std::string& line) {
     if (c == "bp") {
         uintptr_t a = p.expr();
         double seconds = atof(p.s);
-        return out + (a ? set_break(a, seconds > 0 ? seconds : 60) : "  bad address\n");
+        uint8_t code;
+        return out + (p.ok && rd(a, &code, 1) ? set_break(a, seconds > 0 ? seconds : 60) : "  bad address\n");
+    }
+    if (c == "traps") {
+        // The spike search only takes models with these meshes (gamedll b0ae60), found like gamedll b0b090 does.
+        const uintptr_t MODEL_RTTI = 0x1c92be0;
+        const int MODEL_FROM_CONTROL = 0x18;
+        struct TtlString { char* text; uint32_t size, capacity; };
+        using MeshNameFn = TtlString* (*)(uintptr_t, TtlString*);
+        static auto mesh_name = (MeshNameFn)GetProcAddress(GetModuleHandleA("engine_x64_rwdi.dll"), "?GetMeshName@IModelObject@@QEBA?AV?$string_base@D@ttl@@XZ");
+        float radius = (float)atof(p.s);
+        uintptr_t level = cheats::current_level(), gamedll = (uintptr_t)GetModuleHandleA("gamedll_x64_rwdi.dll");
+        cheats::Vec3 me = cheats::player_position();
+        cheats::EngineVector found{};
+        bool ok = level && mesh_name && cheats::find_in_radius &&
+                  cheats::find_in_radius(level, &found, &me, radius > 0 ? radius : 30, gamedll + MODEL_RTTI, false, nullptr);
+        int shown = 0;
+        for (uint32_t i = 0; ok && i < found.size && found.data && shown < 30; i++) {
+            TtlString name{};
+            mesh_name(found.data[i] - MODEL_FROM_CONTROL, &name);
+            if (!name.text || !strstr(name.text, "trap_spikes")) continue;
+            cheats::Vec3 at;
+            if (!cheats::position_of(found.data[i], &at)) continue;
+            snprintf(b, sizeof b, "  %s %.1f m: %.2f %.2f %.2f\n", name.text, cheats::distance(me, at), at.x, at.y, at.z);
+            out += b, shown++;
+        }
+        snprintf(b, sizeof b, "  %d traps of %u models\n", shown, ok ? found.size : 0);
+        return out + b;
     }
     if (c == "near") {
         float radius = (float)atof(p.s);

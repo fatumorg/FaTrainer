@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0 b14
+
+Lobby Update
+
+- New: Spike angle on the Survivor and Night Hunter pages. A kick, tackle or ground pound also catches spike traps beside the throw: the target is thrown onto the nearest one instead of straight ahead. At Max a trap in any direction catches, behind you too.
+- Changed: Spike range also throws the target faster, up to three times as fast at Max, so he reaches spikes farther away.
+- Fixed: seconds of slow motion after a pounce, tackle, dropkick or death from above from farther than normal. The game slows time to 10% while a grab is still flying after its usual time, and a far grab stayed in the air much longer than that. The slow motion now ends after a third of a second.
+- Fixed: on Linux (Proton), the game could crash when another player joined, because FaTrainer read memory the game guards.
+- This is a beta build. If the Night Hunter still does not land on spikes when you dropkick him next to them, send the log (fatrainer.log): it now notes every spike search.
+
 ## 3.0 b13
 
 Lobby Update
