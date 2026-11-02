@@ -496,6 +496,9 @@ int main(int argc, char** argv) {
         CHECK(visuals::text_kind("PLAYERMAN1_NAME") != visuals::TEXT_SPOKEN && visuals::text_kind("MenuOptionsGame_LabelSelectSpeechTip") != visuals::TEXT_SPOKEN);
         CHECK(visuals::text_kind("EncEscortD_10CHT01_Babar") == visuals::TEXT_SPOKEN && visuals::text_kind("PlayerM1_BTZAllyDying_02") == visuals::TEXT_SPOKEN);
         CHECK(visuals::text_kind("Player_SafePlace_Bed01") == visuals::TEXT_SPOKEN && visuals::text_kind("Akram_Cofee_01CHT01") == visuals::TEXT_SPOKEN);
+        CHECK(visuals::text_kind("Tolga_Twins04_END13") == visuals::TEXT_SPOKEN && visuals::text_kind("Toygar_TowerHub_Chapter00_01ONC01") == visuals::TEXT_SPOKEN);
+        CHECK(visuals::text_kind("UGC_Player_TheTunnel_talk_USB01") == visuals::TEXT_SPOKEN && visuals::text_kind("Keybinding_Use2") == visuals::TEXT_MENUS);
+        CHECK(visuals::text_kind("MenuMain_ExitDlgTitle") == visuals::TEXT_MENUS && visuals::text_kind("MenuSaveLoad_DlgLoadTitle") == visuals::TEXT_MENUS);
     }
     {
         static uintptr_t inner_seen;
@@ -2088,7 +2091,13 @@ int main(int argc, char** argv) {
         CHECK(offsetof(FakeElement, engine) == visuals::UI_ENGINE_OBJECT);
         FakeElement freed_engine{0xfffffffffffffb6full, "freed", visuals::UI_NONE}, freed{FAKE_VT, "HudRadar", visuals::UI_NONE};
         freed.engine = (uintptr_t)&freed_engine;
+        visuals::engine_ui_vtables[FAKE_VT] = true;
         CHECK(visuals::ui_alive((uintptr_t)&radar) && !visuals::ui_alive((uintptr_t)&freed));
+        uintptr_t engine_dll = (uintptr_t)GetModuleHandleA("engine_x64_rwdi.dll");
+        uintptr_t real_engine[1] = {game::find_vtable(engine_dll, "CUIText")}, stale_engine[1] = {(uintptr_t)m + 0x1000};
+        FakeElement real{FAKE_VT, "real", visuals::UI_NONE}, stale{FAKE_VT, "stale", visuals::UI_NONE};
+        real.engine = (uintptr_t)real_engine, stale.engine = (uintptr_t)stale_engine;
+        CHECK(engine_dll && real_engine[0] && visuals::ui_alive((uintptr_t)&real) && !visuals::ui_alive((uintptr_t)&stale));
         config::cfg.hud_parts["radar"].hidden = true;
         visuals::apply_hud();
         CHECK(radar.opacity == 0 && radar_icon.opacity == 1);

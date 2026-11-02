@@ -352,9 +352,10 @@ inline std::string run(const std::string& line) {
     if (c == "findtext") {
         std::string want = p.s;
         for (auto& ch : want) ch = (char)tolower((unsigned char)ch);
-        auto found = game::scan({visuals::engine_text_vtable});
+        std::vector<uintptr_t> texts;
+        for (auto& of_class : game::scan(visuals::engine_text_vtables)) texts.insert(texts.end(), of_class.begin(), of_class.end());
         int shown = 0;
-        for (uintptr_t t : found.empty() ? std::vector<uintptr_t>{} : found[0]) {
+        for (uintptr_t t : texts) {
             visuals::TtlText raw = rdv<visuals::TtlText>(t + visuals::TEXT_RAW), wide = rdv<visuals::TtlText>(t + visuals::TEXT_RAW + 0x10);
             std::string r(raw.text && raw.size < 400 ? raw.size : 0, '\0'), w;
             if (!r.empty()) game::rd((uintptr_t)raw.text, r.data(), r.size());
@@ -365,7 +366,15 @@ inline std::string run(const std::string& line) {
             snprintf(b, sizeof b, "  %llx raw [%s] wide [%s]\n", (unsigned long long)t, r.c_str(), w.c_str());
             out += b;
         }
-        snprintf(b, sizeof b, "  %zu texts\n", found.empty() ? (size_t)0 : found[0].size());
+        snprintf(b, sizeof b, "  %zu texts\n", texts.size());
+        return out + b;
+    }
+    if (c == "text") {
+        char key[128] = {};
+        sscanf(p.s, "%127s", key);
+        auto w = visuals::text_written.find(key);
+        snprintf(b, sizeof b, "  [%s] written %s, kind %d, code %s\n", visuals::narrow(visuals::shown_text(key)).c_str(),
+                 w == visuals::text_written.end() ? "no" : w->second.from.c_str(), visuals::text_kind(key), visuals::kind_code(visuals::text_kind(key)).c_str());
         return out + b;
     }
     if (c == "findwide") {

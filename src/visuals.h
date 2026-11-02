@@ -413,10 +413,23 @@ inline bool in_image_memory(uintptr_t p) {
     return p && VirtualQuery((const void*)p, &m, sizeof m) && m.Type == MEM_IMAGE;
 }
 
+// The engine object's vtable must belong to a CUIElement: an image address is not enough, a stale HUD screen pointed
+// into gamedll's data and GetChildrenCount called through it.
+inline std::unordered_map<uintptr_t, bool> engine_ui_vtables;
+
+inline bool engine_ui_vtable(uintptr_t vtable) {
+    auto it = engine_ui_vtables.find(vtable);
+    if (it != engine_ui_vtables.end()) return it->second;
+    MEMORY_BASIC_INFORMATION m;
+    bool ui = in_image_memory(vtable) && VirtualQuery((const void*)vtable, &m, sizeof m) &&
+              game::base_offset((uintptr_t)m.AllocationBase, vtable, "CUIElement") >= 0;
+    return engine_ui_vtables[vtable] = ui;
+}
+
 // A freed element keeps a pointer to a freed engine object, whose vtable is garbage: GetChildrenCount would call through it.
 inline bool ui_alive(uintptr_t element) {
     uintptr_t engine = element ? rdv<uintptr_t>(element + UI_ENGINE_OBJECT) : 0;
-    return element && in_image_memory(ui.vtable_of(element)) && (!engine || in_image_memory(rdv<uintptr_t>(engine)));
+    return element && in_image_memory(ui.vtable_of(element)) && (!engine || engine_ui_vtable(rdv<uintptr_t>(engine)));
 }
 
 inline bool track_element(int part, const std::string& id) { return part >= 0 && part == part_named("HudZombieHiveCounter") && id == "I_Hive"; }
@@ -864,11 +877,13 @@ struct TtlText { char* text; uint32_t size, capacity; };
 inline void texts_log_off(const char*, ...) {}
 inline void (*texts_log)(const char*, ...) = texts_log_off;
 inline void(__fastcall* set_raw_text)(uintptr_t wrapper, const TtlText* text) = nullptr;
-inline uintptr_t engine_text_vtable = 0;
+// CUIText and the engine classes built on it: the main menu buttons are CUITextPresenter.
+inline std::vector<uintptr_t> engine_text_vtables;
 const int TEXT_RAW = 0x3d8;
 
 inline bool relocalize_text(uintptr_t engine_text) {
-    if (!set_raw_text || !engine_text_vtable || rdv<uintptr_t>(engine_text) != engine_text_vtable) return false;
+    uintptr_t vt = rdv<uintptr_t>(engine_text);
+    if (!set_raw_text || !vt || std::find(engine_text_vtables.begin(), engine_text_vtables.end(), vt) == engine_text_vtables.end()) return false;
     TtlText raw = rdv<TtlText>(engine_text + TEXT_RAW);
     if (!raw.text || !raw.size || raw.size > 4096) return false;
     std::string copy(raw.size, '\0');
@@ -896,7 +911,9 @@ inline bool locate_engine(HMODULE engine) {
     ui.set_visible = (decltype(ui.set_visible))get("?SetVisible@IUIElement@@QEAAX_N@Z");
     ui.name_of = engine_name_of, ui.kind_of = engine_kind_of, ui.vtable_of = engine_vtable_of, ui.text_alpha = engine_text_alpha;
     set_raw_text = (decltype(set_raw_text))get("?SetText@IUIText@@UEAAXAEBV?$string_base@D@ttl@@@Z");
-    engine_text_vtable = game::find_vtable((uintptr_t)engine, "CUIText");
+    engine_text_vtables.clear();
+    for (const char* cls : {"CUIText", "CUITextPresenter", "CUIProgressText"})
+        if (uintptr_t vt = game::find_vtable((uintptr_t)engine, cls)) engine_text_vtables.push_back(vt);
     return ui.children_count && ui.child && ui.get_color && ui.set_color && ui.get_text_color && ui.set_text_color;
 }
 
@@ -1024,6 +1041,23 @@ inline bool starts_with(const std::string& s, std::initializer_list<const char*>
     return false;
 }
 
+// Conversation lines: Player_Contact_15DLG01, Tolga_Twins04_END13, Toygar_TowerHub_Chapter00_01ONC01.
+// A mixed-case Dlg is a menu dialog box (MenuMain_ExitDlgTitle).
+inline bool conversation_key(const std::string& key) {
+    for (size_t at = key.find("DLG"); at != std::string::npos; at = key.find("DLG", at + 1))
+        if (at + 3 < key.size() && isdigit((unsigned char)key[at + 3])) return true;
+    size_t end = key.size();
+    while (end && isdigit((unsigned char)key[end - 1])) end--;
+    if (end == key.size() || end < 4) return false;
+    size_t before = end - 3;
+    while (before && isdigit((unsigned char)key[before - 1])) before--;
+    if (!before || key[before - 1] != '_') return false;
+    std::string code = key.substr(end - 3, 3);
+    for (const char* line : {"USA", "USB", "USE", "END", "NEA", "ONC", "INP", "PSP", "IGN"})
+        if (code == line) return true;
+    return false;
+}
+
 inline int text_kind(const std::string& key) {
     std::string k = key;
     for (auto& c : k) c = (char)tolower((unsigned char)c);
@@ -1031,7 +1065,7 @@ inline int text_kind(const std::string& key) {
     size_t cht = k.find("cht");
     while (cht != std::string::npos && !(cht + 3 < k.size() && isdigit((unsigned char)k[cht + 3]))) cht = k.find("cht", cht + 1);
     bool numbered_player = starts_with(k, {"playerm"}) && k.size() > 7 && isdigit((unsigned char)k[7]);
-    if (has("dlg") || has("tlk") || cht != std::string::npos || numbered_player || starts_with(k, {"chatter", "random_", "player_", "cin_", "dltb_"}))
+    if (conversation_key(key) || has("tlk") || cht != std::string::npos || numbered_player || starts_with(k, {"chatter", "random_", "player_", "cin_", "dltb_"}))
         return TEXT_SPOKEN;
     size_t cut = key.rfind('_');
     if ((cut != std::string::npos && game::lookup(key.substr(0, cut).c_str())) || starts_with(k, {"craftplan", "craft_", "outfit", "collectable", "blueprint"}))
@@ -1455,11 +1489,12 @@ inline std::vector<uintptr_t> shown_texts;
 inline std::atomic<bool> shown_texts_scanning{false}, shown_texts_found{false};
 
 inline void find_shown_texts() {
-    if (!engine_text_vtable || shown_texts_scanning.exchange(true)) return;
+    if (engine_text_vtables.empty() || shown_texts_scanning.exchange(true)) return;
     std::thread([] {
-        auto found = game::scan({engine_text_vtable});
+        auto found = game::scan(engine_text_vtables);
         std::lock_guard<std::mutex> l(shown_texts_mx);
-        shown_texts = found.empty() ? std::vector<uintptr_t>{} : found[0];
+        shown_texts.clear();
+        for (auto& of_class : found) shown_texts.insert(shown_texts.end(), of_class.begin(), of_class.end());
         shown_texts_found = true, shown_texts_scanning = false;
     }).detach();
 }
@@ -1625,9 +1660,9 @@ inline const Callout CALLOUTS[] = {
     {"HUDMessage_BTZDeath_Killer_Bullet", "", "Shot:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Observer_Bullet", "%s ", "Shot:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Victim_Bullet", "%s ", "Shot:", " You", KILL_TONE},
-    {"HUDMessage_BTZDeath_Killer_Arrow", "", "Arrow:", " %s", KILL_TONE},
-    {"HUDMessage_BTZDeath_Observer_Arrow", "%s ", "Arrow:", " %s", KILL_TONE},
-    {"HUDMessage_BTZDeath_Victim_Arrow", "%s ", "Arrow:", " You", KILL_TONE},
+    {"HUDMessage_BTZDeath_Killer_Arrow", "", "Bolt:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Observer_Arrow", "%s ", "Bolt:", " %s", KILL_TONE},
+    {"HUDMessage_BTZDeath_Victim_Arrow", "%s ", "Bolt:", " You", KILL_TONE},
     {"HUDMessage_BTZDeath_Killer_Blast", "", "Blown Up:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Observer_Blast", "%s ", "Blown Up:", " %s", KILL_TONE},
     {"HUDMessage_BTZDeath_Victim_Blast", "%s ", "Blown Up:", " You", KILL_TONE},
