@@ -8,6 +8,8 @@
 #include "imgui_internal.h"
 #if !FATRAINER_VISUALS
 #include "dlc.h"
+#include "lobby.h"
+#include "pvp.h"
 #include "teleport.h"
 #endif
 
@@ -2610,11 +2612,19 @@ inline void toggle_esp() {
     toast(std::string("Player ESP ") + (config::cfg.esp.on ? "on" : "off"));
 }
 
+inline void kill_once_now() {
+    cheats::kill_tracking = true;
+    if (cheats::seen_players.empty()) return toast("No player to kill yet");
+    pvp::kill_requested = true;
+    toast("Auto-Kill once");
+}
+
 struct KeyAction { const char* key; const char* label; void (*run)(); };
 inline const KeyAction KEY_ACTIONS[] = {
     {REFILL_KEY, "Refill health & stamina", refill_now},
     {"kill_nearby", "Kill all enemies nearby", kill_nearby},
     {"nests_once", "Destroy all nests", destroy_nests_now},
+    {"kill_once", "Auto-Kill once", kill_once_now},
     {"save_position", "Save position", save_position},
     {"go_last_position", "Go to last saved position", go_last_position},
     {"go_waypoint", "Go to waypoint", go_waypoint},
@@ -2654,6 +2664,7 @@ inline void settings_page();
 inline bool has_tools() { return game::find_inventory(game::K_TOOLS) != nullptr; }
 #if !FATRAINER_VISUALS
 #include "page_pvp.h"
+#include "page_lobby.h"
 #endif
 #include "page_configs.h"
 inline const Page PAGES[] = {
@@ -2666,10 +2677,11 @@ inline const Page PAGES[] = {
     {"combat", "Combat", "Enemies, ammo, supplies and weapons", combat_page, always, "CHEATS", {"one_hit", "ammo", "no_reload", "last_wish", "supplies", "durability", "item_dupe", "melee_speed", "flare_speed"}},
     {"skills", "Skills", "Experience and skill tree levels", skills_page, always, "CHEATS", {"xp"}},
     {"teleport", "Teleport", "Map marker, objective and saved positions", teleport_page, always, "CHEATS", {}},
+    {"lobby", "Lobby", "Players in your match, their FaTrainer and anything odd", lobby_page, always, "CHEATS", {}},
     {"survivor", "Survivor", "Your attacks, defenses and auto cheats as a survivor", survivor_page, always, "BE THE ZOMBIE",
-     {"dodge_spit", "auto_flare", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge", "unspikeable", "spike_range", "spike_angle", "nests_loop", "anti_afk"}},
+     {"evade_tackle", "evade_pounce", "evade_pound", "evade_spit", "auto_flare", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge", "unspikeable", "spike_range", "spike_angle", "nests_loop", "anti_afk", "auto_kill"}},
     {"zombie", "Night Hunter", "Your abilities, attack reach and spit keys as the Night Hunter", zombie_page, always, "BE THE ZOMBIE",
-     {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo", "z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "unspikeable", "spike_range", "spike_angle", "anti_afk"}},
+     {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo", "z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "undropkickable", "no_dfa", "unspikeable", "spike_range", "spike_angle", "anti_afk", "auto_kill"}},
     {"dlc", "DLC Modes", "Harran Prison and The Bozak Horde", dlc_page, always, "MODES", {"prison_pause"}},
     {"visuals", "Visuals", "Player ESP, colors, HUD, field of view and glow", visuals_page, always, "LOOK", {}},
     {"texts", "Texts", "Game language and your own texts", texts_page, always, "LOOK", {}},
@@ -2737,7 +2749,7 @@ inline bool setting_choice(const char* text, const char* id, const char* const* 
 
 inline const char* edition_story() {
 #if FATRAINER_VISUALS
-    return "Changes only how the game looks to you. It has no cheats and never connects to the internet.";
+    return "Changes only how the game looks to you. It has no cheats. It never connects to the internet itself; through Steam it tells the other players in your session that you run FaTrainer, with its version.";
 #else
     return "Runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
            "If a newer one is out, the trainer turns itself off until you press Play in FaTrainer again, unless Use older versions is on. "

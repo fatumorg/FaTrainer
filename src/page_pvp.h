@@ -78,6 +78,64 @@ inline void rank_card(bool zombie) {
     end_card();
 }
 
+inline const char* EVADE_DODGE_LOCK[] = {"Dodge", "Lock"};
+inline const char* EVADE_UV_LOCK[] = {"Aim + UV", "Lock"};
+inline const char* REACTION_TIMES[] = {"Human", "Instant"};
+
+inline void evade_row(const char* cheat, int attack) {
+    cheat_switch(cheat);
+    int& method = config::cfg.pvp.evade[attack];
+    bool pounce = attack == config::EVADE_POUNCE;
+    int shown = method == config::EVADE_LOCK ? 1 : 0;
+    ImGui::PushID(cheat);
+    if (segmented("method", pounce ? EVADE_UV_LOCK : EVADE_DODGE_LOCK, 2, shown, std::min(S(300), ImGui::GetContentRegionAvail().x))) {
+        method = shown ? config::EVADE_LOCK : pounce ? config::EVADE_AIM_UV : config::EVADE_DODGE;
+        save_config();
+    }
+    ImGui::PopID();
+    ImGui::Dummy({0, S(8)});
+}
+
+inline void evade_card() {
+    begin_card("evade", "AUTO-EVADE");
+    note("With Lock the hunter's game still shows the attack landing.");
+    evade_row("evade_tackle", config::EVADE_TACKLE);
+    evade_row("evade_pounce", config::EVADE_POUNCE);
+    evade_row("evade_pound", config::EVADE_POUND);
+    evade_row("evade_spit", config::EVADE_SPIT);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Reaction time");
+    ImGui::SameLine(0, S(16));
+    int instant = config::cfg.pvp.instant ? 1 : 0;
+    if (segmented("reaction", REACTION_TIMES, 2, instant, std::min(S(240), ImGui::GetContentRegionAvail().x))) config::cfg.pvp.instant = instant, save_config();
+    end_card();
+}
+
+inline const char* KILL_TARGETS[] = {"All", "Nearest", "Picked"};
+
+inline void kill_card(bool hunter) {
+    begin_card("autokill", hunter ? "AUTO-KILL SURVIVORS" : "AUTO-KILL THE NIGHT HUNTER");
+    note("Throws the target onto the nearest spikes, up to 250 m from it. Needs spikes near the target.");
+    if (accent_button("Kill once", {ImGui::GetContentRegionAvail().x, S(38)})) kill_once_now();
+    pin_menu("kill_once");
+    cheat_switch("auto_kill");
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Delay after respawn");
+    ImGui::SameLine(0, S(16));
+    ImGui::SetNextItemWidth(std::min(S(260), ImGui::GetContentRegionAvail().x));
+    float& delay = config::cfg.pvp.kill_delay;
+    if (ImGui::SliderFloat("##killdelay", &delay, 0, 20, delay <= 0 ? "Instant" : "%.1f s")) delay = std::clamp(delay, 0.0f, 20.0f);
+    if (ImGui::IsItemDeactivatedAfterEdit()) save_config();
+    if (hunter) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Target");
+        ImGui::SameLine(0, S(16));
+        if (segmented("killtarget", KILL_TARGETS, 3, config::cfg.pvp.kill_target, std::min(S(300), ImGui::GetContentRegionAvail().x))) save_config();
+        if (config::cfg.pvp.kill_target == config::TARGET_PICKED && !pvp::picked) note("Pick a player on the Lobby page.");
+    }
+    end_card();
+}
+
 inline void zombie_page() {
     begin_card("hunter", "HUNTER");
     cheat_switch("god", "Hunter god mode");
@@ -96,8 +154,13 @@ inline void zombie_page() {
     begin_card("reach", "ATTACK REACH");
     tweak_sliders(cheats::G_ZOMBIE);
     end_card();
-    begin_card("spikes", "SPIKES");
+    kill_card(true);
+    begin_card("defense", "DEFENSE");
+    cheat_switch("undropkickable");
+    cheat_switch("no_dfa");
     cheat_switch("unspikeable");
+    end_card();
+    begin_card("spikes", "SPIKES");
     tweak_sliders(cheats::G_SPIKES);
     end_card();
     spit_keys_card();
@@ -106,11 +169,11 @@ inline void zombie_page() {
 
 inline void survivor_page() {
     begin_card("auto", "AUTO CHEATS");
-    cheat_switch("dodge_spit");
     cheat_switch("auto_flare");
     cheat_switch("one_hit_hunter");
     cheat_switch("anti_afk");
     end_card();
+    kill_card(false);
     size_t left = cheats::living_nests().size();
     begin_card("nests", left ? ("NESTS - " + std::to_string(left) + " LEFT").c_str() : "NESTS");
     if (accent_button("Destroy all nests", {ImGui::GetContentRegionAvail().x, S(38)})) destroy_nests_now();
@@ -124,5 +187,6 @@ inline void survivor_page() {
     cheat_switch("unspikeable");
     tweak_sliders(cheats::G_SPIKES);
     end_card();
+    evade_card();
     rank_card(false);
 }

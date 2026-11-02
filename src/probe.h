@@ -325,6 +325,15 @@ inline std::string run(const std::string& line) {
         if (ch) ch->on = on != 0;
         return out + (ch ? "  set\n" : "  no such cheat\n");
     }
+    if (c == "pvp") {
+        auto& pv = config::cfg.pvp;
+        int e[4], instant;
+        if (sscanf(p.s, "%d %d %d %d %d", &e[0], &e[1], &e[2], &e[3], &instant) == 5)
+            for (int i = 0; i < 4; i++) pv.evade[i] = e[i], pv.instant = instant != 0;
+        char b[96];
+        snprintf(b, sizeof b, "  evade %d %d %d %d, instant %d\n", pv.evade[0], pv.evade[1], pv.evade[2], pv.evade[3], (int)pv.instant);
+        return out + b;
+    }
     if (c == "tweak") {
         char key[64] = {};
         float f = 1;

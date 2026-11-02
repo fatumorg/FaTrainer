@@ -38,8 +38,8 @@ inline std::mutex inject_mx;
 inline std::vector<Injected> injected;
 inline DWORD injected_sequence = 0x40000000;
 const DWORD INJECT_FORGET = 1000;
-#if FATRAINER_DEV
-inline std::atomic<long> look_x{0}, look_y{0};  // probe mouse movement, used up by the next read
+#if !FATRAINER_VISUALS
+inline std::atomic<long> look_x{0}, look_y{0};  // added mouse movement (probe, Aim + UV), used up by the next read
 #endif
 
 inline bool held(BYTE dik) { return GetAsyncKeyState(MapVirtualKeyW(dik, MAPVK_VSC_TO_VK)) & 0x8000; }
@@ -118,7 +118,7 @@ inline HRESULT WINAPI blocked_state(void* device, DWORD size, void* data) {
         }
 #endif
         if (mouse ? size >= sizeof(DIMOUSESTATE) : size == 256) add_injected_state((BYTE*)data, size, mouse);
-#if FATRAINER_DEV
+#if !FATRAINER_VISUALS
         if (mouse && size >= sizeof(DIMOUSESTATE)) ((DIMOUSESTATE*)data)->lX += look_x.exchange(0), ((DIMOUSESTATE*)data)->lY += look_y.exchange(0);
 #endif
         return r;
@@ -148,7 +148,7 @@ inline HRESULT WINAPI blocked_data(void* device, DWORD size, DIDEVICEOBJECTDATA*
         }
         if (point) *count = left;
 #endif
-#if FATRAINER_DEV
+#if !FATRAINER_VISUALS
         for (auto [axis, ofs] : {std::pair<std::atomic<long>*, DWORD>{&look_x, DIMOFS_X}, {&look_y, DIMOFS_Y}})
             if (mouse && *axis && *count < capacity && size >= sizeof(DIDEVICEOBJECTDATA)) {
                 auto* e = (DIDEVICEOBJECTDATA*)((BYTE*)data + (*count)++ * size);

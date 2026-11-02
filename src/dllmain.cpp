@@ -15,6 +15,7 @@
 #if FATRAINER_DEV
 #include "probe.h"
 #endif
+#include "announce.h"
 #if !FATRAINER_VISUALS
 #include "net_win.h"
 #include "pvp.h"
@@ -442,8 +443,11 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
         bool by_query = cheats::players_wanted() && cheats::query_players();
         if (by_query != cheats::players_by_query.exchange(by_query)) logf("players: %s", by_query ? "found through the game's radius query" : "found through the heap scan");
     }
-    if (g_ready && esp) cheats::track_players();
-    if (g_ready && !g_open && cheats::is_on("dodge_spit")) cheats::dodge_spits();
+    if (g_ready && (esp || cheats::players_wanted())) cheats::track_players();
+    if (g_ready && !g_open) pvp::auto_evade();
+    if (g_ready) pvp::auto_kill();
+    if (g_ready && !g_open && cheats::is_on("evade_spit"))
+        cheats::dodge_spits(config::cfg.pvp.evade[config::EVADE_SPIT] == config::EVADE_LOCK, config::cfg.pvp.instant);
     if (g_ready && !g_open && cheats::is_on("auto_flare")) cheats::auto_flare();
     if (g_ready) cheats::speed_melee_anims();
 #if FATRAINER_DEV
@@ -452,6 +456,11 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
 #endif
 #endif
     poll_config_keys();
+    if (g_ready) {
+        static bool announcing = false, tried = false;
+        if (!tried) tried = true, announcing = announce::install(), logf("announce: %s", announcing ? "ready" : "Steam API not found");
+        if (announcing) announce::tick(FATRAINER_VERSION, FATRAINER_EDITION_KEY, logf);
+    }
     if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);
     bool previewing = g_ready && menu::previewing();
@@ -785,9 +794,10 @@ static void main_thread() {
     pvp::locate((uintptr_t)gamedll);
     bool spikes_hooked = pvp::install();
     auto hook_state = [](bool hooked, uintptr_t fn) { return hooked ? "hooked" : fn ? "unexpected code" : "not found"; };
-    logf("pvp hooks: %s (spike start %s, spike search %s, slow motion %s)", spikes_hooked ? "ok" : "incomplete",
+    logf("pvp hooks: %s (spike start %s, spike search %s, slow motion %s, grabs %s, knock-backs %s)", spikes_hooked ? "ok" : "incomplete",
          hook_state(pvp::spike_start_original, pvp::spike_start_fn), hook_state(pvp::spike_search_original, pvp::spike_search_fn),
-         hook_state(pvp::slowmo_pick_original, pvp::slowmo_pick_fn));
+         hook_state(pvp::slowmo_pick_original, pvp::slowmo_pick_fn), hook_state(pvp::grab_apply_original, pvp::grab_apply_fn),
+         hook_state(pvp::knock_apply_original, pvp::knock_apply_fn));
     logf("survivor level: %s", cheats::keep_lowered_survivor() ? "kept when a save loads" : "raise check not found");
     logf("cheats: %s", cheats::describe().c_str());
     HMODULE engine = GetModuleHandleA("engine_x64_rwdi.dll");

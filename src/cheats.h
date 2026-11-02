@@ -95,12 +95,16 @@ inline Cheat CHEATS[] = {
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
-    {"dodge_spit", "Dodge spit",
-     "Steps you aside from spit that would hit you, after a human reaction time.",
-     {}, {}},
+    {"evade_tackle", "Evade tackles", "Dodges the hunter's tackle, or with Lock it never lands.", {}, {}},
+    {"evade_pounce", "Evade pounces", "Turns to the hunter and flashes your UV light as he pounces, or with Lock it never lands.", {}, {}},
+    {"evade_pound", "Evade ground pounds", "Dodges the ground pound, or with Lock it never hits you.", {}, {}},
+    {"evade_spit", "Evade spits", "Dodges spit that would hit you, or with Lock it never does.", {}, {}},
     {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
      {}, {}},
     {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot kill you on spikes. The other players still see you stuck on the spikes until you die.", {}, {}},
+    {"auto_kill", "Auto-Kill loop", "Kills your target again every time it respawns.", {}, {}},
+    {"undropkickable", "Undropkickable", "Survivors' dropkicks do not hit you. The survivor still sees the dropkick land.", {}, {}},
+    {"no_dfa", "No death from above", "Survivors cannot kill you from above. The survivor still sees the attack land.", {}, {}},
     {"anti_afk", "Anti-AFK", "Be The Zombie matches you host no longer end with Humans were inactive, however long the humans idle.", {}, {}},
     {"nests_loop", "Auto-Destroy Nests loop", "Keeps destroying the Night Hunter's nests, one every half second, until none is left.", {}, {}},
     {"one_hit_hunter", "One hit kill on the Night Hunter", "The Night Hunter drops to 1 health in your game, so your next hit kills him. Does not work in a real match.",
@@ -657,7 +661,12 @@ inline bool human_targeting_set() {
     return false;
 }
 
-inline bool players_wanted() { return config::cfg.esp.on || is_on("one_hit_hunter") || human_targeting_set(); }
+inline std::atomic<bool> kill_tracking{false};
+
+inline bool players_wanted() {
+    return config::cfg.esp.on || is_on("one_hit_hunter") || human_targeting_set() || is_on("evade_tackle") || is_on("evade_pounce") || is_on("evade_pound") ||
+           is_on("auto_kill") || kill_tracking;
+}
 
 inline bool human_targeting_widened() { return side != SIDE_HUNTER && human_targeting_set(); }
 
@@ -1316,12 +1325,12 @@ struct Preset {
 inline const Preset PRESETS[] = {
     {"survivor_legit", "Survivor", "Legit",
      "A third more reach on death from above and the dropkick, a little more melee reach, endless grappling hook, a human spit dodge, longer UV and a quiet ESP.",
-     {"hook", "dodge_spit"},
+     {"hook", "evade_spit"},
      {{"uv_slow", 2.5f}, {"h_dfa", 3.5f}, {"h_dfa_pull", 3.5f}, {"h_dfa_height", 4.0f}, {"h_dropkick", 3.5f}, {"h_dropkick_angle", 3.5f}, {"h_kicks", 1.5f}, {"h_melee", 1.3f}},
      ESP_LEGIT},
     {"survivor_rage", "Survivor", "Rage",
      "God mode, endless stamina, UV, ammo and supplies, one hit kills, spit dodge, double speed and jump, and every death from above, kick and melee range at Max.",
-     {"god", "stamina", "hook", "uv", "no_fall", "ammo", "no_reload", "supplies", "durability", "one_hit", "dodge_spit"},
+     {"god", "stamina", "hook", "uv", "no_fall", "ammo", "no_reload", "supplies", "durability", "one_hit", "evade_spit"},
      {{"speed", 2.0f}, {"jump", 2.0f}, {"h_dfa", 10}, {"h_dfa_pull", 10}, {"h_dfa_height", 10}, {"h_dropkick", 10}, {"h_dropkick_angle", 10}, {"h_dropkick_height", 10}, {"h_kicks", 10}, {"h_melee", 10}},
      ESP_RAGE},
     {"hunter_legit", "Night Hunter", "Legit",
@@ -2671,7 +2680,23 @@ inline void dupe_drops(bool on) {
 
 inline const char* key_name(BYTE key) { return key == KEY_LEFT ? "left" : key == KEY_RIGHT ? "right" : key == KEY_FORWARD ? "forward" : "back"; }
 
-inline void dodge_spits() {
+inline void run_pending_dodge(double now) {
+    if (!pending_dodge.key || now < pending_dodge.at) return;
+    BYTE key = pending_dodge.key;
+    pending_dodge.key = 0;
+    if (now - pending_dodge.at < STALE_DODGE && !input::held(key)) {
+        input::press(key, pending_dodge.hold);
+        dodge_free_at = now + pending_dodge.hold / 1000.0 + DODGE_GAP;
+        logf_hook("dodge: stepping %s for %lu ms", key_name(key), (unsigned long)pending_dodge.hold);
+    }
+}
+
+inline double reaction_time(bool instant) { return instant ? 0 : REACTION_MIN + std::uniform_real_distribution<double>(0, REACTION_SPREAD)(dodge_rng); }
+
+const float SPIT_LOCK_LIFT = 300;
+
+// Dodge steps aside after a reaction time; Lock lifts the spit far above its path, so it lands nowhere near you.
+inline void dodge_spits(bool lock, bool instant) {
     double now = now_seconds();
     float m[16];
     Vec3 eye;
@@ -2684,15 +2709,7 @@ inline void dodge_spits() {
     }
     my_last = eye, my_last_at = now;
 
-    if (pending_dodge.key && now >= pending_dodge.at) {
-        BYTE key = pending_dodge.key;
-        pending_dodge.key = 0;
-        if (now - pending_dodge.at < STALE_DODGE && !input::held(key)) {
-            input::press(key, pending_dodge.hold);
-            dodge_free_at = now + pending_dodge.hold / 1000.0 + DODGE_GAP;
-            logf_hook("dodge: stepping %s for %lu ms", key_name(key), (unsigned long)pending_dodge.hold);
-        }
-    }
+    run_pending_dodge(now);
 
     nearby.size = 0;
     find_in_radius(level, &nearby, &eye, DODGE_SCAN_RADIUS, 0, false, nullptr);
@@ -2716,8 +2733,15 @@ inline void dodge_spits() {
         if (distance(v, {}) < DODGE_MIN_SPEED || rel.x * to_me.x + rel.y * to_me.y + rel.z * to_me.z <= 0) continue;
         Approach hit = closest_approach(p, v, eye, my_velocity);
         if (hit.miss > DODGE_HIT_RADIUS) continue;
+        if (lock && set_position) {
+            Vec3 away{p.x, p.y + SPIT_LOCK_LIFT, p.z};
+            set_position(control, &away);
+            f.samples.clear();
+            logf_hook("dodge: spit %.1f m away would pass %.2f m from you in %.2f s, lifted off its path", distance(eye, p), hit.miss, hit.when);
+            continue;
+        }
         f.handled = true;
-        double reaction = REACTION_MIN + std::uniform_real_distribution<double>(0, REACTION_SPREAD)(dodge_rng);
+        double reaction = reaction_time(instant);
         const char* skipped = hit.when < reaction + LEAST_MOVE_TIME ? "too close to react"
                               : pending_dodge.key || now < dodge_free_at ? "already dodging" : nullptr;
         BYTE key = skipped ? 0 : dodge_key(m, hit.away, v);

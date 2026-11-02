@@ -74,6 +74,18 @@ enum OpenAt { OPEN_CENTER, OPEN_REMEMBER, OPEN_LEFT, OPEN_RIGHT };
 enum MenuStyle { STYLE_CLASSIC, STYLE_RAIL, STYLE_TABS, STYLE_DOCK };
 enum Corner { CORNER_TOP_LEFT, CORNER_TOP_RIGHT, CORNER_BOTTOM_LEFT, CORNER_BOTTOM_RIGHT };
 const size_t WHEEL_PINS = 8;
+enum Evade { EVADE_DODGE, EVADE_LOCK, EVADE_AIM_UV };
+enum EvadeAttack { EVADE_TACKLE, EVADE_POUNCE, EVADE_POUND, EVADE_SPIT, EVADE_ATTACKS };
+enum KillTarget { TARGET_ALL, TARGET_NEAREST, TARGET_PICKED };
+
+struct Pvp {
+    int evade[EVADE_ATTACKS] = {EVADE_DODGE, EVADE_AIM_UV, EVADE_LOCK, EVADE_DODGE};
+    bool instant = false;
+    float kill_delay = 2;
+    int kill_target = TARGET_ALL;
+    float nest_delay = 0.5f;
+};
+
 const float TEXT_SIZE_MIN = 0.8f, TEXT_SIZE_MAX = 1.3f, SIDEBAR_MIN = 190, SIDEBAR_MAX = 320;
 
 struct Look {
@@ -129,6 +141,7 @@ struct Config {
     std::map<std::string, std::string> kind_languages;
     float fov = 1.0f;
     Look look;
+    Pvp pvp;
 };
 
 inline Config cfg;
@@ -198,8 +211,10 @@ inline bool save_profile(const std::string& name, const Profile& p) {
     return true;
 }
 
+inline std::string migrate_cheat_id(const std::string& id) { return id == "dodge_spit" ? "evade_spit" : id; }
+
 inline bool read_cheat_line(const std::string& k, const std::string& v, Profile& p) {
-    if (k == "cheat") p.cheats.push_back(v);
+    if (k == "cheat") p.cheats.push_back(migrate_cheat_id(v));
     else if (k == "tweak") {
         size_t c = v.find(',');
         if (c != std::string::npos) p.tweaks.push_back({v.substr(0, c), (float)atof(v.substr(c + 1).c_str())});
@@ -544,6 +559,7 @@ inline void load(const std::string& path) {
     cfg.texts.clear();
     cfg.game_language.clear(), cfg.voice_language.clear(), cfg.subtitle_language.clear(), cfg.kind_languages.clear();
     cfg.fov = 1.0f;
+    cfg.pvp = Pvp();
     std::string old_language;
     bool old_spoken_kept = false;
     char line[4096];
@@ -575,7 +591,7 @@ inline void load(const std::string& path) {
         else if (k == "cheat_key") {
             size_t c = v.find(',');
             int vk = c == std::string::npos ? 0 : atoi(v.c_str() + c + 1);
-            std::string key = v.substr(0, c);
+            std::string key = migrate_cheat_id(v.substr(0, c));
             if (key == "go_saved_position") key = "go_last_position";
             if (vk > 0 && vk < 256) cfg.cheat_keys[key] = vk;
         }
@@ -597,6 +613,7 @@ inline void load(const std::string& path) {
         }
         else if (k == "wheel_pin") {
             auto& pins = cfg.wheel_pins;
+            v = migrate_cheat_id(v);
             if (!v.empty() && pins.size() < WHEEL_PINS && std::find(pins.begin(), pins.end(), v) == pins.end()) pins.push_back(v);
         }
         else if (k == "active_list") cfg.active_list = v == "1";
@@ -619,6 +636,17 @@ inline void load(const std::string& path) {
                 l.text_size = std::clamp(text_size, TEXT_SIZE_MIN, TEXT_SIZE_MAX), l.card_style = std::clamp(card, (int)CARD_FILLED, (int)CARD_FLAT);
                 l.checkboxes = checkboxes != 0, l.descriptions = descriptions != 0, l.open_at = std::clamp(open_at, (int)OPEN_CENTER, (int)OPEN_RIGHT);
                 l.sidebar_width = std::clamp(sidebar, SIDEBAR_MIN, SIDEBAR_MAX), l.style = std::clamp(style, (int)STYLE_CLASSIC, (int)STYLE_DOCK);
+            }
+        }
+        else if (k == "pvp") {
+            Pvp p;
+            int e[EVADE_ATTACKS], instant, target;
+            if (sscanf(v.c_str(), "%d,%d,%d,%d,%d,%f,%d,%f", &e[0], &e[1], &e[2], &e[3], &instant, &p.kill_delay, &target, &p.nest_delay) == 8 &&
+                std::isfinite(p.kill_delay) && std::isfinite(p.nest_delay)) {
+                for (int i = 0; i < EVADE_ATTACKS; i++) p.evade[i] = std::clamp(e[i], (int)EVADE_DODGE, (int)EVADE_AIM_UV);
+                p.instant = instant != 0, p.kill_target = std::clamp(target, (int)TARGET_ALL, (int)TARGET_PICKED);
+                p.kill_delay = std::clamp(p.kill_delay, 0.0f, 20.0f), p.nest_delay = std::clamp(p.nest_delay, 0.0f, 5.0f);
+                cfg.pvp = p;
             }
         }
         else if (k == "remember_cheats") cfg.remember_cheats = v == "1";
@@ -683,6 +711,9 @@ inline bool save(const std::string& path) {
     fprintf(f, "dim=%.2f\nscale=%.2f\nmenu_key=%d\nremember_cheats=%d\nallow_older=%d\nbeta=%d\n", cfg.dim, cfg.scale, cfg.menu_key,
             (int)cfg.remember_cheats, (int)cfg.allow_older, (int)cfg.beta);
     fprintf(f, "cheat_engine=%d\n", (int)cfg.cheat_engine);
+    const auto& pv = cfg.pvp;
+    fprintf(f, "pvp=%d,%d,%d,%d,%d,%.2f,%d,%.2f\n", pv.evade[0], pv.evade[1], pv.evade[2], pv.evade[3], (int)pv.instant, pv.kill_delay, pv.kill_target,
+            pv.nest_delay);
     if (cfg.window[0] > 0 && cfg.window[1] > 0) fprintf(f, "window=%.0f,%.0f\n", cfg.window[0], cfg.window[1]);
     fprintf(f, "window_at=%.3f,%.3f\n", cfg.window_at[0], cfg.window_at[1]);
     for (auto& h : cfg.hidden_configs) fprintf(f, "hidden_config=%s\n", h.c_str());

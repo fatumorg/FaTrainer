@@ -192,7 +192,43 @@ def write_skills(rows, canvas):
     print(f"skills.h: {len(rows)} skills in {len(canvas)} trees")
 
 
+STOCK_NAMES = ["f_btz_wrestling_kick_range", "JumpAttackRange", "f_btz_zombie_grab_range", "ZombieChargeAttackRange", "ZombieGroundPoundRange",
+               "MoveSprintSpeed", "JumpMaxHeight", "MaxHealth", "ZombieGroundPoundCooldown", "CamouflageDurationEnhanced"]
+
+
+def stock(dw):
+    import hashlib
+    pak = os.path.join(dw, "Data0.pak")
+    values = {}
+    with zipfile.ZipFile(pak) as z:
+        for n in z.namelist():
+            if n.startswith("data/skills/") and n.endswith(".xml"):
+                for m in re.finditer(rb'<prop\s+n\s*=\s*"([^"]+)"\s+v\s*=\s*"([-0-9.eE]+)"', z.read(n)):
+                    k = m.group(1).decode()
+                    values[k] = max(values.get(k, -math.inf), float(m.group(2)))
+        for m in re.finditer(r'VarFloat\("([^"]+)",\s*([-0-9.eE]+)\)', z.read("data/scripts/varlist_be_the_zombie_tuning.scr").decode("latin1")):
+            values[m.group(1)] = float(m.group(2))
+    missing = [n for n in STOCK_NAMES if n not in values]
+    if missing:
+        sys.exit("stock: not found: " + ", ".join(missing))
+    digest = hashlib.sha256(open(pak, "rb").read()).hexdigest()
+    rows = ",\n".join(f"    {{{c_str(n)}, {c_float(values[n])}}}" for n in STOCK_NAMES)
+    names = ", ".join(c_str(n) for n in STOCK_NAMES)
+    with open(os.path.join(HERE, "src/stock.h"), "w") as f:
+        f.write("#pragma once\n#include <cmath>\n#include <cstring>\n#include <utility>\n\nnamespace stock {\n\n"
+                f"inline const char SOURCE[] = \"Data0.pak sha256 {digest}\";\n"
+                f"inline const std::pair<const char*, float> VALUES[] = {{\n{rows}\n}};\n"
+                f"inline const char* const NAMES_USED[] = {{{names}}};\n\n"
+                "inline float value(const char* name) {\n"
+                "    for (auto& [n, v] : VALUES)\n"
+                "        if (name && !strcmp(n, name)) return v;\n"
+                "    return NAN;\n}\n\n}\n")
+    print(f"stock.h: {len(STOCK_NAMES)} values from {pak}")
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--stock":
+        return stock(sys.argv[2])
     dw = game_dw()
     with zipfile.ZipFile(os.path.join(dw, "Data0.pak")) as z:
         ids = sorted(set(re.findall(r'Item\(\d+,\s*"([^"]+)"\)', z.read("data/scripts/inventory/validitemids.scr").decode("latin1"))),

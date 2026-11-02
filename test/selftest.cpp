@@ -14,6 +14,9 @@
 #include "teleport.h"
 #include "dlc.h"
 #include "pvp.h"
+#include "announce.h"
+#include "detect.h"
+#include "lobby.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
@@ -1105,6 +1108,71 @@ int main(int argc, char** argv) {
         CHECK(t.size() == 12 && close_to(t.back(), 0, -2));
     }
     CHECK(!memcmp((const void*)pvp::spike_start_fn, pvp::SPIKE_START_PROLOGUE, sizeof pvp::SPIKE_START_PROLOGUE));
+    CHECK(pvp::grab_apply_fn == game::g.base + 0xd6b530 && !memcmp((const void*)pvp::grab_apply_fn, pvp::GRAB_APPLY_PROLOGUE, sizeof pvp::GRAB_APPLY_PROLOGUE));
+    CHECK(pvp::knock_apply_fn == game::g.base + 0xd6d8a0 && !memcmp((const void*)pvp::knock_apply_fn, pvp::KNOCK_APPLY_PROLOGUE, sizeof pvp::KNOCK_APPLY_PROLOGUE));
+    {
+        pvp::Shield none{}, all{true, true, true, true, true, true, true}, lock_only{false, false, false, true, false, false, false};
+        CHECK(!pvp::refuse(pvp::EV_IMPALE, none) && pvp::refuse(pvp::EV_IMPALE, all) && pvp::refuse(pvp::EV_DROPKICK, all) && pvp::refuse(pvp::EV_DFA, all));
+        CHECK(pvp::refuse(pvp::EV_TACKLE, lock_only) && !pvp::refuse(pvp::EV_POUNCE, lock_only) && !pvp::refuse(pvp::EV_CLAW, all) && !pvp::refuse(pvp::EV_DAMAGE, all));
+        CHECK(pvp::grab_event(2) == pvp::EV_POUNCE && pvp::grab_event(3) == pvp::EV_POUND && pvp::grab_event(4) == pvp::EV_DFA && pvp::grab_event(5) == pvp::EV_DROPKICK);
+        auto kept = config::cfg;
+        config::cfg = config::Config();
+        config::cfg.pvp.evade[2] = config::EVADE_DODGE, config::cfg.pvp.kill_delay = 4.5f;
+        config::save("selftest_pvp.ini"), config::cfg = config::Config(), config::load("selftest_pvp.ini");
+        CHECK(config::cfg.pvp.evade[2] == config::EVADE_DODGE && config::cfg.pvp.kill_delay == 4.5f && config::cfg.pvp.evade[1] == config::EVADE_AIM_UV);
+        remove("selftest_pvp.ini");
+        config::cfg = config::Config();
+        std::ofstream("selftest_old.ini") << "cheat=dodge_spit\ncheat_key=dodge_spit,117\nwheel_pin=dodge_spit\npvp=9,1,-3,0,1,99,7,0.5\n";
+        config::load("selftest_old.ini");
+        CHECK(std::find(config::cfg.cheats_on.begin(), config::cfg.cheats_on.end(), "evade_spit") != config::cfg.cheats_on.end() && config::cfg.cheat_keys["evade_spit"] == 117);
+        CHECK(config::cfg.wheel_pins.size() == 1 && config::cfg.wheel_pins[0] == "evade_spit");
+        CHECK(config::cfg.pvp.evade[0] == config::EVADE_AIM_UV && config::cfg.pvp.evade[2] == config::EVADE_DODGE && config::cfg.pvp.kill_delay == 20 && config::cfg.pvp.kill_target == config::TARGET_PICKED);
+        config::Profile old_profile;
+        CHECK(config::read_cheat_line("cheat", "dodge_spit", old_profile) && old_profile.cheats.size() == 1 && old_profile.cheats[0] == "evade_spit");
+        remove("selftest_old.ini");
+        CHECK(cheats::find("evade_spit") && !cheats::find("dodge_spit") && cheats::find("undropkickable") && cheats::find("no_dfa"));
+        float y1, p1, y2, p2, y3, p3;
+        pvp::aim_angles({0, 0, 0}, {5, 0, 5}, y1, p1);
+        pvp::aim_angles({0, 0, 0}, {-5, 0, 5}, y2, p2);
+        pvp::aim_angles({0, 0, 0}, {0, 5, 5}, y3, p3);
+        CHECK(fabsf(y1 + y2) < 1e-4f && fabsf(p1) < 1e-4f && p3 > 0.7f && p3 < 0.9f && y1 > 0);
+        pvp::Loop l;
+        CHECK(!pvp::loop_fire(l, true, 10.0, 2.0f));
+        CHECK(!pvp::loop_fire(l, true, 11.0, 2.0f) && pvp::loop_fire(l, true, 12.0, 2.0f) && !pvp::loop_fire(l, true, 13.0, 2.0f));
+        CHECK(!pvp::loop_fire(l, false, 14.0, 2.0f) && !pvp::loop_fire(l, true, 20.0, 2.0f) && pvp::loop_fire(l, true, 22.0, 2.0f));
+        pvp::Loop gone;
+        CHECK(!pvp::loop_fire(gone, false, 1.0, 0.0f) && !pvp::loop_fire(gone, false, 50.0, 0.0f));
+        pvp::Loop instant;
+        CHECK(pvp::loop_fire(instant, true, 5.0, 0.0f));
+        CHECK(pvp::grab_start_fn == game::g.base + 0xd67a90);
+        announce::Peer peer;
+        CHECK(announce::encode("3.0 b4", "Fatum") == "FTR1|3.0 b4|Fatum");
+        CHECK(announce::decode("FTR1|3.0 b4|Fatum", peer) && peer.version == "3.0 b4" && peer.edition == "Fatum");
+        CHECK(announce::decode(announce::encode("3.0", "Visuals"), peer) && announce::badge(peer) == "FaTrainer 3.0 \xC2\xB7 Visuals Version");
+        CHECK(!announce::decode("FTR1|3.0 b4|Nexus", peer) && !announce::decode("FTR1|3.0 b4", peer) && !announce::decode("FTR2|3.0|Fatum", peer));
+        CHECK(!announce::decode("FTR1|3.0;rm -rf|Fatum", peer) && !announce::decode("FTR1|3.0\x01|Fatum", peer) && !announce::decode(std::string(200, 'A'), peer));
+        CHECK(!announce::decode("FTR1||Fatum", peer) && !announce::decode("FTR1|3.0|Fatum|x", peer));
+        detect::test_normal(detect::K_DROPKICK, 4);
+        CHECK(!detect::over(detect::K_DROPKICK, 5.8f) && detect::over(detect::K_DROPKICK, 6.0f));
+        detect::Tracker tracker;
+        tracker.sample(detect::K_DROPKICK, 5.0f);
+        CHECK(tracker.findings().empty());
+        tracker.sample(detect::K_DROPKICK, 11.8f), tracker.sample(detect::K_DROPKICK, 9.0f), tracker.sample(detect::K_DROPKICK, 10.0f);
+        auto found = tracker.findings();
+        CHECK(found.size() == 1 && found[0].count == 3 && found[0].measured == 11.8f);
+        CHECK(detect::describe(found[0]) == "Dropkick from 11.8 m (normal up to 4 m), 3 times");
+        CHECK(detect::describe({detect::K_DROPKICK, 6.5f, 4, 1}) == "Dropkick from 6.5 m (normal up to 4 m), once");
+        CHECK(detect::describe({detect::K_NO_DAMAGE, 6, 0, 6}) == "Took 6 hits, health never dropped");
+        CHECK(detect::describe({detect::K_IMPALE, 0, 0, 2}) == "Spike death with no kick or spikes nearby, 2 times");
+        detect::test_normal(detect::K_DROPKICK, 0);
+        for (const char* n : stock::NAMES_USED) CHECK(std::isfinite(stock::value(n)) && stock::value(n) > 0);
+        CHECK(std::isnan(stock::value("nope")));
+        lobby::Player host_survivor{}, hunter{}, joined{};
+        host_survivor.host = true, hunter.hunter = true, joined.you = true;
+        CHECK(lobby::role(host_survivor) == "Host \xC2\xB7 Survivor" && lobby::role(hunter) == "Night Hunter" && lobby::role(joined) == "Survivor");
+        CHECK(pvp::reaction(true) == 0 && pvp::reaction(false) >= cheats::REACTION_MIN && pvp::reaction(false) <= cheats::REACTION_MIN + cheats::REACTION_SPREAD);
+        config::cfg = kept;
+    }
     {
         CHECK(game::g.vt_inv_container);
         alignas(16) static uint8_t player[0x1000] = {}, container[0x100] = {}, other[0x100] = {};
