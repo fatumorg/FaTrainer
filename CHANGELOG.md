@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0 b17
+
+Lobby Update
+
+- New: The Bozak Horde on the DLC Modes page. Pause trial timers holds the time left of every trial still, and Kill the whole wave kills every enemy of the wave wherever it is.
+- Fixed: the FaTrainer notice from b16 never reached anyone. Dying Light's sessions run on Epic Online Services, not on Steam lobbies, so the notice now goes through the game's own session. The Lobby page lists everyone in your session, who hosts and who runs FaTrainer.
+- Changed: the Lobby page no longer shows Steam names or a Steam profile button; the game's session does not carry them.
+- This is a beta build. Lock for the tackle does nothing yet: the tackle's kind of grab is not known. When a tackle lands on you with this build, the log (fatrainer.log) notes it as `pvp: attack on you (..., kind N)`; send that line. Pause trial timers was not tried in a real Bozak run; if the trial time still runs out, send the log.
+
 ## 3.0 b16
 
 Lobby Update

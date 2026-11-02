@@ -19,7 +19,7 @@
 - **Player**: god mode, infinite stamina, take less damage, draggable health and stamina bars, infinite grappling hook, infinite UV flashlight, instant lockpicking, no fall damage, movement speed, jump height, instant refill
 - **Combat**: one hit kill, infinite ammo, no reload, infinite consumables, unbreakable weapons
 - **Skills**: XP multiplier for every skill tree (the game shows the boosted XP), draggable XP bars, +1 point through real XP, -10, -1, +10 and Max for any skill tree, extra skill points without changing the level
-- **Lobby**: everyone in your session with their Steam name, who hosts, who runs FaTrainer (version and edition) and a Steam profile button; the players your game sees with health and distance, a Probably cheating notice when one reaches further than the game allows, and Kill, Go to and Pick for Auto-Kill
+- **Lobby**: everyone in your session, who hosts and who runs FaTrainer (version and edition); the players your game sees with health and distance, a Probably cheating notice when one reaches further than the game allows, and Kill, Go to and Pick for Auto-Kill
 - **Teleport**: go to your map marker or the objective of the quest you track, with how far away it is and in which direction; saved positions for every map, with go, rename and delete
 
 #### Be The Zombie
@@ -29,7 +29,7 @@
 
 #### Modes
 
-- **DLC Modes**: pause the Harran Prison timers and kill all enemies nearby in Harran Prison
+- **DLC Modes**: pause the Harran Prison timers and kill all enemies nearby in Harran Prison; pause the trial timers and kill the whole wave in The Bozak Horde
 
 #### Look
 
