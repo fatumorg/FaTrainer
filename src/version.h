@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#define FATRAINER_VERSION "3.0 b17"
+#define FATRAINER_VERSION "3.0 b18"
 #define FATRAINER_NAME "Lobby Update"
 #define INSTALLER_VERSION "3.0"
 #if FATRAINER_VISUALS

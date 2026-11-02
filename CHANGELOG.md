@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0 b18
+
+Lobby Update
+
+- Fixed: Auto-Kill as the Night Hunter found the spike trap and still never threw the survivor onto it. The pounce gives the throw a 350 s window and the throw was aimed to land at its very end; it now aims for a flight of a second or two.
+- Fixed: on the Lobby page the dot between version and edition showed as "??", and so did any accented letter in the page's small capital labels.
+- Fixed: the players table on the Lobby page never marked anyone as running FaTrainer. It now does when everyone else in the session runs the same FaTrainer; in a mixed session the session card above shows who does.
+- Checked in a real match between two FaTrainer games: joining as the Night Hunter, the FaTrainer notice both ways, the Lobby page, and a pounce started by Kill once landing on the survivor's game.
+
 ## 3.0 b17
 
 Lobby Update
