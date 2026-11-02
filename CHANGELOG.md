@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.0 b19
+
+Lobby Update
+
+- Fixed: with HUD colors on, the game could crash on the main menu or while loading a save. A HUD screen left over from before pointed at something that was not a HUD element, and the trainer called into it.
+- Fixed: with the voices in one language and the game language in another, the main menu buttons (Play, Options, Extras, Quit) stayed in the voice language. Only Continue switched.
+- Fixed: conversations with characters (quest givers, traders, survivors in the Tower) showed their subtitles in the game language instead of the Subtitles language.
+- Fixed: menu dialog boxes (Quit Game, Load Game, Are you sure?) followed the Subtitles language instead of the Menus language.
+- Changed: the Be The Zombie killfeed calls a crossbow kill "Bolt" instead of "Arrow".
+- Still open: the DLC Packs button on the main menu stays in the voice language.
+
 ## 3.0 b18
 
 Lobby Update
