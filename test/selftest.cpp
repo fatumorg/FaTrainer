@@ -1181,6 +1181,16 @@ int main(int argc, char** argv) {
         lobby::Player host_survivor{}, hunter{}, joined{};
         host_survivor.host = true, hunter.hunter = true, joined.you = true;
         CHECK(lobby::role(host_survivor) == "Host \xC2\xB7 Survivor" && lobby::role(hunter) == "Night Hunter" && lobby::role(joined) == "Survivor");
+        {
+            announce::Member me{}, a{}, b{};
+            me.you = true, a.fatrainer = b.fatrainer = true, a.peer = b.peer = {"3.0 b18", "Fatum"};
+            announce::Peer shared;
+            CHECK(lobby::everyone_runs({me, a, b}, shared) && shared.version == "3.0 b18" && !lobby::everyone_runs({me}, shared));
+            b.peer.edition = "Visuals";
+            CHECK(!lobby::everyone_runs({me, a, b}, shared));
+            b.peer = a.peer, b.fatrainer = false;
+            CHECK(!lobby::everyone_runs({a, me, b}, shared));
+        }
         CHECK(pvp::reaction(true) == 0 && pvp::reaction(false) >= cheats::REACTION_MIN && pvp::reaction(false) <= cheats::REACTION_MIN + cheats::REACTION_SPREAD);
         config::cfg = kept;
     }

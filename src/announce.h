@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#include <map>
 #include <mutex>
 #include <string>
 #include "game.h"
@@ -196,15 +195,5 @@ inline std::vector<Member> members() {
     std::lock_guard<std::mutex> l(lobby_mx);
     return lobby_members;
 }
-
-#if !FATRAINER_VISUALS
-inline std::mutex heard_mx;
-inline std::map<uintptr_t, Peer> heard_from;
-
-inline std::map<uintptr_t, Peer> heard() {
-    std::lock_guard<std::mutex> l(heard_mx);
-    return heard_from;
-}
-#endif
 
 }

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include "imgui.h"
+#include "imgui_internal.h"
 
 #ifdef _WIN32
 #define EMBED_SECTION ".section .rdata,\"dr\"\n"
@@ -105,9 +106,12 @@ inline void draw_letters(ImDrawList* dl, ImFont* font, float size, ImVec2 pos, c
 
 inline void spaced_caps(ImDrawList* dl, ImFont* font, float size, ImVec2 pos, const char* text, ImU32 color, float spacing) {
     float x = pos.x;
-    for (const char* c = text; *c; c++) {
-        dl->AddText(font, size, {x, pos.y}, color, c, c + 1);
-        x += text_w(font, c, c + 1, size) + spacing;
+    unsigned int cp;
+    for (const char* c = text; *c;) {
+        const char* next = c + ImTextCharFromUtf8(&cp, c, nullptr);
+        dl->AddText(font, size, {x, pos.y}, color, c, next);
+        x += text_w(font, c, next, size) + spacing;
+        c = next;
     }
 }
 

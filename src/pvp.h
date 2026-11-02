@@ -199,19 +199,26 @@ inline bool kill_wanted(uintptr_t p) {
     return it != kill_pending.end() && cheats::now_seconds() < it->second;
 }
 
+// The pounce's search window is 350 s (gamedll d6cc76): landing at its end flattens the arc to nothing, so long windows
+// try short flights that land well inside it.
+const float LONG_WINDOW = 2, SHORT_FLIGHTS[] = {0.5f, 1, 2};
+
 inline bool throw_onto_spikes(uintptr_t result, uintptr_t owner, const cheats::Vec3* from, float time, float gravity, uintptr_t player) {
     auto spikes = spikes_near(*from, KILL_SPIKE_RADIUS);
-    for (size_t i = 0; i < spikes.size() && i < 3; i++) {
-        cheats::Vec3 to = spikes[i];
-        float t = std::max(time, 0.05f), g = std::fabs(gravity);
-        cheats::Vec3 v{(to.x - from->x) / t, (to.y - from->y + 0.5f * g * t * t) / t, (to.z - from->z) / t};
-        if (spike_search_original(result, owner, from, &v, time, gravity, player)) {
-            cheats::logf_hook("pvp: auto-kill throws a player onto spikes %.1f m away", cheats::distance(*from, to));
-            std::lock_guard<std::mutex> l(kill_mx);
-            kill_pending.erase(owner), kill_pending.erase(player);
-            return true;
+    float g = std::fabs(gravity), own[] = {std::max(time, 0.05f)};
+    auto flights = time > LONG_WINDOW ? std::vector<float>(std::begin(SHORT_FLIGHTS), std::end(SHORT_FLIGHTS)) : std::vector<float>(own, own + 1);
+    for (size_t i = 0; i < spikes.size() && i < 3; i++)
+        for (float t : flights) {
+            cheats::Vec3 to = spikes[i];
+            cheats::Vec3 v{(to.x - from->x) / t, (to.y - from->y + 0.5f * g * t * t) / t, (to.z - from->z) / t};
+            if (spike_search_original(result, owner, from, &v, time, gravity, player)) {
+                cheats::logf_hook("pvp: auto-kill throws a player onto spikes %.1f m away (%.1f s flight)", cheats::distance(*from, to), t);
+                std::lock_guard<std::mutex> l(kill_mx);
+                kill_pending.erase(owner), kill_pending.erase(player);
+                return true;
+            }
         }
-    }
+    if (!spikes.empty()) cheats::logf_hook("pvp: auto-kill found %d traps, none in the throw's reach", (int)spikes.size());
     return false;
 }
 
