@@ -26,23 +26,17 @@ inline void lobby_actions(const lobby::Row& r) {
     end_card();
 }
 
-inline void steam_members_card() {
+inline void session_members_card() {
     auto members = announce::members();
     if (members.empty()) return;
-    begin_card("lobby_steam", "IN YOUR SESSION");
+    begin_card("lobby_session", "IN YOUR SESSION");
+    int n = 1;
     for (auto& m : members) {
-        ImGui::PushID((void*)(uintptr_t)m.steam_id);
+        ImGui::PushID(m.user);
+        std::string name = m.you ? "You" : "Player " + std::to_string(n++);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(m.name.empty() ? "Unknown player" : m.name.c_str());
-        if (m.you) ImGui::SameLine(0, S(8)), ImGui::TextDisabled("you");
+        ImGui::TextUnformatted(name.c_str());
         if (m.owner) ImGui::SameLine(0, S(8)), ImGui::TextDisabled("host");
-        if (!m.you) {
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - S(140) + ImGui::GetCursorPosX());
-            if (ImGui::Button("Steam profile", {S(140), 0})) {
-                uint64_t id = m.steam_id;
-                on_game_thread([id] { announce::open_profile(id); });
-            }
-        }
         if (m.fatrainer) caps(announce::badge(m.peer).c_str(), T.accent);
         ImGui::PopID();
     }
@@ -51,7 +45,7 @@ inline void steam_members_card() {
 
 inline void lobby_page() {
     cheats::kill_tracking = true;
-    steam_members_card();
+    session_members_card();
     auto list = lobby::rows();
     begin_card("lobby_players", "PLAYERS");
     if (list.empty()) {

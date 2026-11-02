@@ -2682,7 +2682,7 @@ inline const Page PAGES[] = {
      {"evade_tackle", "evade_pounce", "evade_pound", "evade_spit", "auto_flare", "one_hit_hunter", "h_dfa", "h_dfa_pull", "h_dfa_height", "h_dropkick", "h_dropkick_angle", "h_dropkick_height", "h_kicks", "h_melee", "h_recharge", "unspikeable", "spike_range", "spike_angle", "nests_loop", "anti_afk", "auto_kill"}},
     {"zombie", "Night Hunter", "Your abilities, attack reach and spit keys as the Night Hunter", zombie_page, always, "BE THE ZOMBIE",
      {"z_energy", "z_uv", "z_cooldowns", "z_spits", "z_pound_hits", "z_camo", "z_pounce", "z_pound", "z_tackle", "z_claws", "z_spit", "undropkickable", "no_dfa", "unspikeable", "spike_range", "spike_angle", "anti_afk", "auto_kill"}},
-    {"dlc", "DLC Modes", "Harran Prison and The Bozak Horde", dlc_page, always, "MODES", {"prison_pause"}},
+    {"dlc", "DLC Modes", "Harran Prison and The Bozak Horde", dlc_page, always, "MODES", {"prison_pause", "bozak_pause"}},
     {"visuals", "Visuals", "Player ESP, colors, HUD, field of view and glow", visuals_page, always, "LOOK", {}},
     {"texts", "Texts", "Game language and your own texts", texts_page, always, "LOOK", {}},
     {"cash", "Cash", "Your money", cash_page, always, "ITEMS", {}},
@@ -2749,7 +2749,7 @@ inline bool setting_choice(const char* text, const char* id, const char* const* 
 
 inline const char* edition_story() {
 #if FATRAINER_VISUALS
-    return "Changes only how the game looks to you. It has no cheats. It never connects to the internet itself; through Steam it tells the other players in your session that you run FaTrainer, with its version.";
+    return "Changes only how the game looks to you. It has no cheats. It never connects to the internet itself; through the game's own session it tells the other players that you run FaTrainer, with its version.";
 #else
     return "Runs only when you start the game with Play in FaTrainer, and then asks GitHub once which version is the newest. "
            "If a newer one is out, the trainer turns itself off until you press Play in FaTrainer again, unless Use older versions is on. "

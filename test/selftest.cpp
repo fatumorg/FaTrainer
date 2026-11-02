@@ -1167,6 +1167,17 @@ int main(int argc, char** argv) {
         detect::test_normal(detect::K_DROPKICK, 0);
         for (const char* n : stock::NAMES_USED) CHECK(std::isfinite(stock::value(n)) && stock::value(n) > 0);
         CHECK(std::isnan(stock::value("nope")));
+        {
+            CHECK(game::g.vt_bozak_timer);
+            alignas(16) static uint8_t timer[0x100] = {};
+            *(uintptr_t*)timer = game::g.vt_bozak_timer;
+            *(float*)(timer + dlc::BOZAK_LIMIT) = 60;
+            auto kept_prison = game::g.prison_data, kept_bozak = game::g.bozak_timers;
+            game::g.prison_data.clear(), game::g.bozak_timers = {(uintptr_t)timer};
+            CHECK(dlc::mode() == dlc::MODE_BOZAK && dlc::pause_bozak(true, 0.5f) == 1 && *(float*)(timer + dlc::BOZAK_LIMIT) == 60.5f);
+            CHECK(dlc::pause_bozak(false, 0.5f) == 1 && dlc::pause_bozak(true, 2.0f) == 1 && *(float*)(timer + dlc::BOZAK_LIMIT) == 60.5f);
+            game::g.prison_data = kept_prison, game::g.bozak_timers = kept_bozak;
+        }
         lobby::Player host_survivor{}, hunter{}, joined{};
         host_survivor.host = true, hunter.hunter = true, joined.you = true;
         CHECK(lobby::role(host_survivor) == "Host \xC2\xB7 Survivor" && lobby::role(hunter) == "Night Hunter" && lobby::role(joined) == "Survivor");

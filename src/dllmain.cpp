@@ -19,6 +19,7 @@
 #if !FATRAINER_VISUALS
 #include "net_win.h"
 #include "pvp.h"
+#include "dlc.h"
 #include "../installer/logic.h"
 #if !FATRAINER_VISUALS
 #include "cheat_engine.h"
@@ -446,6 +447,7 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     if (g_ready && (esp || cheats::players_wanted())) cheats::track_players();
     if (g_ready && !g_open) pvp::auto_evade();
     if (g_ready) pvp::auto_kill();
+    if (g_ready) dlc::pause_timers();
     if (g_ready && !g_open && cheats::is_on("evade_spit"))
         cheats::dodge_spits(config::cfg.pvp.evade[config::EVADE_SPIT] == config::EVADE_LOCK, config::cfg.pvp.instant);
     if (g_ready && !g_open && cheats::is_on("auto_flare")) cheats::auto_flare();
@@ -457,9 +459,8 @@ static HRESULT WINAPI hkPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
 #endif
     poll_config_keys();
     if (g_ready) {
-        static bool announcing = false, tried = false;
-        if (!tried) tried = true, announcing = announce::install(), logf("announce: %s", announcing ? "ready" : "Steam API not found");
-        if (announcing) announce::tick(FATRAINER_VERSION, FATRAINER_EDITION_KEY, logf);
+        static bool tried = false;
+        if (!tried) tried = true, logf("announce: %s", announce::install(FATRAINER_VERSION, FATRAINER_EDITION_KEY, logf) ? "ready" : "EOS lobby calls not found");
     }
     if (g_ready) visuals::spin_rainbows(GetTickCount64() / 1000.0);
     if (g_ready) visuals::keep_hud(logf);

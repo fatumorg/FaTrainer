@@ -338,7 +338,8 @@ struct State {
     int player_control = -1, human_control = -1, sensor_control = -1, sensor_rtti = -1;
     std::vector<uintptr_t> wallets, players, equipment, prison_data, prison_sensors, ropes, logical_players, huds, mission_defs;
 #if !FATRAINER_VISUALS
-    uintptr_t vt_chat_input = 0;
+    uintptr_t vt_chat_input = 0, vt_bozak_timer = 0;
+    std::vector<uintptr_t> bozak_timers;
     std::vector<uintptr_t> chat_inputs;
 #endif
     std::map<std::pair<uintptr_t, int>, float> stat_overrides;
@@ -675,6 +676,7 @@ inline bool resolve_classes(uintptr_t base) {
     g.vt_mission_def = find_vtable(base, ".?AUZombieMissionActionDef");
 #if !FATRAINER_VISUALS
     g.vt_chat_input = find_vtable(base, "HudChatInput");
+    g.vt_bozak_timer = find_vtable(base, "BozakTimerPhase@Quests");
 #endif
     g.vt_upgrade_desc = find_vtable(base, "ItemDescCraftPart");
     g.vt_blueprint_desc = find_vtable(base, "ItemDescCraftPlan");
@@ -723,6 +725,7 @@ inline void refresh() {
         vts.push_back(g.vt_mission_def);
 #if !FATRAINER_VISUALS
         vts.push_back(g.vt_chat_input);
+        vts.push_back(g.vt_bozak_timer);
 #endif
     }
     DWORD t0 = GetTickCount();
@@ -814,6 +817,7 @@ inline void refresh() {
     g.mission_defs = found[9 + N_INV_CLASSES];
 #if !FATRAINER_VISUALS
     g.chat_inputs = found[10 + N_INV_CLASSES];
+    g.bozak_timers = found[11 + N_INV_CLASSES];
 #endif
     g.wallets = wallets;
     g.invs = std::move(invs);

@@ -92,6 +92,7 @@ inline Cheat CHEATS[] = {
     {"z_spits", "Infinite spits", "Every spit type recharges instantly.", {}, {}},
     {"z_pound_hits", "Sure-hit ground pound", "Hits every survivor in range, even when a step or uneven ground would make it miss.",
      {}, {}},
+    {"bozak_pause", "Pause trial timers", "The trial timers stand still.", {}, {}},
     {"prison_pause", "Pause prison timers", "The run timer and the reward room countdown stand still. Works when you are the host.", {}, {}},
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
@@ -2922,7 +2923,9 @@ inline void tick() {
     if (Tweak* t = find_tweak("spike_range"))
         apply_cached_vars(SPIKE_VARS, std::size(SPIKE_VARS), std::clamp((t->factor - 1.0f) / (t->max - 1.0f), 0.0f, 1.0f));
     apply_spit_radius(playing_hunter() ? std::clamp(find_tweak("z_spit")->factor.load(), 1.0f, find_tweak("z_spit")->max) : 1.0f);
-    objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing || afk_missing;
+    bool bozak_missing = is_on("bozak_pause") && std::none_of(g.bozak_timers.begin(), g.bozak_timers.end(),
+                                                              [](uintptr_t t) { return g.vt_bozak_timer && rdv<uintptr_t>(t) == g.vt_bozak_timer; });
+    objects_missing = prison_missing || uv_missing || uv_slow_missing || rope_missing || afk_missing || bozak_missing;
     player = find_player();
     if (alive(player)) {
         apply_weapon_edits();
