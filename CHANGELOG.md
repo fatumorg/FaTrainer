@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0 b16
+
+Lobby Update
+
+- New: Auto-Evade on the Survivor page, one row per Night Hunter attack (tackle, pounce, ground pound, spits). Dodge steps you aside when the attack comes; for the pounce, Aim + UV turns you to the hunter and flashes your UV light; Lock keeps the attack from landing in your game. Reaction time Human or Instant. Evade spits replaces Dodge spit, and an old Dodge spit setting, key or Quick wheel pin carries over.
+- New: Undropkickable and No death from above on the Night Hunter page (a new DEFENSE card, with Unspikeable).
+- New: Auto-Kill on both pages. Kill once (also a key and a Quick wheel action) and an Auto-Kill loop that kills again after every respawn, with a delay from Instant to 20 s. It starts a real dropkick or pounce on the target and throws him onto the nearest spike trap, up to 250 m from him. As the Night Hunter: all survivors, the nearest one, or the one picked on the Lobby page.
+- New: Lobby page. Everyone in your session with their Steam name, who hosts, who runs FaTrainer (version and edition) and a Steam profile button; the players your game sees with health and distance, a Probably cheating notice for attacks started from further than the game allows, and Kill, Go to and Pick for Auto-Kill.
+- New: FaTrainer, in both editions, tells the other players in your session through Steam that it is running, with its version and edition.
+- With Lock, Undropkickable and No death from above the attacker's game still shows the attack landing, like Unspikeable.
+- This is a beta build. Auto-Evade, Auto-Kill and the Lobby were checked by the self test, not yet in a real match. If something does not work, send the log (fatrainer.log): it notes every grab aimed at you (`pvp: ... on you`), every dodge and every Auto-Kill.
+
 ## 3.0 b15
 
 Lobby Update
