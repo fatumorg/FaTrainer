@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0 b20
+
+Lobby Update
+
+- Fixed: the DLC Packs button and the other main menu buttons now load in the Menus language when the game reads its texts, instead of being swapped afterwards. The buttons in Play Campaign and Options get the right width for their text, no longer too long or too short.
+- Fixed: the Lobby page showed "You", "Player 1" and "Survivor 1". It now shows everyone's profile name from the game's session and their real role (Night Hunter or Survivor).
+- Changed: the Lobby page has a new look. Each player is a row with an avatar in their role's color, tags (YOU, HOST, FaTrainer, PROBABLY CHEATING), a health bar, rank and distance. Click a player to open Kill, Go to and Pick for Auto-Kill right under them.
+- Fixed: the roles of the other players were never found, so Evade tackles, Evade ground pounds and Aim + UV never saw a Night Hunter to react to.
+- Changed: Auto-Kill and Kill no longer throw the target onto spike traps. The target is impaled on spikes where it stands, from any distance, with no trap nearby.
+- Fixed: Aim + UV for pounces held the throw key instead of switching the UV light on. It now presses the flashlight key (T), only when the UV light is off, and reacts as soon as the hunter flies at you, not only once the pounce has landed.
+- Fixed: Auto UV flare's short press often did not register, and the flare it did throw flew away from you. It now holds the throw key longer and looks down while throwing, so the flare lands at your feet; the view goes back after.
+- Still open: Undropkickable, No death from above and Lock stop the attack only in your own game. The attacker's game still plays its own attack, and a trainer on your side cannot stop that.
+- Still open: some menus show controller buttons ((A) PLAY, (A) BACK) while you play on the keyboard. The cause is not found yet.
+- This is a beta build. None of it was tried in a match; the Lobby names, Auto-Kill's spikes and Aim + UV need a real session.
+
 ## 3.0 b19
 
 Lobby Update
