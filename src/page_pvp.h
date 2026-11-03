@@ -115,7 +115,7 @@ inline const char* KILL_TARGETS[] = {"All", "Nearest", "Picked"};
 
 inline void kill_card(bool hunter) {
     begin_card("autokill", hunter ? "AUTO-KILL SURVIVORS" : "AUTO-KILL THE NIGHT HUNTER");
-    note("Throws the target onto the nearest spikes, up to 250 m from it. Needs spikes near the target.");
+    note("Impales the target on spikes where it stands, from any distance. No spike trap needed.");
     if (accent_button("Kill once", {ImGui::GetContentRegionAvail().x, S(38)})) kill_once_now();
     pin_menu("kill_once");
     cheat_switch("auto_kill");

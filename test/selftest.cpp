@@ -55,6 +55,11 @@ static bool __fastcall fake_remove_one(uintptr_t inv, uintptr_t item, int) {
     return true;
 }
 
+static int __fastcall fake_seven() { return 7; }
+static int __fastcall fake_eight() { return 8; }
+static std::wstring inserted_text;
+static void __fastcall fake_text_insert(const char*, const wchar_t* text, bool) { inserted_text = text; }
+
 static int __fastcall fake_remove_stack(uintptr_t inv, uintptr_t item, int, int) {
     int count = game::rdv<int>(item + 0x40);
     if (count <= 1) return 0;
@@ -1111,6 +1116,15 @@ int main(int argc, char** argv) {
         CHECK(t.size() == 12 && close_to(t.back(), 0, -2));
     }
     CHECK(!memcmp((const void*)pvp::spike_start_fn, pvp::SPIKE_START_PROLOGUE, sizeof pvp::SPIKE_START_PROLOGUE));
+    {
+        // Auto-Kill's spikes where the player stands pass every check SpikesHitController::Start makes.
+        pvp::SpikeHit hit{};
+        cheats::Vec3 at{10, 2, -3}, v{0, 5, 4};
+        { std::lock_guard<std::mutex> l(pvp::kill_mx); pvp::kill_pending[0x1234] = cheats::now_seconds() + 10; }
+        CHECK(pvp::spikes_here((uintptr_t)&hit, 0, &at, &v, -9.81f, 0x1234));
+        CHECK(hit.trap != -1 && hit.at.x == 10 && hit.at.y == 2 && hit.at.z == -3 && hit.axis.z == 1 && hit.axis.y == 0);
+        CHECK(hit.gravity < 3.0e38f && hit.time >= 0 && !pvp::kill_wanted(0x1234));
+    }
     CHECK(pvp::grab_apply_fn == game::g.base + 0xd6b530 && !memcmp((const void*)pvp::grab_apply_fn, pvp::GRAB_APPLY_PROLOGUE, sizeof pvp::GRAB_APPLY_PROLOGUE));
     CHECK(pvp::knock_apply_fn == game::g.base + 0xd6d8a0 && !memcmp((const void*)pvp::knock_apply_fn, pvp::KNOCK_APPLY_PROLOGUE, sizeof pvp::KNOCK_APPLY_PROLOGUE));
     {
@@ -1385,6 +1399,28 @@ int main(int argc, char** argv) {
         CHECK(!cheats::is_hunter((uintptr_t)hunter));
         *(int*)(hunter_logical + cheats::PLAYER_ROLE) = cheats::ROLE_HUNTER;
         CHECK(cheats::is_hunter((uintptr_t)hunter) && !cheats::is_hunter((uintptr_t)target));
+        {
+            auto real_root = cheats::profile_root, real_player = cheats::player;
+            static uint8_t level[0x1000] = {}, profile[0x100] = {}, game_object[0x600] = {}, me[0x100] = {}, him[0x100] = {}, ally[0x100] = {};
+            static uint8_t mine[0x800] = {}, his[0x800] = {}, allys[0x800] = {};
+            static uintptr_t list[3] = {(uintptr_t)mine, (uintptr_t)his, (uintptr_t)allys}, root_value = (uintptr_t)game_object;
+            for (auto* lp : {mine, his, allys}) *(uintptr_t*)lp = game::g.vt_logical_player;
+            *(int*)(mine + cheats::PLAYER_ROLE) = 1, *(int*)(his + cheats::PLAYER_ROLE) = cheats::ROLE_HUNTER;
+            for (auto* p : {me, him, ally}) *(uintptr_t*)p = game::g.vt_player;
+            *(uintptr_t*)level = game::g.vt_logical_level;
+            *(uintptr_t*)(level + cheats::LOGICAL_PLAYER) = (uintptr_t)mine;
+            *(uintptr_t*)(level + cheats::LOGICAL_PLAYERS) = (uintptr_t)list, *(uint32_t*)(level + cheats::LOGICAL_PLAYER_COUNT) = 2;
+            *(uintptr_t*)(profile + cheats::PROFILE_PLAYER) = (uintptr_t)level;
+            *(uintptr_t*)(game_object + cheats::GAME_PROFILE) = (uintptr_t)profile;
+            cheats::profile_root = (uintptr_t)&root_value, cheats::player = (uintptr_t)me, cheats::body_link = -1;
+            CHECK(cheats::logical_player((uintptr_t)me) == (uintptr_t)mine && cheats::is_hunter((uintptr_t)him) && cheats::body_link == -1);
+            *(uint32_t*)(level + cheats::LOGICAL_PLAYER_COUNT) = 3, *(int*)(allys + cheats::PLAYER_ROLE) = 1;
+            CHECK(!cheats::is_hunter((uintptr_t)him) && !cheats::logical_player((uintptr_t)him));
+            *(uintptr_t*)(mine + 0x2a8) = (uintptr_t)me, *(uintptr_t*)(his + 0x2a8) = (uintptr_t)him, *(uintptr_t*)(allys + 0x2a8) = (uintptr_t)ally;
+            CHECK(cheats::is_hunter((uintptr_t)him) && cheats::body_link == 0x2a8 && cheats::logical_player((uintptr_t)ally) == (uintptr_t)allys);
+            CHECK(!cheats::is_hunter((uintptr_t)ally));
+            cheats::profile_root = real_root, cheats::player = real_player, cheats::body_link = -1;
+        }
         cheats::hunter_in_match = true;
         cheats::update_side(w.player, false);
         CHECK(cheats::side == cheats::SIDE_SURVIVOR);
@@ -2337,6 +2373,31 @@ int main(int argc, char** argv) {
         std::string engine_path = argv[1];
         engine_path = engine_path.substr(0, engine_path.find_last_of("\\/") + 1) + "engine_x64_rwdi.dll";
         HMODULE engine = LoadLibraryExA(engine_path.c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES);
+        CHECK(game::find_code((uintptr_t)engine, visuals::TEXT_INSERT_CALL, 2).size() == 1);
+        {
+            uint8_t* code = nullptr;
+            for (uintptr_t at = ((uintptr_t)&fake_seven & ~(uintptr_t)0xffff) - 0x10000; !code && (uintptr_t)&fake_seven - at < 0x70000000; at -= 0x10000)
+                code = (uint8_t*)VirtualAlloc((void*)at, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+            CHECK(code);
+            int32_t rel = (int32_t)((uintptr_t)&fake_seven - ((uintptr_t)code + 5));
+            code[0] = 0xE8, memcpy(code + 1, &rel, 4), code[5] = 0xC3;
+            auto run = [&] { return ((int(__fastcall*)())code)(); };
+            CHECK(run() == 7 && game::redirect_call((uintptr_t)code, (const void*)&fake_eight) == (uintptr_t)&fake_seven && run() == 8);
+            CHECK(!game::redirect_call((uintptr_t)code + 5, (const void*)&fake_eight));
+            VirtualFree(code, 0, MEM_RELEASE);
+        }
+        {
+            auto real_insert = visuals::text_insert_original;
+            auto real_started = visuals::started_language;
+            visuals::text_insert_original = fake_text_insert, visuals::started_language = "Pl";
+            visuals::load_texts_built = true, visuals::load_texts = {{"MenuMain_BtnDlcContent", L"DLC Packs"}};
+            visuals::text_insert_hook("MenuMain_BtnDlcContent", L"Pakiety DLC", true);
+            CHECK(inserted_text == L"DLC Packs" && visuals::loaded_original("MenuMain_BtnDlcContent", L"DLC Packs") == L"Pakiety DLC");
+            visuals::text_insert_hook("MenuMain_BtnOptions", L"Opcje", true);
+            CHECK(inserted_text == L"Opcje" && visuals::loaded_original("MenuMain_BtnOptions", L"Opcje") == L"Opcje");
+            visuals::text_insert_original = real_insert, visuals::started_language = real_started;
+            visuals::load_texts_built = false, visuals::load_texts.clear(), visuals::load_originals.clear();
+        }
         auto get = cheats::get_position;
         auto set = cheats::set_position;
         auto fint = cheats::field_int, fenum = cheats::field_enum;

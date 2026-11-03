@@ -97,10 +97,10 @@ inline Cheat CHEATS[] = {
     {"z_camo", "Long camouflage", "Camouflage lasts ten minutes and you can run and attack while hidden.",
      {{"CamouflageDuration", 600}}, {"CamouflageEnabled", "CamouflageCanRun", "CamouflageCanAttack"}},
     {"evade_tackle", "Evade tackles", "Dodges the hunter's tackle, or with Lock it never lands.", {}, {}},
-    {"evade_pounce", "Evade pounces", "Turns to the hunter and flashes your UV light as he pounces, or with Lock it never lands.", {}, {}},
+    {"evade_pounce", "Evade pounces", "Turns to the hunter and switches your UV light on as the hunter pounces (presses T, the flashlight key), or with Lock it never lands.", {}, {}},
     {"evade_pound", "Evade ground pounds", "Dodges the ground pound, or with Lock it never hits you.", {}, {}},
     {"evade_spit", "Evade spits", "Dodges spit that would hit you, or with Lock it never does.", {}, {}},
-    {"auto_flare", "Auto UV flare", "Throws a UV flare when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
+    {"auto_flare", "Auto UV flare", "Drops a UV flare at your feet when a UV Suppressor turns your UV light off. Presses the middle mouse button, the game's throw key.",
      {}, {}},
     {"unspikeable", "Unspikeable", "Kicks, tackles and ground pounds cannot kill you on spikes. The other players still see you stuck on the spikes until you die.", {}, {}},
     {"auto_kill", "Auto-Kill loop", "Kills your target again every time it respawns.", {}, {}},
@@ -919,7 +919,7 @@ inline bool flare_throw_running(uintptr_t p, uintptr_t thrower) {
 
 const size_t LIGHT_DISABLE_MODULE = 0x1388, LIGHT_DISABLE_LEFT = 0x14;
 const BYTE USE_EQUIPMENT_BUTTON = 2;
-const DWORD FLARE_CLICK_MS = 60;
+const DWORD FLARE_CLICK_MS = 150;
 const double FLARE_FIRST_PRESS = 0.12, FLARE_RETRY = 0.6;
 const int FLARE_TRIES = 3;
 
@@ -2235,9 +2235,13 @@ inline void scan_targets(bool enemies, bool players) {
     }
 }
 
+inline uintptr_t remote_logical_player(uintptr_t p);
+
+// Only the logical level points at a LogicalPlayer (+9d8, yours); players are matched to the others by remote_logical_player.
 inline uintptr_t logical_player(uintptr_t p) {
     uintptr_t lp = rdv<uintptr_t>(p + LOGICAL_PLAYER);
-    return lp && g.vt_logical_player && rdv<uintptr_t>(lp) == g.vt_logical_player ? lp : 0;
+    if (lp && g.vt_logical_player && rdv<uintptr_t>(lp) == g.vt_logical_player) return lp;
+    return p ? remote_logical_player(p) : 0;
 }
 
 inline std::string grab_report(uintptr_t target) {
@@ -2754,12 +2758,35 @@ inline void dodge_spits(bool lock, bool instant) {
     for (auto it = flying.begin(); it != flying.end();) it = present.count(it->first) ? std::next(it) : flying.erase(it);
 }
 
+// The flare is dropped, not thrown: the camera looks down at your feet while the throw runs, then back where it was.
+const float FLARE_DROP_PITCH = -1.4f, PITCH_COUNTS_PER_RADIAN = 440, PITCH_GAIN = 0.5f, PITCH_MAX_COUNTS = 120;
+const double FLARE_LOOK_SECONDS = 0.8, FLARE_RESTORE_SECONDS = 0.4;
+inline double flare_look_until = -1;
+inline float flare_pitch_before = NAN;
+
+inline float view_pitch() {
+    float m[16];
+    if (!view_matrix(m)) return NAN;
+    return std::atan2(m[13], std::sqrt(m[12] * m[12] + m[14] * m[14]));
+}
+
+inline void pitch_toward(float want) {
+    float pitch = view_pitch();
+    if (std::isfinite(pitch)) input::look_y += std::lround(std::clamp(-(want - pitch) * PITCH_COUNTS_PER_RADIAN * PITCH_GAIN, -PITCH_MAX_COUNTS, PITCH_MAX_COUNTS));
+}
+
 inline void auto_flare() {
+    double now = now_seconds();
+    if (now < flare_look_until) pitch_toward(FLARE_DROP_PITCH);
+    else if (std::isfinite(flare_pitch_before) && now < flare_look_until + FLARE_RESTORE_SECONDS) pitch_toward(flare_pitch_before);
+    else flare_pitch_before = NAN;
     uintptr_t p = player && rdv<uintptr_t>(player) == g.vt_player ? player : 0;
     uintptr_t thrower = p ? rdv<uintptr_t>(p + THROW_CONTROLLER) : 0;
-    if (!flare_due(flare_reply, light_disabled(p), throw_busy(thrower), now_seconds())) return;
+    if (!flare_due(flare_reply, light_disabled(p), throw_busy(thrower), now)) return;
+    if (!std::isfinite(flare_pitch_before)) flare_pitch_before = view_pitch();
+    flare_look_until = now + FLARE_LOOK_SECONDS;
     input::click(USE_EQUIPMENT_BUTTON, FLARE_CLICK_MS);
-    logf_hook("flare: UV light off, pressing throw (try %d)", flare_reply.tries);
+    logf_hook("flare: UV light off, dropping a flare (try %d)", flare_reply.tries);
 }
 
 inline bool esp_snapshot(float m[16], std::vector<EspTarget>& out, float max_distance) {
@@ -2853,6 +2880,50 @@ inline uintptr_t own_logical_player(uintptr_t who) {
     return from_profile ? from_profile : logical_player(who);
 }
 
+// Every LogicalPlayer of the match sits in the logical level's list (+9c0, count +9c8; gamedll 48bf70 picks hunters
+// and survivors from it). Which body a LogicalPlayer drives is learned from your own pair: the field of your
+// LogicalPlayer that points at your player. Until it is known, the others share a role when they all have the same one.
+const int LOGICAL_PLAYERS = 0x9c0, LOGICAL_PLAYER_COUNT = 0x9c8, LOGICAL_PLAYER_SPAN = 0x1000;
+const uint32_t LOGICAL_PLAYERS_MAX = 64;
+inline std::atomic<int> body_link{-1};
+
+inline std::vector<uintptr_t> logical_players() {
+    std::vector<uintptr_t> out;
+    uintptr_t level = logical_level();
+    uintptr_t list = level ? rdv<uintptr_t>(level + LOGICAL_PLAYERS) : 0;
+    uint32_t n = level ? rdv<uint32_t>(level + LOGICAL_PLAYER_COUNT) : 0;
+    for (uint32_t i = 0; list && i < n && i < LOGICAL_PLAYERS_MAX; i++)
+        if (uintptr_t lp = rdv<uintptr_t>(list + i * 8); lp && rdv<uintptr_t>(lp) == g.vt_logical_player) out.push_back(lp);
+    return out;
+}
+
+inline int learn_body_link(uintptr_t mine, uintptr_t body) {
+    for (int off = 8; mine && body && off < LOGICAL_PLAYER_SPAN; off += 8)
+        if (rdv<uintptr_t>(mine + off) == body) {
+            logf_hook("players: a LogicalPlayer points at its player at +%x", off);
+            return off;
+        }
+    return -1;
+}
+
+inline uintptr_t remote_logical_player(uintptr_t p) {
+    uintptr_t level = logical_level(), mine = level ? rdv<uintptr_t>(level + LOGICAL_PLAYER) : 0;
+    if (!mine || rdv<uintptr_t>(mine) != g.vt_logical_player) return 0;
+    if (p == player) return mine;
+    if (body_link < 0 && alive(player)) body_link = learn_body_link(mine, player);
+    auto all = logical_players();
+    std::vector<uintptr_t> others;
+    for (uintptr_t lp : all) {
+        if (lp == mine) continue;
+        if (body_link >= 0 && rdv<uintptr_t>(lp + body_link) == p) return lp;
+        others.push_back(lp);
+    }
+    if (body_link >= 0 || others.empty()) return 0;
+    for (uintptr_t lp : others)
+        if (rdv<int>(lp + PLAYER_ROLE) != rdv<int>(others[0] + PLAYER_ROLE) || rdv<int>(lp + PLAYER_TEAM) != rdv<int>(others[0] + PLAYER_TEAM)) return 0;
+    return others[0];
+}
+
 inline std::string layout(uintptr_t obj, size_t span) {
     std::string out;
     for (size_t off = 0; off < span; off += 8) {
@@ -2888,9 +2959,9 @@ inline void log_players(uintptr_t who) {
     if (players.size() == std::exchange(logged, players.size())) return;
     std::string out;
     for (uintptr_t p : players) {
-        uintptr_t lp = rdv<uintptr_t>(p + LOGICAL_PLAYER);
+        uintptr_t lp = logical_player(p);
         char part[160];
-        snprintf(part, sizeof part, " [%s %s, +9d8 %s, role %d]", p == who ? "you" : "other", game::class_name(p).c_str(), lp ? game::class_name(lp).c_str() : "none", lp ? rdv<int>(lp + PLAYER_ROLE, -1) : -1);
+        snprintf(part, sizeof part, " [%s %s, logical player %s, role %d]", p == who ? "you" : "other", game::class_name(p).c_str(), lp ? "found" : "none", lp ? rdv<int>(lp + PLAYER_ROLE, -1) : -1);
         out += part;
     }
     logf_hook("players: %zu%s", players.size(), out.c_str());

@@ -105,6 +105,25 @@ inline uintptr_t detour(uintptr_t fn, const uint8_t* expected, size_t prologue, 
     return (uintptr_t)trampoline;
 }
 
+// Points a call instruction (E8 rel32) at hook through a jump stub allocated within its reach; returns the old target.
+inline uintptr_t redirect_call(uintptr_t call, const void* hook) {
+    if (!call || *(const uint8_t*)call != 0xE8) return 0;
+    uintptr_t target = call + 5 + *(const int32_t*)(call + 1);
+    const uintptr_t STEP = 0x10000, REACH = 0x70000000;
+    uint8_t* stub = nullptr;
+    for (uintptr_t at = (call & ~(STEP - 1)) - STEP; !stub && at > STEP && call - at < REACH; at -= STEP)
+        stub = (uint8_t*)VirtualAlloc((void*)at, STEP, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!stub) return 0;
+    write_jump(stub, (uintptr_t)hook);
+    int32_t rel = (int32_t)((uintptr_t)stub - (call + 5));
+    DWORD old;
+    if (!VirtualProtect((void*)call, 5, PAGE_EXECUTE_READWRITE, &old)) return 0;
+    memcpy((void*)(call + 1), &rel, 4);
+    VirtualProtect((void*)call, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)call, 5);
+    return target;
+}
+
 inline uintptr_t tail_jump(uintptr_t fn, size_t within) {
     for (size_t i = 0; fn && i + 5 <= within; i++)
         if (rdv<uint8_t>(fn + i) == 0xE9) return fn + i + 5 + rdv<int32_t>(fn + i + 1);

@@ -162,34 +162,15 @@ inline std::vector<cheats::Vec3> spike_throws(cheats::Vec3 v, float range, float
     return out;
 }
 
-// Spike traps are models with the trap_spikes_a/b meshes (the ones the spike search takes, gamedll b0ae60).
-const uintptr_t MODEL_RTTI = 0x1c92be0;
-const int MODEL_FROM_CONTROL = 0x18;
-const float KILL_SPIKE_RADIUS = 250;
-struct TtlString { char* text; uint32_t size, capacity; };
-using MeshNameFn = TtlString*(__fastcall*)(uintptr_t, TtlString*);
-
-inline std::vector<cheats::Vec3> spikes_near(cheats::Vec3 at, float radius) {
-    static auto mesh_name = (MeshNameFn)GetProcAddress(GetModuleHandleA("engine_x64_rwdi.dll"), "?GetMeshName@IModelObject@@QEBA?AV?$string_base@D@ttl@@XZ");
-    std::vector<cheats::Vec3> out;
-    uintptr_t level = cheats::current_level();
-    cheats::EngineVector found{};
-    if (!level || !mesh_name || !cheats::find_in_radius || !std::isfinite(at.x) ||
-        !cheats::find_in_radius(level, &found, &at, radius, game::g.base + MODEL_RTTI, false, nullptr))
-        return out;
-    for (uint32_t i = 0; i < found.size && found.data; i++) {
-        TtlString name{};
-        mesh_name(found.data[i] - MODEL_FROM_CONTROL, &name);
-        cheats::Vec3 p;
-        if (name.text && strstr(name.text, "trap_spikes") && cheats::position_of(found.data[i], &p)) out.push_back(p);
-    }
-    std::sort(out.begin(), out.end(), [&](cheats::Vec3 a, cheats::Vec3 b) { return cheats::distance(a, at) < cheats::distance(b, at); });
-    return out;
-}
-
-// Auto-Kill: a player we started a grab on gets its spike search aimed straight at the nearest trap, at a speed that
-// reaches it in the search's time window (gravity included), so the game throws it onto the spikes from anywhere.
+// Auto-Kill: a player we started a grab on gets spikes where it stands. The spike search fills its result (kept at
+// PVPGrabController+0x2ec and sent in the grab message to every game) with a trap id (-1 none), the landing point, the
+// trap's axis, the gravity (FLT_MAX none) and the flight time; SpikesHitController::Start (gamedll d86ce0) only checks
+// those and impales at the landing point. An id no trap has makes the impale skip the trap's own model.
 const double KILL_PENDING_SECONDS = 4;
+const int32_t NO_SUCH_TRAP = 0x7ffffff0;
+const float KILL_FLIGHT = 0.1f;
+struct SpikeHit { int32_t trap; cheats::Vec3 at, axis; float gravity, time; };
+static_assert(sizeof(SpikeHit) == 0x24, "spike search result");
 inline std::mutex kill_mx;
 inline std::map<uintptr_t, double> kill_pending;
 
@@ -199,32 +180,19 @@ inline bool kill_wanted(uintptr_t p) {
     return it != kill_pending.end() && cheats::now_seconds() < it->second;
 }
 
-// The pounce's search window is 350 s (gamedll d6cc76): landing at its end flattens the arc to nothing, so long windows
-// try short flights that land well inside it.
-const float LONG_WINDOW = 2, SHORT_FLIGHTS[] = {0.5f, 1, 2};
-
-inline bool throw_onto_spikes(uintptr_t result, uintptr_t owner, const cheats::Vec3* from, float time, float gravity, uintptr_t player) {
-    auto spikes = spikes_near(*from, KILL_SPIKE_RADIUS);
-    float g = std::fabs(gravity), own[] = {std::max(time, 0.05f)};
-    auto flights = time > LONG_WINDOW ? std::vector<float>(std::begin(SHORT_FLIGHTS), std::end(SHORT_FLIGHTS)) : std::vector<float>(own, own + 1);
-    for (size_t i = 0; i < spikes.size() && i < 3; i++)
-        for (float t : flights) {
-            cheats::Vec3 to = spikes[i];
-            cheats::Vec3 v{(to.x - from->x) / t, (to.y - from->y + 0.5f * g * t * t) / t, (to.z - from->z) / t};
-            if (spike_search_original(result, owner, from, &v, time, gravity, player)) {
-                cheats::logf_hook("pvp: auto-kill throws a player onto spikes %.1f m away (%.1f s flight)", cheats::distance(*from, to), t);
-                std::lock_guard<std::mutex> l(kill_mx);
-                kill_pending.erase(owner), kill_pending.erase(player);
-                return true;
-            }
-        }
-    if (!spikes.empty()) cheats::logf_hook("pvp: auto-kill found %d traps, none in the throw's reach", (int)spikes.size());
-    return false;
+inline bool spikes_here(uintptr_t result, uintptr_t owner, const cheats::Vec3* from, const cheats::Vec3* velocity, float gravity, uintptr_t player) {
+    cheats::Vec3 axis{1, 0, 0};
+    if (float h = velocity ? std::sqrt(velocity->x * velocity->x + velocity->z * velocity->z) : 0; h > 0.01f) axis = {velocity->x / h, 0, velocity->z / h};
+    *(SpikeHit*)result = {NO_SUCH_TRAP, *from, axis, gravity, KILL_FLIGHT};
+    cheats::logf_hook("pvp: auto-kill puts spikes under a player");
+    std::lock_guard<std::mutex> l(kill_mx);
+    kill_pending.erase(owner), kill_pending.erase(player);
+    return true;
 }
 
 inline bool __fastcall spike_search_hook(uintptr_t result, uintptr_t owner, const cheats::Vec3* from, const cheats::Vec3* velocity, float time,
                                          float gravity, uintptr_t player) {
-    if (from && (kill_wanted(owner) || kill_wanted(player)) && throw_onto_spikes(result, owner, from, time, gravity, player)) return true;
+    if (from && (kill_wanted(owner) || kill_wanted(player))) return spikes_here(result, owner, from, velocity, gravity, player);
     float range = cheats::tweak_strength("spike_range"), turn = cheats::tweak_strength("spike_angle");
     std::vector<cheats::Vec3> throws = velocity ? spike_throws(*velocity, range, turn) : std::vector<cheats::Vec3>{};
     size_t caught = 0;
@@ -331,7 +299,27 @@ inline double reaction(bool instant) { return cheats::reaction_time(instant); }
 // down on you from above: the hunter falls faster than POUND_FALL within POUND_REACH. Each starts one dodge step.
 const float TACKLE_REACH = 9, TACKLE_SPEED = 11, TACKLE_HEIGHT = 2.5f, POUND_REACH = 9, POUND_FALL = 8, POUND_ABOVE = 1.5f;
 const double AIM_SECONDS = 1.0, TRACK_GAP = 0.25;
-const DWORD UV_HOLD_MS = 1200, STEP_MS = 280;
+const DWORD STEP_MS = 280, FLASHLIGHT_PRESS_MS = 80;
+// A pounce is the hunter flying at you: closing faster than POUNCE_SPEED inside POUNCE_REACH, off the ground.
+const float POUNCE_REACH = 30, POUNCE_SPEED = 14, POUNCE_RISE = 0.5f;
+// The UV light is the flashlight (T by default, DIK_T) in Be the Zombie. Its on/off state is not read from the game:
+// every press of the key toggles it, and a UV Suppressor turns it off.
+const BYTE FLASHLIGHT_KEY = 0x14;
+inline bool uv_on = false, flashlight_held = false;
+
+inline void track_flashlight() {
+    bool held = input::held(FLASHLIGHT_KEY);
+    if (held && !flashlight_held) uv_on = !uv_on;
+    flashlight_held = held;
+    uintptr_t me = cheats::local_player();
+    if (!me || cheats::light_disabled(me)) uv_on = false;
+}
+
+inline void flash_uv() {
+    if (uv_on) return;
+    input::press(FLASHLIGHT_KEY, FLASHLIGHT_PRESS_MS);
+    uv_on = true;
+}
 const float AIM_GAIN = 0.5f, AIM_COUNTS_PER_RADIAN = 440, AIM_MAX_COUNTS = 120;
 struct Track { cheats::Vec3 at{NAN, NAN, NAN}, v{}; double when = -1; };
 inline std::map<uintptr_t, Track> tracks;
@@ -367,6 +355,7 @@ inline void auto_evade() {
     using namespace cheats;
     bool tackle = evade_with("evade_tackle", config::EVADE_TACKLE, config::EVADE_DODGE), pound = evade_with("evade_pound", config::EVADE_POUND, config::EVADE_DODGE);
     bool uv = evade_with("evade_pounce", config::EVADE_POUNCE, config::EVADE_AIM_UV);
+    if (uv) track_flashlight();
     if (!tackle && !pound && !uv) return;
     double now = now_seconds();
     float m[16];
@@ -397,19 +386,23 @@ inline void auto_evade() {
             schedule_step(m, {dx - tr.v.x * along, 0, dz - tr.v.z * along}, tr.v, now, "tackle", flat);
         }
         if (pound && flat < POUND_REACH && dy > POUND_ABOVE && tr.v.y < -POUND_FALL) schedule_step(m, {dx, 0, dz}, tr.v, now, "ground pound", flat);
+        if (uv && now >= aim_until && flat < POUNCE_REACH && closing > POUNCE_SPEED && tr.v.y > -POUND_FALL && dy > -POUNCE_RISE) {
+            aim_at = t.p, aim_until = now + AIM_SECONDS, uv_at = now + reaction(config::cfg.pvp.instant);
+            logf_hook("dodge: hunter %.1f m away flies at you at %.1f m/s, turning to the hunter and turning UV on", flat, closing);
+        }
     }
     tracks.swap(next);
     double at = pounced_at.exchange(-1);
-    if (uv && at >= 0) {
+    if (uv && at >= 0 && now >= aim_until) {
         aim_at = pouncer, aim_until = now + AIM_SECONDS, uv_at = now + reaction(config::cfg.pvp.instant);
-        logf_hook("dodge: pounce on you, turning to the hunter and flashing UV");
+        logf_hook("dodge: pounce on you, turning to the hunter and turning UV on");
     }
     if (now < aim_until) {
         auto t = std::find_if(players.begin(), players.end(), [&](const EspTarget& e) { return e.p == aim_at; });
         if (t == players.end()) t = std::min_element(players.begin(), players.end(), [](const EspTarget& a, const EspTarget& b) { return a.hunter > b.hunter || (a.hunter == b.hunter && a.distance < b.distance); });
-        if (t != players.end() && t->hunter) steer(m, eye, {t->feet.x, t->feet.y + BODY_HEIGHT * 0.6f, t->feet.z});
+        if (t != players.end() && (t->hunter || t->p == aim_at)) steer(m, eye, {t->feet.x, t->feet.y + BODY_HEIGHT * 0.6f, t->feet.z});
     }
-    if (uv_at >= 0 && now >= uv_at) uv_at = -1, input::click(USE_EQUIPMENT_BUTTON, UV_HOLD_MS);
+    if (uv_at >= 0 && now >= uv_at) uv_at = -1, flash_uv();
 }
 
 struct Loop { double due = -1; bool was_alive = false; };

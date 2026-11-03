@@ -41,7 +41,7 @@ const char* const KEY = "fatrainer";
 const char* const EOS_DLL = "EOSSDK-Win64-Shipping.dll";
 const DWORD RESEND_MS = 30000, TICK_MS = 2000;
 const int MAX_MEMBERS = 16;
-struct Member { void* user; bool owner, you, fatrainer; Peer peer; };
+struct Member { void* user; bool owner, you, fatrainer; Peer peer; std::string id; };
 
 struct LobbyIdOptions { int32_t api; const char* lobby; void* user; };
 struct ModificationOptions { int32_t api; void* user; const char* lobby; };
@@ -53,7 +53,7 @@ struct MemberByIndexOptions { int32_t api; uint32_t index; };
 struct CopyMemberAttributeOptions { int32_t api; void* target; const char* key; };
 struct Attribute { int32_t api; AttributeData* data; int32_t visibility; };
 struct OwnerOptions { int32_t api; };
-const int32_t TYPE_STRING = 3, VISIBILITY_PUBLIC = 0, EOS_SUCCESS = 0;
+const int32_t TYPE_STRING = 3, VISIBILITY_PUBLIC = 0, EOS_SUCCESS = 0, USER_ID_SIZE = 33;
 
 struct Eos {
     int (*copy_details)(void*, const LobbyIdOptions*, void**) = nullptr;
@@ -68,6 +68,7 @@ struct Eos {
     void (*attribute_release)(Attribute*) = nullptr;
     void (*details_release)(void*) = nullptr;
     void* (*owner)(void*, const OwnerOptions*) = nullptr;
+    int (*user_id_text)(void*, char*, int32_t*) = nullptr;
 };
 inline Eos eos;
 
@@ -138,6 +139,9 @@ inline void send_and_read() {
             Member m{};
             m.user = eos.member_by_index(details, &mi);
             m.owner = m.user && m.user == owner, m.you = m.user == user;
+            char id[USER_ID_SIZE] = "";
+            int32_t size = sizeof id;
+            if (m.user && eos.user_id_text && eos.user_id_text(m.user, id, &size) == EOS_SUCCESS) m.id = id;
             CopyMemberAttributeOptions ca{1, m.user, KEY};
             Attribute* a = nullptr;
             if (m.user && eos.copy_member_attribute(details, &ca, &a) == EOS_SUCCESS && a) {
@@ -179,6 +183,7 @@ inline bool install(const char* version, const char* edition, void (*log)(const 
     eos.attribute_release = (decltype(eos.attribute_release))get("EOS_Lobby_Attribute_Release");
     eos.details_release = (decltype(eos.details_release))get("EOS_LobbyDetails_Release");
     eos.owner = (decltype(eos.owner))get("EOS_LobbyDetails_GetLobbyOwner");
+    eos.user_id_text = (decltype(eos.user_id_text))get("EOS_ProductUserId_ToString");
     if (!eos.add_member_attribute || !eos.update_lobby || !eos.modification_release || !eos.member_count || !eos.member_by_index ||
         !eos.copy_member_attribute || !eos.attribute_release || !eos.details_release || !eos.owner)
         return false;

@@ -1328,6 +1328,16 @@ inline std::shared_ptr<const TextLibrary> library(const std::string& code) {
     return nullptr;
 }
 
+inline std::shared_ptr<const TextLibrary> library_now(const std::string& folder, const std::string& code) {
+    {
+        std::lock_guard<std::mutex> l(libraries_mx);
+        if (auto it = libraries.find(code); it != libraries.end()) return it->second;
+    }
+    auto loaded = std::make_shared<const TextLibrary>(load_language(folder, code));
+    std::lock_guard<std::mutex> l(libraries_mx);
+    return libraries.emplace(code, loaded).first->second;
+}
+
 struct WrittenText { const wchar_t* at; std::string from; };
 inline std::map<std::string, std::wstring> text_originals;
 inline std::unordered_map<std::string, WrittenText> text_written;
@@ -1432,13 +1442,15 @@ inline std::string narrow(const wchar_t* text) {
     return out;
 }
 
+inline std::wstring loaded_original(const std::string& key, const wchar_t* shown);
+
 inline bool ensure_text(const std::string& key, const std::wstring& text, const std::string& from) {
     TextEntry* e = find_text(key);
     if (!e) return false;
     auto w = text_written.find(key);
     bool ours = w != text_written.end() && w->second.at == e->text;
     if (ours && w->second.from == from) return false;
-    if (!ours) text_originals[key] = e->text;
+    if (!ours) text_originals[key] = loaded_original(key, e->text);
     put_text(key, text);
     e = find_text(key);
     text_written[key] = {e ? e->text : nullptr, from};
@@ -1446,19 +1458,81 @@ inline bool ensure_text(const std::string& key, const std::wstring& text, const 
     return true;
 }
 
-inline std::string subtitle_code() {
-    const std::string& setting = config::cfg.subtitle_language;
+inline std::string subtitle_code(const std::string& setting) {
     std::string code = setting == config::STEAM_LANGUAGE ? steam_language : setting.empty() ? text_language : setting;
     return code.size() == 2 && language_code(code) != started_language ? language_code(code) : "";
 }
 
+inline std::string subtitle_code() { return subtitle_code(config::cfg.subtitle_language); }
+
 inline std::string written_code() { return text_language.size() == 2 && language_code(text_language) != started_language ? language_code(text_language) : ""; }
 
-inline std::string kind_code(int kind) {
-    if (kind == TEXT_SPOKEN) return subtitle_code();
-    auto it = config::cfg.kind_languages.find(TEXT_KIND_INFO[kind].key);
-    if (it == config::cfg.kind_languages.end() || it->second.empty()) return written_code();
+inline std::string kind_code(int kind, const std::map<std::string, std::string>& kinds, const std::string& subtitles) {
+    if (kind == TEXT_SPOKEN) return subtitle_code(subtitles);
+    auto it = kinds.find(TEXT_KIND_INFO[kind].key);
+    if (it == kinds.end() || it->second.empty()) return written_code();
     return it->second.size() == 2 && language_code(it->second) != started_language ? language_code(it->second) : "";
+}
+
+inline std::string kind_code(int kind) { return kind_code(kind, config::cfg.kind_languages, config::cfg.subtitle_language); }
+
+// The engine's text file loader (engine+634360, behind ITools::LoadTexts, every *_texts_all.bin) inserts each entry through
+// one call: movzx r8d, bpl / mov rdx, r13 / mov rcx, r12 / mov [r13+rax*2], r15w / call insert(key, text, overwrite).
+// Redirected, it puts each kind's language in while the game loads, so menus and button sizes are built from it.
+const char TEXT_INSERT_CALL[] = "44 0F B6 C5 49 8B D5 49 8B CC 66 45 89 7C 45 00 E8";
+const int TEXT_INSERT_CALL_AT = 16;
+using TextInsertFn = void(__fastcall*)(const char* key, const wchar_t* text, bool overwrite);
+inline TextInsertFn text_insert_original = nullptr;
+inline std::map<std::string, std::string> startup_kinds;
+inline std::string startup_subtitles;
+inline std::mutex load_texts_mx;
+inline bool load_texts_built = false;
+inline std::unordered_map<std::string, std::wstring> load_texts, load_originals;
+
+inline std::shared_ptr<const TextLibrary> library_now(const std::string& folder, const std::string& code);
+
+// Built once, at the first entry the engine loads after it settled on its language.
+inline void build_load_texts() {
+    std::array<std::string, TEXT_KINDS> codes;
+    std::map<std::string, std::shared_ptr<const TextLibrary>> libs;
+    char exe[MAX_PATH] = "";
+    GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    std::string folder = exe;
+    folder = folder.substr(0, folder.find_last_of("\\/") + 1);
+    for (int k = 0; k < TEXT_KINDS; k++)
+        if (!(codes[k] = kind_code(k, startup_kinds, startup_subtitles)).empty() && !libs.count(codes[k])) libs[codes[k]] = library_now(folder, codes[k]);
+    for (auto& [code, lib] : libs)
+        for (auto& file : *lib)
+            for (auto& t : file.texts)
+                if (codes[t.kind] == code) load_texts.emplace(t.key, t.text);
+    load_texts_built = true;
+}
+
+inline void __fastcall text_insert_hook(const char* key, const wchar_t* text, bool overwrite) {
+    if (key && text && !started_language.empty()) {
+        std::lock_guard<std::mutex> l(load_texts_mx);
+        if (!load_texts_built) build_load_texts();
+        if (auto it = load_texts.find(key); it != load_texts.end()) {
+            load_originals[key] = text;
+            text = it->second.c_str();
+        }
+    }
+    text_insert_original(key, text, overwrite);
+}
+
+// The game's own text for a key the loader replaced; what the dictionary shows otherwise.
+inline std::wstring loaded_original(const std::string& key, const wchar_t* shown) {
+    std::lock_guard<std::mutex> l(load_texts_mx);
+    auto it = load_originals.find(key);
+    return it != load_originals.end() ? it->second : shown ? shown : L"";
+}
+
+inline bool hook_text_loading(HMODULE engine) {
+    if (text_insert_original || !engine) return text_insert_original;
+    startup_kinds = config::cfg.kind_languages, startup_subtitles = config::cfg.subtitle_language;
+    auto hits = game::find_code((uintptr_t)engine, TEXT_INSERT_CALL, 2);
+    if (hits.size() == 1) text_insert_original = (TextInsertFn)game::redirect_call(hits[0] + TEXT_INSERT_CALL_AT, (const void*)&text_insert_hook);
+    return text_insert_original;
 }
 
 inline uint64_t texts_fingerprint() {

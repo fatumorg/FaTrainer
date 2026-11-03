@@ -751,7 +751,8 @@ static void main_thread() {
     if (getenv("DLT_OPEN")) g_open = true;
     Sleep(4000);
     visuals::learn_steam_language();
-    logf("language: %s", visuals::language_report().c_str());
+    logf("language: %s, texts %s", visuals::language_report().c_str(),
+         visuals::text_insert_original ? "set while the game loads them" : "set after loading (loader call not found)");
     hook_d3d();
     watch_first_frame();
 }
@@ -832,7 +833,8 @@ static void main_thread() {
     }).detach();
     Sleep(4000);
     visuals::learn_steam_language();
-    logf("language: %s", visuals::language_report().c_str());
+    logf("language: %s, texts %s", visuals::language_report().c_str(),
+         visuals::text_insert_original ? "set while the game loads them" : "set after loading (loader call not found)");
     hook_d3d();
     watch_first_frame();
 }
@@ -871,6 +873,8 @@ static void choose_languages() {
     std::string game = config::peek(ini, "game_language");
     if (game.empty()) game = config::peek(ini, "text_language");
     visuals::install_language_hooks(game, config::peek(ini, "voice_language"));
+    config::load(ini);
+    visuals::hook_text_loading(GetModuleHandleA("engine_x64_rwdi.dll"));
 }
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
